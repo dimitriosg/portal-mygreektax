@@ -210,17 +210,24 @@ export const listServices = createServerFn({ method: "GET" })
     const { isAdmin } = await getRoleAndPartner(context.userId);
     if (!isAdmin) throw new Error("Forbidden");
     const data = await airtableGet(TABLES.serviceCatalog, { pageSize: "100" });
-    type ServiceFields = { Name?: string; "Service Name"?: string; "Service Code"?: string; Tier?: string; Category?: string };
-    const records = data.records as AirtableRecord<ServiceFields>[];
+    const records = data.records as AirtableRecord<Record<string, unknown>>[];
+    const asStr = (v: unknown): string => {
+      if (v == null) return "";
+      if (Array.isArray(v)) return v.map(asStr).filter(Boolean).join(", ");
+      return String(v);
+    };
     const services = records
-      .map((r) => ({
-        id: r.id,
-        code: r.fields["Service Code"] ?? "",
-        name: r.fields["Service Name"] ?? r.fields.Name ?? r.fields["Service Code"] ?? r.id,
-        tier: r.fields.Tier ?? null,
-        category: r.fields.Category ?? null,
-      }))
-      .sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true, sensitivity: "base" }));
+      .map((r) => {
+        const f = r.fields;
+        const code = asStr(f["Service Code"] ?? f["Code"]);
+        const tier = asStr(f["Tier"]);
+        const category = asStr(f["Category"]);
+        const name = asStr(f["Service Name"] ?? f["Name"]);
+        return { id: r.id, code, tier, category, name };
+      })
+      .sort((a, b) =>
+        (a.code || a.name).localeCompare(b.code || b.name, undefined, { numeric: true, sensitivity: "base" }),
+      );
     return { services };
   });
 
