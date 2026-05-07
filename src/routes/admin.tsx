@@ -96,9 +96,9 @@ function AdminPage() {
       const url = `${window.location.origin}/track/${token}`;
       try {
         await navigator.clipboard.writeText(url);
-        toast.success(`Link copied (for ${email})`);
+        toast.success(`Tracking link copied (for ${email})`);
       } catch {
-        toast.success(`Link created for ${email}`, { description: url });
+        toast.success(`Tracking link created for ${email}`, { description: url });
       }
     },
     onError: (e) => toast.error((e as Error).message),
@@ -419,7 +419,7 @@ function AdminPage() {
                         onClick={() => makeLink.mutate({ jobId: job.id })}
                         disabled={makeLink.isPending}
                       >
-                        Copy magic link
+                        Copy tracking link
                       </Button>
                     </td>
                   </tr>

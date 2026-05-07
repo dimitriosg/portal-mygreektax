@@ -24,10 +24,7 @@ function Index() {
         </Button>
       </div>
       <p className="mt-10 text-sm text-muted-foreground">
-        Are you a customer?{" "}
-        <Link to="/login" className="text-primary underline-offset-4 hover:underline">
-          Click here to get your magic link.
-        </Link>
+        Are you a customer? Use the tracking link sent to you directly—no sign-in required.
       </p>
     </section>
   );
