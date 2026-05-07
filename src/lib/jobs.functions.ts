@@ -36,7 +36,7 @@ export const listJobs = createServerFn({ method: "GET" })
     const { userId } = context;
     const { isAdmin, partner } = await getRoleAndPartner(userId);
     if (!isAdmin && !partner) {
-      return { jobs: [] as AirtableRecord<JobFields>[], isAdmin: false };
+      return { jobs: [] as AirtableRecord<JobFields>[], isAdmin: false, clientNames: {} as Record<string, string> };
     }
     // Admin impersonation: filter by chosen accountant
     const impersonateId = isAdmin ? data?.asAccountantId : undefined;
@@ -48,7 +48,24 @@ export const listJobs = createServerFn({ method: "GET" })
         j.fields["Assigned Accountant"]?.includes(filterAccountantId),
       );
     }
-    return { jobs, isAdmin };
+    // Real admins (not impersonating) see real client names
+    const clientNames: Record<string, string> = {};
+    if (isAdmin && !impersonateId) {
+      const ids = Array.from(
+        new Set(jobs.flatMap((j) => j.fields.Client ?? []).filter(Boolean)),
+      );
+      const results = await Promise.all(
+        ids.map((id) =>
+          airtableGet(`${TABLES.clients}/${id}`)
+            .then((r) => r as AirtableRecord<ClientFields>)
+            .catch(() => null),
+        ),
+      );
+      for (const c of results) {
+        if (c) clientNames[c.id] = c.fields["Full Name"] ?? "";
+      }
+    }
+    return { jobs, isAdmin, clientNames };
   });
 
 export const getJob = createServerFn({ method: "GET" })
@@ -68,7 +85,14 @@ export const getJob = createServerFn({ method: "GET" })
       clientId ? (airtableGet(`${TABLES.clients}/${clientId}`) as Promise<AirtableRecord<ClientFields>>) : null,
       accountantId ? (airtableGet(`${TABLES.accountants}/${accountantId}`) as Promise<AirtableRecord<AccountantFields>>) : null,
     ]);
-    return { job, client, accountant, isAdmin };
+    // Partners (and admins while impersonating, via dashboard) should not see real client name.
+    // We always strip name for non-admins server-side; admins keep full record.
+    const safeClient = isAdmin
+      ? client
+      : client
+        ? ({ ...client, fields: { ...client.fields, "Full Name": undefined, Email: undefined, Phone: undefined } } as AirtableRecord<ClientFields>)
+        : null;
+    return { job, client: safeClient, accountant, isAdmin };
   });
 
 export const updateJob = createServerFn({ method: "POST" })
