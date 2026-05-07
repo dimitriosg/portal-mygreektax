@@ -4,6 +4,7 @@ import {
   Link,
   createRootRouteWithContext,
   useRouter,
+  useRouterState,
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
@@ -124,6 +125,15 @@ function RootComponent() {
 
 function AppShell() {
   const { user, isAdmin, isRealAdmin, signOut, loading, impersonatingId, impersonatingName, stopImpersonation } = useAuth();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const isPublicClientPage = pathname.startsWith("/track/");
+  if (isPublicClientPage) {
+    return (
+      <div className="min-h-screen bg-background text-foreground">
+        <Outlet />
+      </div>
+    );
+  }
   return (
     <div className="min-h-screen flex flex-col bg-background text-foreground">
       {impersonatingId && (
