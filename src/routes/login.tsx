@@ -47,7 +47,7 @@ function LoginPage() {
         {mode === "signin" ? "Partner sign in" : "Create partner account"}
       </h1>
       <p className="mt-2 text-sm text-muted-foreground">
-        Use the email registered as an Accountant in My Greek Tax to access your jobs.
+        This sign-in is for partners and admins. Client tracking links open directly and do not require a login.
       </p>
       <form onSubmit={submit} className="mt-6 space-y-4">
         <div className="space-y-1.5">
