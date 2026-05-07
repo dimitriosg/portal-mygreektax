@@ -1,13 +1,14 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { airtableGet, TABLES, type AirtableRecord, type AccountantFields } from "./airtable.server";
 
 // Called right after signup/signin. Checks if user's email matches an Accountant
 // in Airtable and, if so, creates partner_profile + partner role.
 export const linkPartnerProfile = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { userId, claims } = context;
     const email = (claims.email as string | undefined)?.toLowerCase();
@@ -43,7 +44,7 @@ export const linkPartnerProfile = createServerFn({ method: "POST" })
   });
 
 export const getMyContext = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { userId, claims } = context;
     const [{ data: roles }, { data: partner }] = await Promise.all([
@@ -61,7 +62,7 @@ export const getMyContext = createServerFn({ method: "GET" })
 
 // First signed-up user (no admins yet) automatically becomes admin.
 export const claimFirstAdmin = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { count } = await supabaseAdmin
       .from("user_roles")
