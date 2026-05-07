@@ -5,7 +5,7 @@ import { useEffect } from "react";
 import { listJobs, listAccountants, assignPartner, createClientToken } from "@/lib/jobs.functions";
 import { useAuth } from "@/lib/auth-context";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge, TierBadge } from "@/lib/badges";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
@@ -87,6 +87,7 @@ function AdminPage() {
               <tr>
                 <th className="px-3 py-2">Job</th>
                 <th className="px-3 py-2">Service</th>
+                <th className="px-3 py-2">Tier</th>
                 <th className="px-3 py-2">Status</th>
                 <th className="px-3 py-2">SLA</th>
                 <th className="px-3 py-2">Assigned to</th>
@@ -104,7 +105,8 @@ function AdminPage() {
                       </Link>
                     </td>
                     <td className="px-3 py-2 text-muted-foreground">{job.fields["Service Name"]?.[0] ?? "—"}</td>
-                    <td className="px-3 py-2"><Badge variant="secondary">{job.fields.Status ?? "—"}</Badge></td>
+                    <td className="px-3 py-2"><TierBadge tier={job.fields.Tier?.[0]} /></td>
+                    <td className="px-3 py-2"><StatusBadge status={job.fields.Status} /></td>
                     <td className="px-3 py-2 text-muted-foreground">{job.fields["SLA Deadline"] ?? "—"}</td>
                     <td className="px-3 py-2">
                       <select

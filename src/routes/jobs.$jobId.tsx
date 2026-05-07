@@ -8,7 +8,7 @@ import { useAuth } from "@/lib/auth-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge, TierBadge } from "@/lib/badges";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/jobs/$jobId")({ component: JobDetail });
@@ -76,7 +76,10 @@ function JobDetail() {
           <h1 className="text-2xl font-semibold tracking-tight">{j["Job Code"]}</h1>
           <p className="text-sm text-muted-foreground">{j["Service Name"]?.[0] ?? "—"}</p>
         </div>
-        <Badge variant="secondary">{j.Status ?? "—"}</Badge>
+        <div className="flex items-center gap-2">
+          <TierBadge tier={j.Tier?.[0]} />
+          <StatusBadge status={j.Status} />
+        </div>
       </div>
 
       <Card>
@@ -91,7 +94,7 @@ function JobDetail() {
           )}
           <div><div className="text-muted-foreground">Your fee</div><div>€{j["Accountant Fee (\u20ac)"] ?? "—"}</div></div>
           <div><div className="text-muted-foreground">Category</div><div>{j.Category?.[0] ?? "—"}</div></div>
-          <div><div className="text-muted-foreground">Tier</div><div>{j.Tier?.[0] ?? "—"}</div></div>
+          <div><div className="text-muted-foreground">Tier</div><div><TierBadge tier={j.Tier?.[0]} /></div></div>
         </CardContent>
       </Card>
 
