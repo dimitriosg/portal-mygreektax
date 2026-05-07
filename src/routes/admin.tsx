@@ -99,16 +99,28 @@ function AdminPage() {
     onError: (e) => toast.error((e as Error).message),
   });
 
+  const [filter, setFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("");
+  const [tierFilter, setTierFilter] = useState<string>("");
+  const [partnerFilter, setPartnerFilter] = useState<string>("");
+
   if (!isAdmin) return null;
 
   const jobs = jobsQ.data?.jobs ?? [];
   const accountants = accQ.data?.accountants ?? [];
 
-  const [filter, setFilter] = useState("");
+  const tiers = Array.from(new Set(jobs.map((j) => j.fields.Tier?.[0]).filter(Boolean))) as string[];
+
   const filteredJobs = (() => {
     const q = filter.trim().toLowerCase();
-    if (!q) return jobs;
     return jobs.filter((job) => {
+      if (statusFilter && job.fields.Status !== statusFilter) return false;
+      if (tierFilter && job.fields.Tier?.[0] !== tierFilter) return false;
+      if (partnerFilter) {
+        const accId = job.fields["Assigned Accountant"]?.[0] ?? "";
+        if (partnerFilter === "__unassigned__" ? accId !== "" : accId !== partnerFilter) return false;
+      }
+      if (!q) return true;
       const clientId = job.fields.Client?.[0] ?? "";
       const clientName = jobsQ.data?.clientNames?.[clientId] ?? "";
       const accId = job.fields["Assigned Accountant"]?.[0];
