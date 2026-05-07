@@ -16,7 +16,14 @@ export function formatDate(value: string | Date | string[] | null | undefined): 
     raw = value;
   }
   if (!raw) return "—";
-  const d = raw instanceof Date ? raw : new Date(raw);
+  let d: Date;
+  if (raw instanceof Date) {
+    d = raw;
+  } else {
+    // Date-only string (YYYY-MM-DD) — parse as local to avoid TZ shifting.
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+    d = m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : new Date(raw);
+  }
   if (isNaN(d.getTime())) return "—";
   const dd = String(d.getDate()).padStart(2, "0");
   const mm = String(d.getMonth() + 1).padStart(2, "0");
