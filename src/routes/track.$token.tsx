@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { getClientTracking } from "@/lib/jobs.functions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
+import { formatDate } from "@/lib/utils";
 
 export const Route = createFileRoute("/track/$token")({ component: TrackPage });
 
