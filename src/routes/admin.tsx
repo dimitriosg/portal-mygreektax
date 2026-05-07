@@ -1,12 +1,32 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useEffect } from "react";
-import { listJobs, listAccountants, assignPartner, createClientToken } from "@/lib/jobs.functions";
+import { useEffect, useState } from "react";
+import {
+  listJobs,
+  listAccountants,
+  assignPartner,
+  createClientToken,
+  listClients,
+  listServices,
+  createJob,
+} from "@/lib/jobs.functions";
 import { useAuth } from "@/lib/auth-context";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge, TierBadge } from "@/lib/badges";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { JOB_STATUSES } from "@/lib/airtable-shared";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/admin")({ component: AdminPage });
@@ -24,10 +44,37 @@ function AdminPage() {
   const fetchAccountants = useServerFn(listAccountants);
   const assignFn = useServerFn(assignPartner);
   const createTokenFn = useServerFn(createClientToken);
+  const fetchClients = useServerFn(listClients);
+  const fetchServices = useServerFn(listServices);
+  const createJobFn = useServerFn(createJob);
   const qc = useQueryClient();
 
   const jobsQ = useQuery({ queryKey: ["jobs", "admin"], queryFn: () => fetchJobs(), enabled: !!isAdmin });
   const accQ = useQuery({ queryKey: ["accountants"], queryFn: () => fetchAccountants(), enabled: !!isAdmin });
+  const clientsQ = useQuery({ queryKey: ["clients"], queryFn: () => fetchClients(), enabled: !!isAdmin });
+  const servicesQ = useQuery({ queryKey: ["services"], queryFn: () => fetchServices(), enabled: !!isAdmin });
+
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({
+    clientId: "",
+    serviceId: "",
+    accountantId: "",
+    status: "To Assign" as (typeof JOB_STATUSES)[number],
+    slaDeadline: "",
+    dateSent: "",
+    notes: "",
+  });
+
+  const createMut = useMutation({
+    mutationFn: (vars: Parameters<typeof createJobFn>[0]["data"]) => createJobFn({ data: vars }),
+    onSuccess: () => {
+      toast.success("Job created");
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+      setOpen(false);
+      setForm({ clientId: "", serviceId: "", accountantId: "", status: "To Assign", slaDeadline: "", dateSent: "", notes: "" });
+    },
+    onError: (e) => toast.error((e as Error).message),
+  });
 
   const assign = useMutation({
     mutationFn: (vars: { jobId: string; accountantId: string }) => assignFn({ data: vars }),
@@ -70,8 +117,123 @@ function AdminPage() {
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 sm:py-8 space-y-6 sm:space-y-8">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Admin overview</h1>
-        <p className="text-sm text-muted-foreground">All jobs across all partners.</p>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">Admin overview</h1>
+            <p className="text-sm text-muted-foreground">All jobs across all partners.</p>
+          </div>
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+              <Button>+ New job</Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle>Create new job</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <Label>Client</Label>
+                  <select
+                    value={form.clientId}
+                    onChange={(e) => setForm({ ...form, clientId: e.target.value })}
+                    className="w-full rounded border border-input bg-background px-2 py-2 text-sm"
+                  >
+                    <option value="">— Select client —</option>
+                    {(clientsQ.data?.clients ?? []).map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.fields["Full Name"] ?? c.fields["Client Code"] ?? c.id}
+                        {c.fields["Client Code"] ? ` (${c.fields["Client Code"]})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <Label>Service</Label>
+                  <select
+                    value={form.serviceId}
+                    onChange={(e) => setForm({ ...form, serviceId: e.target.value })}
+                    className="w-full rounded border border-input bg-background px-2 py-2 text-sm"
+                  >
+                    <option value="">— Select service —</option>
+                    {(servicesQ.data?.services ?? []).map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}{s.tier ? ` · ${s.tier}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <Label>Assign partner (optional)</Label>
+                  <select
+                    value={form.accountantId}
+                    onChange={(e) => setForm({ ...form, accountantId: e.target.value })}
+                    className="w-full rounded border border-input bg-background px-2 py-2 text-sm"
+                  >
+                    <option value="">— Unassigned —</option>
+                    {accountants.map((a) => (
+                      <option key={a.id} value={a.id}>{a.fields.Name ?? a.id}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label>Status</Label>
+                    <select
+                      value={form.status}
+                      onChange={(e) => setForm({ ...form, status: e.target.value as (typeof JOB_STATUSES)[number] })}
+                      className="w-full rounded border border-input bg-background px-2 py-2 text-sm"
+                    >
+                      {JOB_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label>SLA deadline</Label>
+                    <Input
+                      type="date"
+                      value={form.slaDeadline}
+                      onChange={(e) => setForm({ ...form, slaDeadline: e.target.value })}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <Label>Date sent</Label>
+                  <Input
+                    type="date"
+                    value={form.dateSent}
+                    onChange={(e) => setForm({ ...form, dateSent: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label>Notes</Label>
+                  <Textarea
+                    value={form.notes}
+                    onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                    rows={3}
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+                <Button
+                  disabled={!form.clientId || !form.serviceId || createMut.isPending}
+                  onClick={() =>
+                    createMut.mutate({
+                      clientId: form.clientId,
+                      serviceId: form.serviceId,
+                      accountantId: form.accountantId || undefined,
+                      status: form.status,
+                      slaDeadline: form.slaDeadline || undefined,
+                      dateSent: form.dateSent || undefined,
+                      notes: form.notes || undefined,
+                    })
+                  }
+                >
+                  {createMut.isPending ? "Creating…" : "Create job"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
