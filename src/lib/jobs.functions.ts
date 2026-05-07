@@ -103,7 +103,17 @@ export const updateJob = createServerFn({ method: "POST" })
     const actorEmail = authUser?.user?.email ?? null;
     const actorName = partner?.full_name ?? actorEmail ?? null;
 
-    const events: Array<Record<string, unknown>> = [];
+    type JobEventInsert = {
+      airtable_job_id: string;
+      user_id: string;
+      actor_email: string | null;
+      actor_name: string | null;
+      event_type: "status_change" | "comment";
+      from_status?: string | null;
+      to_status?: string | null;
+      comment?: string | null;
+    };
+    const events: JobEventInsert[] = [];
     if (data.status && data.status !== previousStatus) {
       events.push({
         airtable_job_id: data.jobId,
