@@ -128,12 +128,20 @@ function Dashboard() {
               <CardContent className="text-sm text-muted-foreground">
                 <div className="flex flex-wrap gap-x-6 gap-y-1">
                   <span>
-                    Client: {job.fields["Client Code"]?.[0] ?? "—"}
-                    {isAdmin && data?.clientNames?.[job.fields.Client?.[0] ?? ""] && (
-                      <span className="ml-1 text-foreground">
-                        · {data.clientNames[job.fields.Client![0]]}
-                      </span>
-                    )}
+                    Client:{" "}
+                    {(() => {
+                      const code = job.fields["Client Code"]?.[0] ?? "—";
+                      const id = job.fields.Client?.[0] ?? "";
+                      const name = isAdmin ? data?.clientNames?.[id] : undefined;
+                      return name ? (
+                        <span className="text-foreground">
+                          {name}{" "}
+                          <span className="text-muted-foreground">({code})</span>
+                        </span>
+                      ) : (
+                        code
+                      );
+                    })()}
                   </span>
                   <span>SLA: {job.fields["SLA Deadline"] ?? "—"}</span>
                   <span>
