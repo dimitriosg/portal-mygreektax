@@ -12,10 +12,12 @@ import { toast } from "sonner";
 export const Route = createFileRoute("/admin")({ component: AdminPage });
 
 function AdminPage() {
-  const { user, loading, isAdmin } = useAuth();
+  const { user, loading, isAdmin, isRealAdmin } = useAuth();
   const navigate = useNavigate();
   useEffect(() => {
-    if (!loading && (!user || !isAdmin)) navigate({ to: "/login" });
+    if (loading) return;
+    if (!user) navigate({ to: "/login" });
+    else if (!isAdmin) navigate({ to: "/dashboard" });
   }, [loading, user, isAdmin, navigate]);
 
   const fetchJobs = useServerFn(listJobs);
