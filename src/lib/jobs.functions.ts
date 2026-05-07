@@ -212,12 +212,15 @@ export const listServices = createServerFn({ method: "GET" })
     const data = await airtableGet(TABLES.serviceCatalog, { pageSize: "100" });
     type ServiceFields = { Name?: string; "Service Name"?: string; "Service Code"?: string; Tier?: string; Category?: string };
     const records = data.records as AirtableRecord<ServiceFields>[];
-    const services = records.map((r) => ({
-      id: r.id,
-      name: r.fields["Service Name"] ?? r.fields.Name ?? r.fields["Service Code"] ?? r.id,
-      tier: r.fields.Tier ?? null,
-      category: r.fields.Category ?? null,
-    }));
+    const services = records
+      .map((r) => ({
+        id: r.id,
+        code: r.fields["Service Code"] ?? "",
+        name: r.fields["Service Name"] ?? r.fields.Name ?? r.fields["Service Code"] ?? r.id,
+        tier: r.fields.Tier ?? null,
+        category: r.fields.Category ?? null,
+      }))
+      .sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true, sensitivity: "base" }));
     return { services };
   });
 
