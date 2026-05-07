@@ -31,7 +31,6 @@ import { toast } from "sonner";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { CalendarIcon } from "lucide-react";
-import { format } from "date-fns";
 import { cn, formatDate } from "@/lib/utils";
 import type { DateRange } from "react-day-picker";
 
