@@ -6,6 +6,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
   airtableGet,
   airtablePatch,
+  airtablePost,
   TABLES,
   type AirtableRecord,
   type JobFields,
@@ -192,6 +193,71 @@ export const listAccountants = createServerFn({ method: "GET" })
     if (!isAdmin) throw new Error("Forbidden");
     const data = await airtableGet(TABLES.accountants, { pageSize: "100" });
     return { accountants: data.records as AirtableRecord<AccountantFields>[] };
+  });
+
+export const listClients = createServerFn({ method: "GET" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { isAdmin } = await getRoleAndPartner(context.userId);
+    if (!isAdmin) throw new Error("Forbidden");
+    const data = await airtableGet(TABLES.clients, { pageSize: "100" });
+    return { clients: data.records as AirtableRecord<ClientFields>[] };
+  });
+
+export const listServices = createServerFn({ method: "GET" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { isAdmin } = await getRoleAndPartner(context.userId);
+    if (!isAdmin) throw new Error("Forbidden");
+    const data = await airtableGet(TABLES.serviceCatalog, { pageSize: "100" });
+    type ServiceFields = { Name?: string; "Service Name"?: string; "Service Code"?: string; Tier?: string; Category?: string };
+    const records = data.records as AirtableRecord<ServiceFields>[];
+    const services = records.map((r) => ({
+      id: r.id,
+      name: r.fields["Service Name"] ?? r.fields.Name ?? r.fields["Service Code"] ?? r.id,
+      tier: r.fields.Tier ?? null,
+      category: r.fields.Category ?? null,
+    }));
+    return { services };
+  });
+
+export const createJob = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d: {
+    clientId: string;
+    serviceId: string;
+    accountantId?: string;
+    status?: string;
+    slaDeadline?: string;
+    dateSent?: string;
+    notes?: string;
+  }) =>
+    z
+      .object({
+        clientId: z.string().min(1).max(50),
+        serviceId: z.string().min(1).max(50),
+        accountantId: z.string().min(1).max(50).optional(),
+        status: z.enum(JOB_STATUSES).optional(),
+        slaDeadline: z.string().max(30).optional(),
+        dateSent: z.string().max(30).optional(),
+        notes: z.string().max(5000).optional(),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { isAdmin } = await getRoleAndPartner(context.userId);
+    if (!isAdmin) throw new Error("Forbidden");
+    const fields: Record<string, unknown> = {
+      Client: [data.clientId],
+      "Service Catalog": [data.serviceId],
+    };
+    if (data.accountantId) fields["Assigned Accountant"] = [data.accountantId];
+    if (data.status) fields["Status"] = data.status;
+    if (data.slaDeadline) fields["SLA Deadline"] = data.slaDeadline;
+    if (data.dateSent) fields["Date Sent"] = data.dateSent;
+    if (data.notes) fields["Notes"] = data.notes;
+    const record = await airtablePost(TABLES.jobs, fields);
+    return { ok: true, jobId: record.id };
   });
 
 export const getJobOrder = createServerFn({ method: "GET" })
