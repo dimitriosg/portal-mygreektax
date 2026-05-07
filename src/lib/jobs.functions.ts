@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
   airtableGet,
@@ -27,7 +28,7 @@ function escapeFormula(s: string) {
 }
 
 export const listJobs = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { userId } = context;
     const { isAdmin, partner } = await getRoleAndPartner(userId);
@@ -43,7 +44,7 @@ export const listJobs = createServerFn({ method: "GET" })
   });
 
 export const getJob = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((d: { jobId: string }) => z.object({ jobId: z.string().min(1).max(50) }).parse(d))
   .handler(async ({ data, context }) => {
     const { userId } = context;
@@ -63,7 +64,7 @@ export const getJob = createServerFn({ method: "GET" })
   });
 
 export const updateJob = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((d: { jobId: string; status?: string; notes?: string }) =>
     z
       .object({
@@ -90,7 +91,7 @@ export const updateJob = createServerFn({ method: "POST" })
   });
 
 export const listAccountants = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { isAdmin } = await getRoleAndPartner(context.userId);
     if (!isAdmin) throw new Error("Forbidden");
@@ -99,7 +100,7 @@ export const listAccountants = createServerFn({ method: "GET" })
   });
 
 export const assignPartner = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((d: { jobId: string; accountantId: string }) =>
     z.object({ jobId: z.string().min(1).max(50), accountantId: z.string().min(1).max(50) }).parse(d),
   )
@@ -111,7 +112,7 @@ export const assignPartner = createServerFn({ method: "POST" })
   });
 
 export const createClientToken = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((d: { jobId: string }) => z.object({ jobId: z.string().min(1).max(50) }).parse(d))
   .handler(async ({ data, context }) => {
     const { isAdmin } = await getRoleAndPartner(context.userId);
