@@ -70,8 +70,8 @@ function TrackPage() {
 
       <Card>
         <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 py-4 text-sm">
-          <div><div className="text-muted-foreground">Started</div><div>{data.dateSent ?? "—"}</div></div>
-          <div><div className="text-muted-foreground">Expected by</div><div>{data.sla ?? "—"}</div></div>
+          <div><div className="text-muted-foreground">Started</div><div>{formatDate(data.dateSent)}</div></div>
+          <div><div className="text-muted-foreground">Expected by</div><div>{formatDate(data.sla)}</div></div>
         </CardContent>
       </Card>
 
