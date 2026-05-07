@@ -2,10 +2,11 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
-import { listJobs, listAccountants, assignPartner } from "@/lib/jobs.functions";
+import { listJobs, listAccountants, assignPartner, createClientToken } from "@/lib/jobs.functions";
 import { useAuth } from "@/lib/auth-context";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/admin")({ component: AdminPage });
@@ -20,6 +21,7 @@ function AdminPage() {
   const fetchJobs = useServerFn(listJobs);
   const fetchAccountants = useServerFn(listAccountants);
   const assignFn = useServerFn(assignPartner);
+  const createTokenFn = useServerFn(createClientToken);
   const qc = useQueryClient();
 
   const jobsQ = useQuery({ queryKey: ["jobs", "admin"], queryFn: () => fetchJobs(), enabled: !!isAdmin });
@@ -30,6 +32,20 @@ function AdminPage() {
     onSuccess: () => {
       toast.success("Partner assigned");
       qc.invalidateQueries({ queryKey: ["jobs"] });
+    },
+    onError: (e) => toast.error((e as Error).message),
+  });
+
+  const makeLink = useMutation({
+    mutationFn: (vars: { jobId: string }) => createTokenFn({ data: vars }),
+    onSuccess: async ({ token, email }) => {
+      const url = `${window.location.origin}/track/${token}`;
+      try {
+        await navigator.clipboard.writeText(url);
+        toast.success(`Link copied (for ${email})`);
+      } catch {
+        toast.success(`Link created for ${email}`, { description: url });
+      }
     },
     onError: (e) => toast.error((e as Error).message),
   });
@@ -74,6 +90,7 @@ function AdminPage() {
                 <th className="px-3 py-2">Status</th>
                 <th className="px-3 py-2">SLA</th>
                 <th className="px-3 py-2">Assigned to</th>
+                <th className="px-3 py-2">Client link</th>
               </tr>
             </thead>
             <tbody>
@@ -100,6 +117,16 @@ function AdminPage() {
                           <option key={a.id} value={a.id}>{a.fields.Name ?? a.id}</option>
                         ))}
                       </select>
+                    </td>
+                    <td className="px-3 py-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => makeLink.mutate({ jobId: job.id })}
+                        disabled={makeLink.isPending}
+                      >
+                        Copy magic link
+                      </Button>
                     </td>
                   </tr>
                 );
