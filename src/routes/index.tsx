@@ -9,13 +9,7 @@ export const Route = createFileRoute("/")({
 function Index() {
   return (
     <section className="mx-auto max-w-3xl px-6 py-20 text-center">
-      <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">
-        My Greek Tax Operations
-      </h1>
-      <p className="mt-4 text-muted-foreground">
-        White-label partner workspace for managing tax service jobs, plus client tracking
-        powered by your Airtable operations base.
-      </p>
+      <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl" dangerouslySetInnerHTML={{ __html: "Are you a customer? <br> Open the link from the email we sent you.<br><br>Or, contact us directly for further info." }} />
       <div className="mt-8 flex justify-center gap-3">
         <Button asChild>
           <Link to="/login">Partner sign in</Link>
