@@ -127,7 +127,14 @@ function Dashboard() {
               </CardHeader>
               <CardContent className="text-sm text-muted-foreground">
                 <div className="flex flex-wrap gap-x-6 gap-y-1">
-                  <span>Client: {job.fields["Client Code"]?.[0] ?? "—"}</span>
+                  <span>
+                    Client: {job.fields["Client Code"]?.[0] ?? "—"}
+                    {isAdmin && data?.clientNames?.[job.fields.Client?.[0] ?? ""] && (
+                      <span className="ml-1 text-foreground">
+                        · {data.clientNames[job.fields.Client![0]]}
+                      </span>
+                    )}
+                  </span>
                   <span>SLA: {job.fields["SLA Deadline"] ?? "—"}</span>
                   <span>
                     {isAdmin && !asPartner
