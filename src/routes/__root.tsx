@@ -123,9 +123,25 @@ function RootComponent() {
 }
 
 function AppShell() {
-  const { user, isAdmin, signOut, loading } = useAuth();
+  const { user, isAdmin, isRealAdmin, signOut, loading, impersonatingId, impersonatingName, stopImpersonation } = useAuth();
   return (
     <div className="min-h-screen flex flex-col bg-background text-foreground">
+      {impersonatingId && (
+        <div className="bg-amber-100 text-amber-900 border-b border-amber-300 text-sm">
+          <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-2">
+            <span>
+              Impersonating partner: <strong>{impersonatingName ?? impersonatingId}</strong>
+              {" "}— you have partner-only permissions.
+            </span>
+            <button
+              onClick={stopImpersonation}
+              className="rounded-md border border-amber-400 bg-amber-50 px-3 py-1 text-xs font-medium hover:bg-amber-200"
+            >
+              Exit impersonation
+            </button>
+          </div>
+        </div>
+      )}
       <header className="border-b border-border">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-3">
           <Link to="/" className="font-semibold tracking-tight">My Greek Tax</Link>
@@ -135,6 +151,14 @@ function AppShell() {
                 <Link to="/dashboard" activeProps={{ className: "font-semibold" }}>Dashboard</Link>
                 {isAdmin && (
                   <Link to="/admin" activeProps={{ className: "font-semibold" }}>Admin</Link>
+                )}
+                {isRealAdmin && impersonatingId && (
+                  <button
+                    onClick={stopImpersonation}
+                    className="text-amber-700 hover:text-amber-900"
+                  >
+                    Back to admin
+                  </button>
                 )}
                 <button onClick={signOut} className="text-muted-foreground hover:text-foreground">
                   Sign out
