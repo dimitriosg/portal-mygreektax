@@ -44,6 +44,48 @@ export type Database = {
         }
         Relationships: []
       }
+      job_events: {
+        Row: {
+          actor_email: string | null
+          actor_name: string | null
+          airtable_job_id: string
+          comment: string | null
+          created_at: string
+          event_type: string
+          from_status: string | null
+          id: string
+          impersonated_accountant_id: string | null
+          to_status: string | null
+          user_id: string
+        }
+        Insert: {
+          actor_email?: string | null
+          actor_name?: string | null
+          airtable_job_id: string
+          comment?: string | null
+          created_at?: string
+          event_type: string
+          from_status?: string | null
+          id?: string
+          impersonated_accountant_id?: string | null
+          to_status?: string | null
+          user_id: string
+        }
+        Update: {
+          actor_email?: string | null
+          actor_name?: string | null
+          airtable_job_id?: string
+          comment?: string | null
+          created_at?: string
+          event_type?: string
+          from_status?: string | null
+          id?: string
+          impersonated_accountant_id?: string | null
+          to_status?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       partner_profiles: {
         Row: {
           airtable_accountant_id: string
