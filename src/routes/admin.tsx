@@ -32,7 +32,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar";
 import { CalendarIcon } from "lucide-react";
 import { format } from "date-fns";
-import { cn } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 import type { DateRange } from "react-day-picker";
 
 export const Route = createFileRoute("/admin")({ component: AdminPage });
@@ -340,8 +340,8 @@ function AdminPage() {
                   <CalendarIcon className="mr-2 h-4 w-4" />
                   {slaRange?.from
                     ? slaRange.to
-                      ? `${format(slaRange.from, "MMM d")} – ${format(slaRange.to, "MMM d, yyyy")}`
-                      : format(slaRange.from, "MMM d, yyyy")
+                      ? `${formatDate(slaRange.from)} – ${formatDate(slaRange.to)}`
+                      : formatDate(slaRange.from)
                     : "SLA range"}
                 </Button>
               </PopoverTrigger>
@@ -400,7 +400,7 @@ function AdminPage() {
                     <td className="px-3 py-2 text-muted-foreground">{job.fields["Service Name"]?.[0] ?? "—"}</td>
                     <td className="px-3 py-2"><TierBadge tier={job.fields.Tier?.[0]} /></td>
                     <td className="px-3 py-2"><StatusBadge status={job.fields.Status} /></td>
-                    <td className="px-3 py-2 text-muted-foreground">{job.fields["SLA Deadline"] ?? "—"}</td>
+                    <td className="px-3 py-2 text-muted-foreground">{formatDate(job.fields["SLA Deadline"])}</td>
                     <td className="px-3 py-2">
                       <select
                         value={currentAcc}
