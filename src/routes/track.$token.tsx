@@ -23,7 +23,7 @@ function TrackPage() {
     return (
       <div className="mx-auto max-w-2xl px-4 py-8 sm:py-12">
         <h1 className="text-xl font-semibold">Link not available</h1>
-        <p className="mt-2 text-sm text-muted-foreground">{(error as Error).message}</p>
+        <p className="mt-2 text-sm text-muted-foreground">This tracking link is invalid or has expired. Please contact your accountant for a new link.</p>
       </div>
     );
   }
