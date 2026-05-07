@@ -66,7 +66,7 @@ function AdminPage() {
   }).length;
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8 space-y-8">
+    <div className="mx-auto max-w-6xl px-4 py-6 sm:py-8 space-y-6 sm:space-y-8">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Admin overview</h1>
         <p className="text-sm text-muted-foreground">All jobs across all partners.</p>
@@ -81,8 +81,8 @@ function AdminPage() {
 
       <div>
         <h2 className="mb-3 text-lg font-semibold">All jobs</h2>
-        <div className="overflow-hidden rounded-lg border border-border">
-          <table className="w-full text-sm">
+        <div className="overflow-x-auto rounded-lg border border-border">
+          <table className="w-full min-w-[640px] text-sm">
             <thead className="bg-muted/50 text-left">
               <tr>
                 <th className="px-3 py-2">Job</th>
