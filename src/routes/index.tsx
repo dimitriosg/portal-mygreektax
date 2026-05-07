@@ -18,9 +18,6 @@ function Index() {
           <Link to="/dashboard">Open dashboard</Link>
         </Button>
       </div>
-      <p className="mt-10 text-sm text-muted-foreground">
-        Are you a client with a tracking link? Open the link from the email we sent you.
-      </p>
     </section>
   );
 }
