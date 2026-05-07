@@ -82,6 +82,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { property: "og:description", content: "Manage tax service jobs and track client progress." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
+      { name: "twitter:title", content: "My Greek Tax — Partner Portal" },
+      { name: "twitter:description", content: "Manage tax service jobs and track client progress." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/c47ff929-73f6-4e39-b7a9-0f5a62130024/id-preview-1c00168f--b31ece30-603b-4f0d-b701-75c25caf0ecd.lovable.app-1778197227762.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/c47ff929-73f6-4e39-b7a9-0f5a62130024/id-preview-1c00168f--b31ece30-603b-4f0d-b701-75c25caf0ecd.lovable.app-1778197227762.png" },
     ],
     links: [
       {
