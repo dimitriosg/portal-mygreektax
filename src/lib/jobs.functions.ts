@@ -29,18 +29,24 @@ function escapeFormula(s: string) {
 
 export const listJobs = createServerFn({ method: "GET" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
-  .handler(async ({ context }) => {
+  .inputValidator((d?: { asAccountantId?: string }) =>
+    z.object({ asAccountantId: z.string().min(1).max(50).optional() }).parse(d ?? {}),
+  )
+  .handler(async ({ data, context }) => {
     const { userId } = context;
     const { isAdmin, partner } = await getRoleAndPartner(userId);
     if (!isAdmin && !partner) {
       return { jobs: [] as AirtableRecord<JobFields>[], isAdmin: false };
     }
+    // Admin impersonation: filter by chosen accountant
+    const impersonateId = isAdmin ? data?.asAccountantId : undefined;
+    const filterAccountantId = impersonateId ?? (!isAdmin && partner ? partner.airtable_accountant_id : undefined);
     const query: Record<string, string> = { pageSize: "100" };
-    if (!isAdmin && partner) {
-      query["filterByFormula"] = `FIND('${escapeFormula(partner.airtable_accountant_id)}', ARRAYJOIN({Assigned Accountant})) > 0`;
+    if (filterAccountantId) {
+      query["filterByFormula"] = `FIND('${escapeFormula(filterAccountantId)}', ARRAYJOIN({Assigned Accountant})) > 0`;
     }
-    const data = await airtableGet(TABLES.jobs, query);
-    return { jobs: data.records as AirtableRecord<JobFields>[], isAdmin };
+    const data2 = await airtableGet(TABLES.jobs, query);
+    return { jobs: data2.records as AirtableRecord<JobFields>[], isAdmin };
   });
 
 export const getJob = createServerFn({ method: "GET" })

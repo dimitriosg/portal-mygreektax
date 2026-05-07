@@ -2,11 +2,11 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { listJobs } from "@/lib/jobs.functions";
+import { listJobs, listAccountants } from "@/lib/jobs.functions";
 import { useAuth } from "@/lib/auth-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { JOB_STATUSES } from "@/lib/airtable.server";
+import { JOB_STATUSES } from "@/lib/airtable-shared";
 
 export const Route = createFileRoute("/dashboard")({ component: Dashboard });
 
@@ -14,15 +14,22 @@ function Dashboard() {
   const { user, loading, isAdmin, isPartner } = useAuth();
   const navigate = useNavigate();
   const [filter, setFilter] = useState<string>("all");
+  const [asPartner, setAsPartner] = useState<string>("");
   useEffect(() => {
     if (!loading && !user) navigate({ to: "/login" });
   }, [loading, user, navigate]);
 
   const fetchJobs = useServerFn(listJobs);
+  const fetchAccountants = useServerFn(listAccountants);
   const { data, isLoading, error } = useQuery({
-    queryKey: ["jobs", user?.id],
-    queryFn: () => fetchJobs(),
+    queryKey: ["jobs", user?.id, asPartner],
+    queryFn: () => fetchJobs({ data: asPartner ? { asAccountantId: asPartner } : {} }),
     enabled: !!user,
+  });
+  const accQ = useQuery({
+    queryKey: ["accountants"],
+    queryFn: () => fetchAccountants(),
+    enabled: !!isAdmin,
   });
 
   if (!user) return null;
@@ -36,9 +43,28 @@ function Dashboard() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Your jobs</h1>
           <p className="text-sm text-muted-foreground">
-            {isAdmin ? "Showing all jobs (admin view)" : isPartner ? "Showing jobs assigned to you" : "No partner profile linked yet"}
+            {isAdmin
+              ? asPartner
+                ? `Viewing as partner: ${accQ.data?.accountants.find((a) => a.id === asPartner)?.fields.Name ?? asPartner}`
+                : "Showing all jobs (admin view)"
+              : isPartner
+                ? "Showing jobs assigned to you"
+                : "No partner profile linked yet"}
           </p>
         </div>
+        <div className="flex gap-2">
+        {isAdmin && (
+          <select
+            value={asPartner}
+            onChange={(e) => setAsPartner(e.target.value)}
+            className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+          >
+            <option value="">All partners (admin)</option>
+            {accQ.data?.accountants.map((a) => (
+              <option key={a.id} value={a.id}>View as: {a.fields.Name ?? a.id}</option>
+            ))}
+          </select>
+        )}
         <select
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
@@ -49,6 +75,7 @@ function Dashboard() {
             <option key={s} value={s}>{s}</option>
           ))}
         </select>
+        </div>
       </div>
 
       {isLoading && <p className="mt-8 text-sm text-muted-foreground">Loading…</p>}
