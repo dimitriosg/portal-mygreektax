@@ -257,7 +257,26 @@ export const createJob = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { isAdmin } = await getRoleAndPartner(context.userId);
     if (!isAdmin) throw new Error("Forbidden");
+    // Compute next Job Code (e.g. JB105) by scanning existing codes.
+    const existing = await airtableGet(TABLES.jobs, {
+      pageSize: "100",
+      fields: "Job Code",
+    });
+    const records = (existing.records ?? []) as AirtableRecord<JobFields>[];
+    let maxN = 0;
+    let prefix = "JB";
+    for (const r of records) {
+      const code = r.fields["Job Code"];
+      if (!code) continue;
+      const m = /^([A-Za-z]+)(\d+)$/.exec(code);
+      if (!m) continue;
+      prefix = m[1];
+      const n = parseInt(m[2], 10);
+      if (n > maxN) maxN = n;
+    }
+    const nextCode = `${prefix}${maxN + 1}`;
     const fields: Record<string, unknown> = {
+      "Job Code": nextCode,
       Client: [data.clientId],
       "Service Catalog": [data.serviceId],
     };
