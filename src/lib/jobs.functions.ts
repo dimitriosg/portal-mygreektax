@@ -132,7 +132,7 @@ export const createClientToken = createServerFn({ method: "POST" })
     const email = client.fields.Email;
     if (!email) throw new Error("Client has no email");
     const token = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
-    const expires = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    const expires = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
     const { error } = await supabaseAdmin.from("client_tokens").insert({
       token,
       airtable_job_id: data.jobId,
