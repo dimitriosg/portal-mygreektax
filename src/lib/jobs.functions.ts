@@ -194,6 +194,61 @@ export const listAccountants = createServerFn({ method: "GET" })
     return { accountants: data.records as AirtableRecord<AccountantFields>[] };
   });
 
+export const getJobOrder = createServerFn({ method: "GET" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d?: { scopeKey?: string }) =>
+    z.object({ scopeKey: z.string().min(1).max(100).default("default") }).parse(d ?? {}),
+  )
+  .handler(async ({ data, context }) => {
+    const { data: row } = await supabaseAdmin
+      .from("job_order_preferences")
+      .select("ordered_job_ids")
+      .eq("user_id", context.userId)
+      .eq("scope_key", data.scopeKey)
+      .maybeSingle();
+    return { orderedJobIds: (row?.ordered_job_ids ?? []) as string[] };
+  });
+
+export const saveJobOrder = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d: { scopeKey?: string; orderedJobIds: string[] }) =>
+    z
+      .object({
+        scopeKey: z.string().min(1).max(100).default("default"),
+        orderedJobIds: z.array(z.string().min(1).max(50)).max(1000),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { error } = await supabaseAdmin
+      .from("job_order_preferences")
+      .upsert(
+        {
+          user_id: context.userId,
+          scope_key: data.scopeKey,
+          ordered_job_ids: data.orderedJobIds,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "user_id,scope_key" },
+      );
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const clearJobOrder = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d?: { scopeKey?: string }) =>
+    z.object({ scopeKey: z.string().min(1).max(100).default("default") }).parse(d ?? {}),
+  )
+  .handler(async ({ data, context }) => {
+    await supabaseAdmin
+      .from("job_order_preferences")
+      .delete()
+      .eq("user_id", context.userId)
+      .eq("scope_key", data.scopeKey);
+    return { ok: true };
+  });
+
 export const assignPartner = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((d: { jobId: string; accountantId: string }) =>
