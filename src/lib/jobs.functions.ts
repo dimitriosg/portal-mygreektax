@@ -94,8 +94,71 @@ export const updateJob = createServerFn({ method: "POST" })
     if (data.status) fields["Status"] = data.status;
     if (data.notes !== undefined) fields["Notes"] = data.notes;
     if (Object.keys(fields).length === 0) return { ok: true };
+    const previousStatus = job.fields.Status ?? null;
+    const previousNotes = job.fields.Notes ?? "";
     await airtablePatch(TABLES.jobs, data.jobId, fields);
+
+    // Resolve actor identity
+    const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(userId);
+    const actorEmail = authUser?.user?.email ?? null;
+    const actorName = partner?.full_name ?? actorEmail ?? null;
+
+    type JobEventInsert = {
+      airtable_job_id: string;
+      user_id: string;
+      actor_email: string | null;
+      actor_name: string | null;
+      event_type: "status_change" | "comment";
+      from_status?: string | null;
+      to_status?: string | null;
+      comment?: string | null;
+    };
+    const events: JobEventInsert[] = [];
+    if (data.status && data.status !== previousStatus) {
+      events.push({
+        airtable_job_id: data.jobId,
+        user_id: userId,
+        actor_email: actorEmail,
+        actor_name: actorName,
+        event_type: "status_change",
+        from_status: previousStatus,
+        to_status: data.status,
+      });
+    }
+    if (data.notes !== undefined && data.notes.trim() !== previousNotes.trim() && data.notes.trim() !== "") {
+      events.push({
+        airtable_job_id: data.jobId,
+        user_id: userId,
+        actor_email: actorEmail,
+        actor_name: actorName,
+        event_type: "comment",
+        comment: data.notes,
+      });
+    }
+    if (events.length > 0) {
+      await supabaseAdmin.from("job_events").insert(events);
+    }
     return { ok: true };
+  });
+
+export const listJobEvents = createServerFn({ method: "GET" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d: { jobId: string }) => z.object({ jobId: z.string().min(1).max(50) }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { userId } = context;
+    const { isAdmin, partner } = await getRoleAndPartner(userId);
+    if (!isAdmin) {
+      const job = (await airtableGet(`${TABLES.jobs}/${data.jobId}`)) as AirtableRecord<JobFields>;
+      const allowed = partner && job.fields["Assigned Accountant"]?.includes(partner.airtable_accountant_id);
+      if (!allowed) throw new Error("Forbidden");
+    }
+    const { data: rows, error } = await supabaseAdmin
+      .from("job_events")
+      .select("*")
+      .eq("airtable_job_id", data.jobId)
+      .order("created_at", { ascending: false });
+    if (error) throw new Error(error.message);
+    return { events: rows ?? [] };
   });
 
 export const listAccountants = createServerFn({ method: "GET" })
