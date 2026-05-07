@@ -59,16 +59,18 @@ export const getMyContext = createServerFn({ method: "GET" })
     };
   });
 
-export const promoteSelfToAdmin = createServerFn({ method: "POST" })
+// First signed-up user (no admins yet) automatically becomes admin.
+export const claimFirstAdmin = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { secret: string }) => z.object({ secret: z.string().min(1).max(200) }).parse(d))
-  .handler(async ({ data, context }) => {
-    const adminSecret = process.env.ADMIN_BOOTSTRAP_SECRET;
-    if (!adminSecret) throw new Error("Admin bootstrap not configured");
-    if (data.secret !== adminSecret) throw new Error("Invalid secret");
+  .handler(async ({ context }) => {
+    const { count } = await supabaseAdmin
+      .from("user_roles")
+      .select("*", { count: "exact", head: true })
+      .eq("role", "admin");
+    if ((count ?? 0) > 0) return { promoted: false };
     const { error } = await supabaseAdmin
       .from("user_roles")
       .insert({ user_id: context.userId, role: "admin" });
     if (error && !error.message.includes("duplicate")) throw new Error(error.message);
-    return { ok: true };
+    return { promoted: true };
   });
