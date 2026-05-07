@@ -257,23 +257,26 @@ export const createJob = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { isAdmin } = await getRoleAndPartner(context.userId);
     if (!isAdmin) throw new Error("Forbidden");
-    // Compute next Job Code (e.g. JB105) by scanning existing codes.
-    const existing = await airtableGet(TABLES.jobs, {
-      pageSize: "100",
-      fields: "Job Code",
-    });
-    const records = (existing.records ?? []) as AirtableRecord<JobFields>[];
+    // Compute next Job Code (e.g. JB105) by scanning all existing codes.
     let maxN = 0;
     let prefix = "JB";
-    for (const r of records) {
-      const code = r.fields["Job Code"];
-      if (!code) continue;
-      const m = /^([A-Za-z]+)(\d+)$/.exec(code);
-      if (!m) continue;
-      prefix = m[1];
-      const n = parseInt(m[2], 10);
-      if (n > maxN) maxN = n;
-    }
+    let offset: string | undefined;
+    do {
+      const q: Record<string, string> = { pageSize: "100", "fields[]": "Job Code" };
+      if (offset) q.offset = offset;
+      const page = await airtableGet(TABLES.jobs, q);
+      const recs = (page.records ?? []) as AirtableRecord<JobFields>[];
+      for (const r of recs) {
+        const code = r.fields["Job Code"];
+        if (!code) continue;
+        const m = /^([A-Za-z]+)(\d+)$/.exec(code);
+        if (!m) continue;
+        prefix = m[1];
+        const n = parseInt(m[2], 10);
+        if (n > maxN) maxN = n;
+      }
+      offset = page.offset;
+    } while (offset);
     const nextCode = `${prefix}${maxN + 1}`;
     const fields: Record<string, unknown> = {
       "Job Code": nextCode,
