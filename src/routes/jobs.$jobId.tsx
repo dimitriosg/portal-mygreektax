@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { getJob, updateJob, createClientToken } from "@/lib/jobs.functions";
+import { getJob, updateJob, createClientToken, listJobEvents } from "@/lib/jobs.functions";
 import { JOB_STATUSES } from "@/lib/airtable-shared";
 import { useAuth } from "@/lib/auth-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,11 +24,17 @@ function JobDetail() {
   const fetchJob = useServerFn(getJob);
   const updateFn = useServerFn(updateJob);
   const tokenFn = useServerFn(createClientToken);
+  const fetchEvents = useServerFn(listJobEvents);
   const qc = useQueryClient();
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["job", jobId],
     queryFn: () => fetchJob({ data: { jobId } }),
+    enabled: !!user,
+  });
+  const eventsQ = useQuery({
+    queryKey: ["job-events", jobId],
+    queryFn: () => fetchEvents({ data: { jobId } }),
     enabled: !!user,
   });
 
@@ -48,6 +54,7 @@ function JobDetail() {
       toast.success("Job updated");
       qc.invalidateQueries({ queryKey: ["job", jobId] });
       qc.invalidateQueries({ queryKey: ["jobs"] });
+      qc.invalidateQueries({ queryKey: ["job-events", jobId] });
     },
     onError: (e) => toast.error((e as Error).message),
   });
