@@ -9,7 +9,15 @@ export const Route = createFileRoute("/")({
 function Index() {
   return (
     <section className="mx-auto max-w-3xl px-6 py-20 text-center">
-      <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl" dangerouslySetInnerHTML={{ __html: "Are you a customer? <br> Open the link from the email we sent you.<br><br>Or, contact us directly for further info." }} />
+      <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">
+        Are you a customer?
+      </h1>
+      <p className="mt-4 text-muted-foreground">
+        Open the link from the email we sent you.
+        <br />
+        <br />
+        Or, contact us directly for further info.
+      </p>
       <div className="mt-8 flex justify-center gap-3">
         <Button asChild>
           <Link to="/login">Partner sign in</Link>
