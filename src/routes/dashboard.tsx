@@ -108,7 +108,11 @@ function Dashboard() {
                 <div className="flex flex-wrap gap-x-6 gap-y-1">
                   <span>Client: {job.fields["Client Code"]?.[0] ?? "—"}</span>
                   <span>SLA: {job.fields["SLA Deadline"] ?? "—"}</span>
-                  <span>Fee: €{job.fields["Client Fee (\u20ac)"] ?? "—"}</span>
+                  <span>
+                    {isAdmin && !asPartner
+                      ? `Client fee: €${job.fields["Client Fee (\u20ac)"] ?? "—"}`
+                      : `Your fee: €${job.fields["Accountant Fee (\u20ac)"] ?? "—"}`}
+                  </span>
                 </div>
               </CardContent>
             </Card>
