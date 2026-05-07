@@ -9,42 +9,75 @@ export const TABLES = {
   accountants: "tblwNZNcrnaJMaq1w",
 } as const;
 
+const GENERIC_ERROR = "Service temporarily unavailable. Please try again.";
+
 function authHeaders() {
   const LOVABLE_API_KEY = process.env.LOVABLE_API_KEY;
   const AIRTABLE_API_KEY = process.env.AIRTABLE_API_KEY;
-  if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
-  if (!AIRTABLE_API_KEY) throw new Error("AIRTABLE_API_KEY is not configured");
+  if (!LOVABLE_API_KEY) {
+    console.error("[airtable] LOVABLE_API_KEY is not configured");
+    throw new Error(GENERIC_ERROR);
+  }
+  if (!AIRTABLE_API_KEY) {
+    console.error("[airtable] AIRTABLE_API_KEY is not configured");
+    throw new Error(GENERIC_ERROR);
+  }
   return {
     Authorization: `Bearer ${LOVABLE_API_KEY}`,
     "X-Connection-Api-Key": AIRTABLE_API_KEY,
   };
 }
 
+async function logAndThrow(method: string, path: string, res: Response): Promise<never> {
+  let body = "";
+  try { body = await res.text(); } catch { /* ignore */ }
+  console.error(`[airtable] ${method} ${path} failed [${res.status}]: ${body}`);
+  throw new Error(GENERIC_ERROR);
+}
+
 export async function airtableGet(path: string, query?: Record<string, string>) {
   const url = new URL(`${GATEWAY_URL}/v0/${BASE_ID}/${path}`);
   if (query) for (const [k, v] of Object.entries(query)) url.searchParams.set(k, v);
-  const res = await fetch(url.toString(), { headers: authHeaders() });
-  if (!res.ok) throw new Error(`Airtable GET ${path} failed [${res.status}]: ${await res.text()}`);
+  let res: Response;
+  try {
+    res = await fetch(url.toString(), { headers: authHeaders() });
+  } catch (e) {
+    console.error(`[airtable] GET ${path} network error:`, e);
+    throw new Error(GENERIC_ERROR);
+  }
+  if (!res.ok) await logAndThrow("GET", path, res);
   return res.json();
 }
 
 export async function airtablePatch(table: string, recordId: string, fields: Record<string, unknown>) {
-  const res = await fetch(`${GATEWAY_URL}/v0/${BASE_ID}/${table}/${recordId}`, {
-    method: "PATCH",
-    headers: { ...authHeaders(), "Content-Type": "application/json" },
-    body: JSON.stringify({ fields }),
-  });
-  if (!res.ok) throw new Error(`Airtable PATCH failed [${res.status}]: ${await res.text()}`);
+  let res: Response;
+  try {
+    res = await fetch(`${GATEWAY_URL}/v0/${BASE_ID}/${table}/${recordId}`, {
+      method: "PATCH",
+      headers: { ...authHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ fields }),
+    });
+  } catch (e) {
+    console.error(`[airtable] PATCH ${table}/${recordId} network error:`, e);
+    throw new Error(GENERIC_ERROR);
+  }
+  if (!res.ok) await logAndThrow("PATCH", `${table}/${recordId}`, res);
   return res.json();
 }
 
 export async function airtablePost(table: string, fields: Record<string, unknown>) {
-  const res = await fetch(`${GATEWAY_URL}/v0/${BASE_ID}/${table}`, {
-    method: "POST",
-    headers: { ...authHeaders(), "Content-Type": "application/json" },
-    body: JSON.stringify({ records: [{ fields }], typecast: true }),
-  });
-  if (!res.ok) throw new Error(`Airtable POST failed [${res.status}]: ${await res.text()}`);
+  let res: Response;
+  try {
+    res = await fetch(`${GATEWAY_URL}/v0/${BASE_ID}/${table}`, {
+      method: "POST",
+      headers: { ...authHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ records: [{ fields }], typecast: true }),
+    });
+  } catch (e) {
+    console.error(`[airtable] POST ${table} network error:`, e);
+    throw new Error(GENERIC_ERROR);
+  }
+  if (!res.ok) await logAndThrow("POST", table, res);
   const json = (await res.json()) as { records: Array<{ id: string; fields: Record<string, unknown> }> };
   return json.records[0];
 }
