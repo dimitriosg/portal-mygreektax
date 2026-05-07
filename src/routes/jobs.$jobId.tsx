@@ -86,7 +86,9 @@ function JobDetail() {
           <div><div className="text-muted-foreground">Client code</div><div>{j["Client Code"]?.[0] ?? "—"}</div></div>
           <div><div className="text-muted-foreground">Date sent</div><div>{j["Date Sent"] ?? "—"}</div></div>
           <div><div className="text-muted-foreground">SLA deadline</div><div>{j["SLA Deadline"] ?? "—"}</div></div>
-          <div><div className="text-muted-foreground">Client fee</div><div>€{j["Client Fee (\u20ac)"] ?? "—"}</div></div>
+          {isAdmin && (
+            <div><div className="text-muted-foreground">Client fee</div><div>€{j["Client Fee (\u20ac)"] ?? "—"}</div></div>
+          )}
           <div><div className="text-muted-foreground">Your fee</div><div>€{j["Accountant Fee (\u20ac)"] ?? "—"}</div></div>
           <div><div className="text-muted-foreground">Category</div><div>{j.Category?.[0] ?? "—"}</div></div>
           <div><div className="text-muted-foreground">Tier</div><div>{j.Tier?.[0] ?? "—"}</div></div>
