@@ -365,7 +365,7 @@ function JobCardInner({
               code
             )}
           </span>
-          <span>SLA: {job.fields["SLA Deadline"] ?? "—"}</span>
+          <span>SLA: {formatDate(job.fields["SLA Deadline"])}</span>
           <span>
             {isAdmin && !asPartner
               ? `Client fee: €${job.fields["Client Fee (\u20ac)"] ?? "—"}`
