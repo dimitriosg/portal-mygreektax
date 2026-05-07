@@ -127,9 +127,9 @@ function AppShell() {
   return (
     <div className="min-h-screen flex flex-col bg-background text-foreground">
       <header className="border-b border-border">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-3">
           <Link to="/" className="font-semibold tracking-tight">My Greek Tax</Link>
-          <nav className="flex items-center gap-4 text-sm">
+          <nav className="flex flex-wrap items-center gap-3 sm:gap-4 text-sm">
             {!loading && user ? (
               <>
                 <Link to="/dashboard" activeProps={{ className: "font-semibold" }}>Dashboard</Link>

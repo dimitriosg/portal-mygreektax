@@ -38,8 +38,8 @@ function Dashboard() {
   const filtered = filter === "all" ? jobs : jobs.filter((j) => j.fields.Status === filter);
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8">
-      <div className="flex items-center justify-between">
+    <div className="mx-auto max-w-6xl px-4 py-6 sm:py-8">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Your jobs</h1>
           <p className="text-sm text-muted-foreground">
@@ -52,7 +52,7 @@ function Dashboard() {
                 : "No partner profile linked yet"}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-col sm:flex-row gap-2">
         {isAdmin && (
           <select
             value={asPartner}

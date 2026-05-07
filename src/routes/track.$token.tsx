@@ -17,10 +17,10 @@ function TrackPage() {
     queryFn: () => fetchTracking({ data: { token } }),
   });
 
-  if (isLoading) return <p className="mx-auto max-w-2xl px-4 py-12 text-sm text-muted-foreground">Loading…</p>;
+  if (isLoading) return <p className="mx-auto max-w-2xl px-4 py-8 text-sm text-muted-foreground">Loading…</p>;
   if (error) {
     return (
-      <div className="mx-auto max-w-2xl px-4 py-12">
+      <div className="mx-auto max-w-2xl px-4 py-8 sm:py-12">
         <h1 className="text-xl font-semibold">Link not available</h1>
         <p className="mt-2 text-sm text-muted-foreground">{(error as Error).message}</p>
       </div>
@@ -31,11 +31,11 @@ function TrackPage() {
   const currentIndex = STAGES.indexOf(data.status);
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-12 space-y-6">
+    <div className="mx-auto max-w-2xl px-4 py-6 sm:py-12 space-y-5 sm:space-y-6">
       <div>
         <p className="text-sm text-muted-foreground">My Greek Tax · Job tracker</p>
-        <h1 className="mt-1 text-3xl font-semibold tracking-tight">Hello {data.clientName}</h1>
-        <p className="mt-1 text-muted-foreground">
+        <h1 className="mt-1 text-2xl sm:text-3xl font-semibold tracking-tight break-words">Hello {data.clientName}</h1>
+        <p className="mt-1 text-sm sm:text-base text-muted-foreground">
           Here is the live status of <span className="font-medium text-foreground">{data.serviceName}</span>{" "}
           ({data.jobCode}).
         </p>
@@ -51,11 +51,11 @@ function TrackPage() {
             </div>
             <Progress value={data.progress} />
           </div>
-          <ol className="space-y-2 text-sm">
+          <ol className="space-y-3 text-sm">
             {STAGES.map((s, i) => (
-              <li key={s} className="flex items-center gap-2">
+              <li key={s} className="flex items-center gap-3">
                 <span
-                  className={`h-2.5 w-2.5 rounded-full ${
+                  className={`h-3 w-3 shrink-0 rounded-full ${
                     i <= currentIndex && currentIndex >= 0 ? "bg-primary" : "bg-muted"
                   }`}
                 />
@@ -69,7 +69,7 @@ function TrackPage() {
       </Card>
 
       <Card>
-        <CardContent className="grid grid-cols-2 gap-4 py-4 text-sm">
+        <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 py-4 text-sm">
           <div><div className="text-muted-foreground">Started</div><div>{data.dateSent ?? "—"}</div></div>
           <div><div className="text-muted-foreground">Expected by</div><div>{data.sla ?? "—"}</div></div>
         </CardContent>
