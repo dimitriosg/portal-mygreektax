@@ -86,6 +86,33 @@ export type Database = {
         }
         Relationships: []
       }
+      job_order_preferences: {
+        Row: {
+          created_at: string
+          id: string
+          ordered_job_ids: string[]
+          scope_key: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          ordered_job_ids?: string[]
+          scope_key: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          ordered_job_ids?: string[]
+          scope_key?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       partner_profiles: {
         Row: {
           airtable_accountant_id: string
