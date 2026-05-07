@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { listJobs, listAccountants } from "@/lib/jobs.functions";
 import { useAuth } from "@/lib/auth-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge, TierBadge } from "@/lib/badges";
 import { JOB_STATUSES } from "@/lib/airtable-shared";
 
 export const Route = createFileRoute("/dashboard")({ component: Dashboard });
@@ -101,7 +101,10 @@ function Dashboard() {
                       {job.fields["Service Name"]?.[0] ?? "—"}
                     </span>
                   </CardTitle>
-                  <Badge variant="secondary">{job.fields.Status ?? "—"}</Badge>
+                  <div className="flex items-center gap-2">
+                    <TierBadge tier={job.fields.Tier?.[0]} />
+                    <StatusBadge status={job.fields.Status} />
+                  </div>
                 </div>
               </CardHeader>
               <CardContent className="text-sm text-muted-foreground">
