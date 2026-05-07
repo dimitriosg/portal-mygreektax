@@ -81,25 +81,4 @@ export type ClientFields = {
   Notes?: string;
 };
 
-export const JOB_STATUSES = [
-  "To Assign",
-  "Sent",
-  "In Progress",
-  "Delivered",
-  "Invoiced",
-  "Paid",
-  "Completed",
-  "Pending",
-] as const;
-
-// Maps job status to client-facing progress percentage on the tracking page.
-export const STATUS_PROGRESS: Record<string, number> = {
-  "To Assign": 5,
-  Sent: 15,
-  "In Progress": 40,
-  Pending: 50,
-  Delivered: 70,
-  Invoiced: 85,
-  Paid: 95,
-  Completed: 100,
-};
+export { JOB_STATUSES, STATUS_PROGRESS } from "./airtable-shared";
