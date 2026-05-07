@@ -88,6 +88,7 @@ function AdminPage() {
             <thead className="bg-muted/50 text-left">
               <tr>
                 <th className="px-3 py-2">Job</th>
+                <th className="px-3 py-2">Client</th>
                 <th className="px-3 py-2">Service</th>
                 <th className="px-3 py-2">Tier</th>
                 <th className="px-3 py-2">Status</th>
@@ -99,12 +100,18 @@ function AdminPage() {
             <tbody>
               {jobs.map((job) => {
                 const currentAcc = job.fields["Assigned Accountant"]?.[0] ?? "";
+                const clientId = job.fields.Client?.[0] ?? "";
+                const clientName = jobsQ.data?.clientNames?.[clientId];
                 return (
                   <tr key={job.id} className="border-t border-border">
                     <td className="px-3 py-2">
                       <Link to="/jobs/$jobId" params={{ jobId: job.id }} className="font-medium hover:underline">
                         {job.fields["Job Code"]}
                       </Link>
+                    </td>
+                    <td className="px-3 py-2">
+                      <div>{clientName ?? "—"}</div>
+                      <div className="text-xs text-muted-foreground">{job.fields["Client Code"]?.[0] ?? ""}</div>
                     </td>
                     <td className="px-3 py-2 text-muted-foreground">{job.fields["Service Name"]?.[0] ?? "—"}</td>
                     <td className="px-3 py-2"><TierBadge tier={job.fields.Tier?.[0]} /></td>
