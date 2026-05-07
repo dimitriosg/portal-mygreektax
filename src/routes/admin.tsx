@@ -157,7 +157,7 @@ function AdminPage() {
                     <option value="">— Select service —</option>
                     {(servicesQ.data?.services ?? []).map((s) => (
                       <option key={s.id} value={s.id}>
-                        {[s.code || s.name, s.tier, s.category].filter(Boolean).join(" / ")}
+                        {[s.code, s.name, s.tier, s.category].filter(Boolean).join(" / ")}
                       </option>
                     ))}
                   </select>
