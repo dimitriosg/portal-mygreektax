@@ -11,16 +11,26 @@ import { JOB_STATUSES } from "@/lib/airtable-shared";
 export const Route = createFileRoute("/dashboard")({ component: Dashboard });
 
 function Dashboard() {
-  const { user, loading, isAdmin, isPartner } = useAuth();
+  const {
+    user,
+    loading,
+    isAdmin,
+    isRealAdmin,
+    isPartner,
+    impersonatingId,
+    impersonatingName,
+    startImpersonation,
+    stopImpersonation,
+  } = useAuth();
   const navigate = useNavigate();
   const [filter, setFilter] = useState<string>("all");
-  const [asPartner, setAsPartner] = useState<string>("");
   useEffect(() => {
     if (!loading && !user) navigate({ to: "/login" });
   }, [loading, user, navigate]);
 
   const fetchJobs = useServerFn(listJobs);
   const fetchAccountants = useServerFn(listAccountants);
+  const asPartner = impersonatingId ?? "";
   const { data, isLoading, error } = useQuery({
     queryKey: ["jobs", user?.id, asPartner],
     queryFn: () => fetchJobs({ data: asPartner ? { asAccountantId: asPartner } : {} }),
@@ -29,7 +39,7 @@ function Dashboard() {
   const accQ = useQuery({
     queryKey: ["accountants"],
     queryFn: () => fetchAccountants(),
-    enabled: !!isAdmin,
+    enabled: !!isRealAdmin,
   });
 
   if (!user) return null;
@@ -44,19 +54,27 @@ function Dashboard() {
           <h1 className="text-2xl font-semibold tracking-tight">Your jobs</h1>
           <p className="text-sm text-muted-foreground">
             {isAdmin
-              ? asPartner
-                ? `Viewing as partner: ${accQ.data?.accountants.find((a) => a.id === asPartner)?.fields.Name ?? asPartner}`
-                : "Showing all jobs (admin view)"
-              : isPartner
+              ? "Showing all jobs (admin view)"
+              : impersonatingId
+                ? `Impersonating partner: ${impersonatingName ?? impersonatingId}`
+                : isPartner
                 ? "Showing jobs assigned to you"
                 : "No partner profile linked yet"}
           </p>
         </div>
         <div className="flex flex-col sm:flex-row gap-2">
-        {isAdmin && (
+        {isRealAdmin && (
           <select
             value={asPartner}
-            onChange={(e) => setAsPartner(e.target.value)}
+            onChange={(e) => {
+              const id = e.target.value;
+              if (!id) {
+                stopImpersonation();
+              } else {
+                const name = accQ.data?.accountants.find((a) => a.id === id)?.fields.Name ?? id;
+                startImpersonation(id, name);
+              }
+            }}
             className="rounded-md border border-input bg-background px-3 py-2 text-sm"
           >
             <option value="">All partners (admin)</option>
