@@ -104,6 +104,32 @@ function AdminPage() {
   const jobs = jobsQ.data?.jobs ?? [];
   const accountants = accQ.data?.accountants ?? [];
 
+  const [filter, setFilter] = useState("");
+  const filteredJobs = (() => {
+    const q = filter.trim().toLowerCase();
+    if (!q) return jobs;
+    return jobs.filter((job) => {
+      const clientId = job.fields.Client?.[0] ?? "";
+      const clientName = jobsQ.data?.clientNames?.[clientId] ?? "";
+      const accId = job.fields["Assigned Accountant"]?.[0];
+      const accName = accountants.find((a) => a.id === accId)?.fields.Name ?? "";
+      const haystack = [
+        job.fields["Job Code"],
+        clientName,
+        job.fields["Client Code"]?.[0],
+        job.fields["Service Name"]?.[0],
+        job.fields.Tier?.[0],
+        job.fields.Status,
+        job.fields["SLA Deadline"],
+        accName,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(q);
+    });
+  })();
+
   const counts = jobs.reduce<Record<string, number>>((acc, j) => {
     const s = j.fields.Status ?? "—";
     acc[s] = (acc[s] ?? 0) + 1;
@@ -244,7 +270,15 @@ function AdminPage() {
       </div>
 
       <div>
-        <h2 className="mb-3 text-lg font-semibold">All jobs</h2>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-lg font-semibold">All jobs</h2>
+          <Input
+            placeholder="Filter jobs (code, client, service, status, partner…)"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            className="w-full sm:max-w-xs"
+          />
+        </div>
         <div className="overflow-x-auto rounded-lg border border-border">
           <table className="w-full min-w-[640px] text-sm">
             <thead className="bg-muted/50 text-left">
@@ -260,7 +294,7 @@ function AdminPage() {
               </tr>
             </thead>
             <tbody>
-              {jobs.map((job) => {
+              {filteredJobs.map((job) => {
                 const currentAcc = job.fields["Assigned Accountant"]?.[0] ?? "";
                 const clientId = job.fields.Client?.[0] ?? "";
                 const clientName = jobsQ.data?.clientNames?.[clientId];
