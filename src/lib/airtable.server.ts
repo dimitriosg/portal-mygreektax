@@ -38,6 +38,17 @@ export async function airtablePatch(table: string, recordId: string, fields: Rec
   return res.json();
 }
 
+export async function airtablePost(table: string, fields: Record<string, unknown>) {
+  const res = await fetch(`${GATEWAY_URL}/v0/${BASE_ID}/${table}`, {
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ records: [{ fields }], typecast: true }),
+  });
+  if (!res.ok) throw new Error(`Airtable POST failed [${res.status}]: ${await res.text()}`);
+  const json = (await res.json()) as { records: Array<{ id: string; fields: Record<string, unknown> }> };
+  return json.records[0];
+}
+
 export type AirtableRecord<T = Record<string, unknown>> = {
   id: string;
   createdTime: string;
