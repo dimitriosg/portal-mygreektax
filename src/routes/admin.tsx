@@ -99,16 +99,28 @@ function AdminPage() {
     onError: (e) => toast.error((e as Error).message),
   });
 
+  const [filter, setFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("");
+  const [tierFilter, setTierFilter] = useState<string>("");
+  const [partnerFilter, setPartnerFilter] = useState<string>("");
+
   if (!isAdmin) return null;
 
   const jobs = jobsQ.data?.jobs ?? [];
   const accountants = accQ.data?.accountants ?? [];
 
-  const [filter, setFilter] = useState("");
+  const tiers = Array.from(new Set(jobs.map((j) => j.fields.Tier?.[0]).filter(Boolean))) as string[];
+
   const filteredJobs = (() => {
     const q = filter.trim().toLowerCase();
-    if (!q) return jobs;
     return jobs.filter((job) => {
+      if (statusFilter && job.fields.Status !== statusFilter) return false;
+      if (tierFilter && job.fields.Tier?.[0] !== tierFilter) return false;
+      if (partnerFilter) {
+        const accId = job.fields["Assigned Accountant"]?.[0] ?? "";
+        if (partnerFilter === "__unassigned__" ? accId !== "" : accId !== partnerFilter) return false;
+      }
+      if (!q) return true;
       const clientId = job.fields.Client?.[0] ?? "";
       const clientName = jobsQ.data?.clientNames?.[clientId] ?? "";
       const accId = job.fields["Assigned Accountant"]?.[0];
@@ -272,12 +284,48 @@ function AdminPage() {
       <div>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-lg font-semibold">All jobs</h2>
-          <Input
-            placeholder="Filter jobs (code, client, service, status, partner…)"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            className="w-full sm:max-w-xs"
-          />
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              placeholder="Search…"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              className="w-full sm:w-56"
+            />
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="rounded border border-input bg-background px-2 py-2 text-sm"
+            >
+              <option value="">All statuses</option>
+              {JOB_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+            <select
+              value={tierFilter}
+              onChange={(e) => setTierFilter(e.target.value)}
+              className="rounded border border-input bg-background px-2 py-2 text-sm"
+            >
+              <option value="">All tiers</option>
+              {tiers.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <select
+              value={partnerFilter}
+              onChange={(e) => setPartnerFilter(e.target.value)}
+              className="rounded border border-input bg-background px-2 py-2 text-sm"
+            >
+              <option value="">All partners</option>
+              <option value="__unassigned__">Unassigned</option>
+              {accountants.map((a) => <option key={a.id} value={a.id}>{a.fields.Name ?? a.id}</option>)}
+            </select>
+            {(filter || statusFilter || tierFilter || partnerFilter) && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => { setFilter(""); setStatusFilter(""); setTierFilter(""); setPartnerFilter(""); }}
+              >
+                Clear
+              </Button>
+            )}
+          </div>
         </div>
         <div className="overflow-x-auto rounded-lg border border-border">
           <table className="w-full min-w-[640px] text-sm">
