@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { StatusBadge, TierBadge } from "@/lib/badges";
 import { toast } from "sonner";
+import { formatDate, formatDateTime } from "@/lib/utils";
 
 export const Route = createFileRoute("/jobs/$jobId")({ component: JobDetail });
 
@@ -100,8 +101,8 @@ function JobDetail() {
         <CardContent className="grid grid-cols-2 gap-4 text-sm">
           <div><div className="text-muted-foreground">Client</div><div>{data.client?.fields["Full Name"] ?? "—"}</div></div>
           <div><div className="text-muted-foreground">Client code</div><div>{j["Client Code"]?.[0] ?? "—"}</div></div>
-          <div><div className="text-muted-foreground">Date sent</div><div>{j["Date Sent"] ?? "—"}</div></div>
-          <div><div className="text-muted-foreground">SLA deadline</div><div>{j["SLA Deadline"] ?? "—"}</div></div>
+          <div><div className="text-muted-foreground">Date sent</div><div>{formatDate(j["Date Sent"])}</div></div>
+          <div><div className="text-muted-foreground">SLA deadline</div><div>{formatDate(j["SLA Deadline"])}</div></div>
           {isAdmin && (
             <div><div className="text-muted-foreground">Client fee</div><div>€{j["Client Fee (\u20ac)"] ?? "—"}</div></div>
           )}
@@ -155,7 +156,7 @@ function JobDetail() {
                   <span className="font-medium text-foreground">
                     {ev.actor_name ?? ev.actor_email ?? "Someone"}
                   </span>
-                  <span>{new Date(ev.created_at).toLocaleString()}</span>
+                  <span>{formatDateTime(ev.created_at)}</span>
                 </div>
                 {ev.event_type === "status_change" ? (
                   <p className="mt-1 text-sm">

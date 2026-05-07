@@ -11,6 +11,7 @@ import {
   clearJobOrder,
 } from "@/lib/jobs.functions";
 import { useAuth } from "@/lib/auth-context";
+import { formatDate } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { StatusBadge, TierBadge } from "@/lib/badges";
@@ -365,7 +366,7 @@ function JobCardInner({
               code
             )}
           </span>
-          <span>SLA: {job.fields["SLA Deadline"] ?? "—"}</span>
+          <span>SLA: {formatDate(job.fields["SLA Deadline"])}</span>
           <span>
             {isAdmin && !asPartner
               ? `Client fee: €${job.fields["Client Fee (\u20ac)"] ?? "—"}`
