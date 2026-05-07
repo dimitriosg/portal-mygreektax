@@ -284,12 +284,48 @@ function AdminPage() {
       <div>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-lg font-semibold">All jobs</h2>
-          <Input
-            placeholder="Filter jobs (code, client, service, status, partner…)"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            className="w-full sm:max-w-xs"
-          />
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              placeholder="Search…"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              className="w-full sm:w-56"
+            />
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="rounded border border-input bg-background px-2 py-2 text-sm"
+            >
+              <option value="">All statuses</option>
+              {JOB_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+            <select
+              value={tierFilter}
+              onChange={(e) => setTierFilter(e.target.value)}
+              className="rounded border border-input bg-background px-2 py-2 text-sm"
+            >
+              <option value="">All tiers</option>
+              {tiers.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <select
+              value={partnerFilter}
+              onChange={(e) => setPartnerFilter(e.target.value)}
+              className="rounded border border-input bg-background px-2 py-2 text-sm"
+            >
+              <option value="">All partners</option>
+              <option value="__unassigned__">Unassigned</option>
+              {accountants.map((a) => <option key={a.id} value={a.id}>{a.fields.Name ?? a.id}</option>)}
+            </select>
+            {(filter || statusFilter || tierFilter || partnerFilter) && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => { setFilter(""); setStatusFilter(""); setTierFilter(""); setPartnerFilter(""); }}
+              >
+                Clear
+              </Button>
+            )}
+          </div>
         </div>
         <div className="overflow-x-auto rounded-lg border border-border">
           <table className="w-full min-w-[640px] text-sm">
