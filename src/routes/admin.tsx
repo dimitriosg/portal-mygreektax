@@ -28,6 +28,12 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { JOB_STATUSES } from "@/lib/airtable-shared";
 import { toast } from "sonner";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { CalendarIcon } from "lucide-react";
+import { format } from "date-fns";
+import { cn } from "@/lib/utils";
+import type { DateRange } from "react-day-picker";
 
 export const Route = createFileRoute("/admin")({ component: AdminPage });
 
@@ -103,6 +109,7 @@ function AdminPage() {
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [tierFilter, setTierFilter] = useState<string>("");
   const [partnerFilter, setPartnerFilter] = useState<string>("");
+  const [slaRange, setSlaRange] = useState<DateRange | undefined>(undefined);
 
   if (!isAdmin) return null;
 
@@ -119,6 +126,13 @@ function AdminPage() {
       if (partnerFilter) {
         const accId = job.fields["Assigned Accountant"]?.[0] ?? "";
         if (partnerFilter === "__unassigned__" ? accId !== "" : accId !== partnerFilter) return false;
+      }
+      if (slaRange?.from || slaRange?.to) {
+        const slaStr = job.fields["SLA Deadline"];
+        if (!slaStr) return false;
+        const sla = new Date(slaStr);
+        if (slaRange.from && sla < new Date(slaRange.from.toDateString())) return false;
+        if (slaRange.to && sla > new Date(new Date(slaRange.to).setHours(23, 59, 59, 999))) return false;
       }
       if (!q) return true;
       const clientId = job.fields.Client?.[0] ?? "";
@@ -316,11 +330,37 @@ function AdminPage() {
               <option value="__unassigned__">Unassigned</option>
               {accountants.map((a) => <option key={a.id} value={a.id}>{a.fields.Name ?? a.id}</option>)}
             </select>
-            {(filter || statusFilter || tierFilter || partnerFilter) && (
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={cn("justify-start font-normal", !slaRange?.from && "text-muted-foreground")}
+                >
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {slaRange?.from
+                    ? slaRange.to
+                      ? `${format(slaRange.from, "MMM d")} – ${format(slaRange.to, "MMM d, yyyy")}`
+                      : format(slaRange.from, "MMM d, yyyy")
+                    : "SLA range"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  mode="range"
+                  selected={slaRange}
+                  onSelect={setSlaRange}
+                  numberOfMonths={2}
+                  initialFocus
+                  className={cn("p-3 pointer-events-auto")}
+                />
+              </PopoverContent>
+            </Popover>
+            {(filter || statusFilter || tierFilter || partnerFilter || slaRange?.from) && (
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() => { setFilter(""); setStatusFilter(""); setTierFilter(""); setPartnerFilter(""); }}
+                onClick={() => { setFilter(""); setStatusFilter(""); setTierFilter(""); setPartnerFilter(""); setSlaRange(undefined); }}
               >
                 Clear
               </Button>
