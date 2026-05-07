@@ -41,12 +41,14 @@ export const listJobs = createServerFn({ method: "GET" })
     // Admin impersonation: filter by chosen accountant
     const impersonateId = isAdmin ? data?.asAccountantId : undefined;
     const filterAccountantId = impersonateId ?? (!isAdmin && partner ? partner.airtable_accountant_id : undefined);
-    const query: Record<string, string> = { pageSize: "100" };
+    const data2 = await airtableGet(TABLES.jobs, { pageSize: "100" });
+    let jobs = data2.records as AirtableRecord<JobFields>[];
     if (filterAccountantId) {
-      query["filterByFormula"] = `FIND('${escapeFormula(filterAccountantId)}', ARRAYJOIN({Assigned Accountant})) > 0`;
+      jobs = jobs.filter((j) =>
+        j.fields["Assigned Accountant"]?.includes(filterAccountantId),
+      );
     }
-    const data2 = await airtableGet(TABLES.jobs, query);
-    return { jobs: data2.records as AirtableRecord<JobFields>[], isAdmin };
+    return { jobs, isAdmin };
   });
 
 export const getJob = createServerFn({ method: "GET" })
