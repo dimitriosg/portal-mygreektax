@@ -134,6 +134,37 @@ function JobDetail() {
           </div>
         </CardContent>
       </Card>
+
+      <Card>
+        <CardHeader><CardTitle className="text-base">History</CardTitle></CardHeader>
+        <CardContent>
+          {eventsQ.isLoading && <p className="text-sm text-muted-foreground">Loading history…</p>}
+          {!eventsQ.isLoading && (eventsQ.data?.events.length ?? 0) === 0 && (
+            <p className="text-sm text-muted-foreground">No changes recorded yet.</p>
+          )}
+          <ol className="space-y-4">
+            {eventsQ.data?.events.map((ev) => (
+              <li key={ev.id} className="border-l-2 border-border pl-3">
+                <div className="flex flex-wrap items-baseline justify-between gap-2 text-xs text-muted-foreground">
+                  <span className="font-medium text-foreground">
+                    {ev.actor_name ?? ev.actor_email ?? "Someone"}
+                  </span>
+                  <span>{new Date(ev.created_at).toLocaleString()}</span>
+                </div>
+                {ev.event_type === "status_change" ? (
+                  <p className="mt-1 text-sm">
+                    Changed status from{" "}
+                    <span className="font-medium">{ev.from_status ?? "—"}</span> to{" "}
+                    <span className="font-medium">{ev.to_status ?? "—"}</span>
+                  </p>
+                ) : (
+                  <p className="mt-1 whitespace-pre-wrap text-sm">{ev.comment}</p>
+                )}
+              </li>
+            ))}
+          </ol>
+        </CardContent>
+      </Card>
     </div>
   );
 }
