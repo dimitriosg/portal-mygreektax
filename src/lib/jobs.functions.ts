@@ -10,9 +10,8 @@ import {
   type JobFields,
   type ClientFields,
   type AccountantFields,
-  JOB_STATUSES,
-  STATUS_PROGRESS,
 } from "./airtable.server";
+import { JOB_STATUSES, STATUS_PROGRESS } from "./airtable-shared";
 
 async function getRoleAndPartner(userId: string) {
   const [{ data: roles }, { data: partner }] = await Promise.all([
