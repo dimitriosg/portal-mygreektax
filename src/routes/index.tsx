@@ -13,8 +13,7 @@ function Index() {
         MyGreekTax Ops
       </h1>
       <p className="mt-4 text-muted-foreground">
-        White-label partner workspace for managing tax service jobs, plus client tracking
-        powered by your Airtable operations base.
+        Dedicated Partner Workspace
       </p>
       <div className="mt-8 flex justify-center gap-3">
         <Button asChild>
