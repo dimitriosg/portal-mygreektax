@@ -16,8 +16,8 @@ import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as TrackTokenRouteImport } from './routes/track.$token'
 import { Route as JobsJobIdRouteImport } from './routes/jobs.$jobId'
+import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as EmailUnsubscribeRouteImport } from './routes/email/unsubscribe'
-import { Route as InviteRouteImport } from './routes/invite.'
 import { Route as LovableEmailSuppressionRouteImport } from './routes/lovable/email/suppression'
 import { Route as LovableEmailTransactionalSendRouteImport } from './routes/lovable/email/transactional/send'
 import { Route as LovableEmailTransactionalPreviewRouteImport } from './routes/lovable/email/transactional/preview'
@@ -58,14 +58,14 @@ const JobsJobIdRoute = JobsJobIdRouteImport.update({
   path: '/jobs/$jobId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const InviteTokenRoute = InviteTokenRouteImport.update({
+  id: '/invite/$token',
+  path: '/invite/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const EmailUnsubscribeRoute = EmailUnsubscribeRouteImport.update({
   id: '/email/unsubscribe',
   path: '/email/unsubscribe',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const InviteRoute = InviteRouteImport.update({
-  id: '/invite/',
-  path: '/invite/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LovableEmailSuppressionRoute = LovableEmailSuppressionRouteImport.update({
@@ -98,8 +98,8 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
   '/unsubscribe': typeof UnsubscribeRoute
-  '/invite/': typeof InviteRoute
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
+  '/invite/$token': typeof InviteTokenRoute
   '/jobs/$jobId': typeof JobsJobIdRoute
   '/track/$token': typeof TrackTokenRoute
   '/lovable/email/suppression': typeof LovableEmailSuppressionRoute
@@ -113,8 +113,8 @@ export interface FileRoutesByTo {
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
   '/unsubscribe': typeof UnsubscribeRoute
-  '/invite': typeof InviteRoute
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
+  '/invite/$token': typeof InviteTokenRoute
   '/jobs/$jobId': typeof JobsJobIdRoute
   '/track/$token': typeof TrackTokenRoute
   '/lovable/email/suppression': typeof LovableEmailSuppressionRoute
@@ -129,8 +129,8 @@ export interface FileRoutesById {
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
   '/unsubscribe': typeof UnsubscribeRoute
-  '/invite/': typeof InviteRoute
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
+  '/invite/$token': typeof InviteTokenRoute
   '/jobs/$jobId': typeof JobsJobIdRoute
   '/track/$token': typeof TrackTokenRoute
   '/lovable/email/suppression': typeof LovableEmailSuppressionRoute
@@ -146,8 +146,8 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/login'
     | '/unsubscribe'
-    | '/invite/'
     | '/email/unsubscribe'
+    | '/invite/$token'
     | '/jobs/$jobId'
     | '/track/$token'
     | '/lovable/email/suppression'
@@ -161,8 +161,8 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/login'
     | '/unsubscribe'
-    | '/invite'
     | '/email/unsubscribe'
+    | '/invite/$token'
     | '/jobs/$jobId'
     | '/track/$token'
     | '/lovable/email/suppression'
@@ -176,8 +176,8 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/login'
     | '/unsubscribe'
-    | '/invite/'
     | '/email/unsubscribe'
+    | '/invite/$token'
     | '/jobs/$jobId'
     | '/track/$token'
     | '/lovable/email/suppression'
@@ -192,8 +192,8 @@ export interface RootRouteChildren {
   DashboardRoute: typeof DashboardRoute
   LoginRoute: typeof LoginRoute
   UnsubscribeRoute: typeof UnsubscribeRoute
-  InviteRoute: typeof InviteRoute
   EmailUnsubscribeRoute: typeof EmailUnsubscribeRoute
+  InviteTokenRoute: typeof InviteTokenRoute
   JobsJobIdRoute: typeof JobsJobIdRoute
   TrackTokenRoute: typeof TrackTokenRoute
   LovableEmailSuppressionRoute: typeof LovableEmailSuppressionRoute
@@ -253,18 +253,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof JobsJobIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/invite/$token': {
+      id: '/invite/$token'
+      path: '/invite/$token'
+      fullPath: '/invite/$token'
+      preLoaderRoute: typeof InviteTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/email/unsubscribe': {
       id: '/email/unsubscribe'
       path: '/email/unsubscribe'
       fullPath: '/email/unsubscribe'
       preLoaderRoute: typeof EmailUnsubscribeRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/invite/': {
-      id: '/invite/'
-      path: '/invite'
-      fullPath: '/invite/'
-      preLoaderRoute: typeof InviteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/lovable/email/suppression': {
@@ -304,8 +304,8 @@ const rootRouteChildren: RootRouteChildren = {
   DashboardRoute: DashboardRoute,
   LoginRoute: LoginRoute,
   UnsubscribeRoute: UnsubscribeRoute,
-  InviteRoute: InviteRoute,
   EmailUnsubscribeRoute: EmailUnsubscribeRoute,
+  InviteTokenRoute: InviteTokenRoute,
   JobsJobIdRoute: JobsJobIdRoute,
   TrackTokenRoute: TrackTokenRoute,
   LovableEmailSuppressionRoute: LovableEmailSuppressionRoute,
@@ -316,3 +316,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

@@ -12,7 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import logo from "@/assets/mygreektax-mark.svg";
 
-export const Route = createFileRoute("/invite/")({
+export const Route = createFileRoute("/invite/$token")({
   component: InvitePage,
   head: () => ({
     meta: [
