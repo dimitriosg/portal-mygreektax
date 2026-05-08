@@ -4,6 +4,7 @@ import { createHash, randomBytes } from "crypto";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { enqueuePartnerInviteEmail } from "./invite-email.server";
 
 function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
@@ -104,6 +105,23 @@ export const revokePartnerInvite = createServerFn({ method: "POST" })
       console.error("[revokePartnerInvite] error:", error);
       throw new Error("Could not revoke invite.");
     }
+    return { ok: true };
+  });
+
+export const sendPartnerInviteEmail = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d) =>
+    z
+      .object({
+        email: z.string().trim().toLowerCase().email().max(255),
+        firstName: z.string().trim().min(1).max(80),
+        inviteUrl: z.string().trim().url().max(500),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context.userId);
+    await enqueuePartnerInviteEmail(data);
     return { ok: true };
   });
 

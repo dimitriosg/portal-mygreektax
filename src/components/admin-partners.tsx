@@ -6,6 +6,7 @@ import {
   listPartnerInvites,
   listPartnerProfilesAdmin,
   revokePartnerInvite,
+  sendPartnerInviteEmail,
 } from "@/lib/invites.functions";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -30,13 +31,16 @@ export function PartnersSection({ accountants }: { accountants: AirtableAcc[] })
   const fetchPartners = useServerFn(listPartnerProfilesAdmin);
   const createFn = useServerFn(createPartnerInvite);
   const revokeFn = useServerFn(revokePartnerInvite);
+  const sendEmailFn = useServerFn(sendPartnerInviteEmail);
 
   const invitesQ = useQuery({ queryKey: ["partner-invites"], queryFn: () => fetchInvites() });
   const partnersQ = useQuery({ queryKey: ["partners"], queryFn: () => fetchPartners() });
 
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ firstName: "", lastName: "", email: "", airtableAccountantId: "" });
-  const [issued, setIssued] = useState<{ url: string; email: string } | null>(null);
+  const [issued, setIssued] = useState<
+    { url: string; email: string; firstName: string } | null
+  >(null);
 
   const createMut = useMutation({
     mutationFn: (vars: typeof form) =>
@@ -50,10 +54,20 @@ export function PartnersSection({ accountants }: { accountants: AirtableAcc[] })
       }),
     onSuccess: (res) => {
       const url = `${window.location.origin}/invite/${res.token}`;
-      setIssued({ url, email: form.email });
+      setIssued({ url, email: form.email, firstName: form.firstName });
       setOpen(false);
       setForm({ firstName: "", lastName: "", email: "", airtableAccountantId: "" });
       qc.invalidateQueries({ queryKey: ["partner-invites"] });
+    },
+    onError: (e) => toast.error((e as Error).message),
+  });
+
+  const sendMut = useMutation({
+    mutationFn: (vars: { email: string; firstName: string; inviteUrl: string }) =>
+      sendEmailFn({ data: vars }),
+    onSuccess: () => {
+      toast.success("Invite email queued");
+      setIssued(null);
     },
     onError: (e) => toast.error((e as Error).message),
   });
@@ -172,7 +186,22 @@ export function PartnersSection({ accountants }: { accountants: AirtableAcc[] })
             <Button variant="outline" onClick={() => setIssued(null)}>
               Close
             </Button>
-            <Button onClick={() => issued && copyLink(issued.url)}>Copy link</Button>
+            <Button variant="outline" onClick={() => issued && copyLink(issued.url)}>
+              Copy link
+            </Button>
+            <Button
+              disabled={sendMut.isPending}
+              onClick={() =>
+                issued &&
+                sendMut.mutate({
+                  email: issued.email,
+                  firstName: issued.firstName,
+                  inviteUrl: issued.url,
+                })
+              }
+            >
+              {sendMut.isPending ? "Sending…" : "Send via email"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
