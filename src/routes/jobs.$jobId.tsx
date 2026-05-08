@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { getJob, updateJob, createClientToken, listJobEvents } from "@/lib/jobs.functions";
+import { getJob, updateJob, createClientToken, listJobEvents, getJobTrackingStats } from "@/lib/jobs.functions";
 import { JOB_STATUSES } from "@/lib/airtable-shared";
 import { useAuth } from "@/lib/auth-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,6 +27,7 @@ function JobDetail() {
   const updateFn = useServerFn(updateJob);
   const tokenFn = useServerFn(createClientToken);
   const fetchEvents = useServerFn(listJobEvents);
+  const fetchTrackingStats = useServerFn(getJobTrackingStats);
   const qc = useQueryClient();
 
   const { data, isLoading, error } = useQuery({
@@ -38,6 +39,11 @@ function JobDetail() {
     queryKey: ["job-events", jobId],
     queryFn: () => fetchEvents({ data: { jobId } }),
     enabled: !!user,
+  });
+  const trackingQ = useQuery({
+    queryKey: ["job-tracking", jobId],
+    queryFn: () => fetchTrackingStats({ data: { jobId } }),
+    enabled: !!user && !!isAdmin,
   });
 
   const [status, setStatus] = useState<string>("");
@@ -72,9 +78,12 @@ function JobDetail() {
       track("tracking_link_created");
       navigator.clipboard?.writeText(url).catch(() => {});
       toast.success(`Tracking link copied for ${email}`);
+      qc.invalidateQueries({ queryKey: ["job-tracking", jobId] });
     },
     onError: (e) => toast.error((e as Error).message),
   });
+
+  const [showOpens, setShowOpens] = useState(false);
 
   if (!user) return null;
   if (isLoading) return <p className="mx-auto max-w-3xl px-4 py-8 text-sm text-muted-foreground">Loading…</p>;
@@ -178,6 +187,65 @@ function JobDetail() {
           </ol>
         </CardContent>
       </Card>
+
+      {isAdmin && trackingQ.data?.token && (
+        <Card>
+          <CardHeader><CardTitle className="text-base">Tracking link</CardTitle></CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+              <div>
+                <span className="font-semibold">{trackingQ.data.token.open_count}</span>{" "}
+                <span className="text-muted-foreground">opens</span>
+              </div>
+              <div className="text-muted-foreground">
+                {trackingQ.data.token.last_opened_at
+                  ? <>Last opened {formatDateTime(trackingQ.data.token.last_opened_at)}{trackingQ.data.token.last_country ? ` from ${trackingQ.data.token.last_country}` : ""}</>
+                  : "Not opened yet"}
+              </div>
+              <div className="text-muted-foreground">
+                Expires {formatDate(trackingQ.data.token.expires_at)}
+              </div>
+            </div>
+            {trackingQ.data.opens.length > 0 && (
+              <>
+                <button
+                  type="button"
+                  className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+                  onClick={() => setShowOpens((v) => !v)}
+                >
+                  {showOpens ? "Hide" : "Show"} recent opens ({trackingQ.data.opens.length})
+                </button>
+                {showOpens && (
+                  <div className="overflow-x-auto rounded-md border border-border">
+                    <table className="w-full min-w-[480px] text-xs">
+                      <thead className="bg-muted/50 text-left">
+                        <tr>
+                          <th className="px-2 py-1.5">When</th>
+                          <th className="px-2 py-1.5">Country</th>
+                          <th className="px-2 py-1.5">Device</th>
+                          <th className="px-2 py-1.5">Browser</th>
+                          <th className="px-2 py-1.5">IP</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {trackingQ.data.opens.map((o) => (
+                          <tr key={o.id} className="border-t border-border">
+                            <td className="px-2 py-1.5 whitespace-nowrap">{formatDateTime(o.opened_at)}</td>
+                            <td className="px-2 py-1.5">{o.country ?? "—"}</td>
+                            <td className="px-2 py-1.5">{o.device ?? "—"}</td>
+                            <td className="px-2 py-1.5">{o.browser ?? "—"}</td>
+                            <td className="px-2 py-1.5 font-mono text-[11px]">{o.ip ?? "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
