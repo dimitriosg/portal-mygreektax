@@ -963,7 +963,7 @@ export const requestJobChange = createServerFn({ method: "POST" })
       console.error("[requestJobChange] notification email failed", e);
     }
 
-    return { ok: true, request: inserted as JobChangeRequestRow };
+    return { ok: true, request: inserted as unknown as JobChangeRequestRow };
   });
 
 export const cancelChangeRequest = createServerFn({ method: "POST" })
@@ -999,7 +999,7 @@ export const decideChangeRequest = createServerFn({ method: "POST" })
       .eq("id", data.id)
       .maybeSingle();
     if (readErr || !req) throw new Error("Request not found");
-    const r = req as JobChangeRequestRow;
+    const r = req as unknown as JobChangeRequestRow;
     if (r.status !== "pending") throw new Error("Request already decided");
 
     if (data.decision === "approved") {
@@ -1091,21 +1091,21 @@ export const listJobChangeRequests = createServerFn({ method: "GET" })
     const { isAdmin, partner } = await getRoleAndPartner(userId);
     if (!isAdmin) {
       // Partners only see their own requests for this job.
-      if (!partner) return { requests: [] as JobChangeRequestRow[] };
+      if (!partner) return { requests: [] as unknown as JobChangeRequestRow[] };
       const { data: rows } = await supabaseAdmin
         .from("job_change_requests" as any)
         .select("*")
         .eq("airtable_job_id", data.jobId)
         .eq("requested_by", userId)
         .order("created_at", { ascending: false });
-      return { requests: (rows ?? []) as JobChangeRequestRow[] };
+      return { requests: (rows ?? []) as unknown as JobChangeRequestRow[] };
     }
     const { data: rows } = await supabaseAdmin
       .from("job_change_requests" as any)
       .select("*")
       .eq("airtable_job_id", data.jobId)
       .order("created_at", { ascending: false });
-    return { requests: (rows ?? []) as JobChangeRequestRow[] };
+    return { requests: (rows ?? []) as unknown as JobChangeRequestRow[] };
   });
 
 export const listChangeRequests = createServerFn({ method: "GET" })
@@ -1124,7 +1124,7 @@ export const listChangeRequests = createServerFn({ method: "GET" })
     if (data.status !== "all") q = q.eq("status", data.status);
     const { data: rows, error } = await q;
     if (error) throw new Error(error.message);
-    return { requests: (rows ?? []) as JobChangeRequestRow[] };
+    return { requests: (rows ?? []) as unknown as JobChangeRequestRow[] };
   });
 
 export const getPendingRequestCount = createServerFn({ method: "GET" })
