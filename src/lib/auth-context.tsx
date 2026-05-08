@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { linkPartnerProfile, claimFirstAdmin, getMyContext } from "@/lib/auth.functions";
+import { recordPartnerLogin } from "@/lib/activity.functions";
 import { track } from "@/lib/analytics";
 
 type Ctx = {
@@ -50,6 +51,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             sessionStorage.setItem(flag, "1");
             track("partner_login", {
               role: ctx.isAdmin ? "admin" : ctx.isPartner ? "partner" : "user",
+            });
+            // Server-side log so it shows up in admin daily/weekly summary emails.
+            recordPartnerLogin().catch(() => {
+              /* never block UI on analytics */
             });
           }
         }
