@@ -226,5 +226,18 @@ export const acceptPartnerInvite = createServerFn({ method: "POST" })
       console.error("[acceptPartnerInvite] consume:", consumeErr);
     }
 
+    try {
+      const { logActivityEvent } = await import("./activity.server");
+      await logActivityEvent({
+        eventType: "partner_invite_accepted",
+        actorUserId: userId,
+        actorEmail: invite.email,
+        actorName: fullName,
+        metadata: { invite_id: invite.id },
+      });
+    } catch (e) {
+      console.error("[acceptPartnerInvite] log activity failed", e);
+    }
+
     return { ok: true, email: invite.email };
   });
