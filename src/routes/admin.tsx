@@ -33,6 +33,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { CalendarIcon } from "lucide-react";
 import { cn, formatDate } from "@/lib/utils";
 import type { DateRange } from "react-day-picker";
+import { PartnersSection } from "@/components/admin-partners";
 
 export const Route = createFileRoute("/admin")({ component: AdminPage });
 
