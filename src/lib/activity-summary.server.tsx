@@ -83,6 +83,7 @@ const TYPE_TITLES: Record<string, string> = {
   job_status_changed: "Job status changes",
   tracking_link_created: "Tracking links created (admin)",
   tracking_link_opened: "Tracking links opened (customers)",
+  tracking_link_extended: "Tracking links extended (admin)",
 };
 
 function describeRow(ev: any): ActivitySummaryRow {
@@ -125,6 +126,9 @@ function describeRow(ev: any): ActivitySummaryRow {
     case "tracking_link_opened":
       description = `Opened tracking link for ${md.jobCode ?? ev.subject_label ?? "a job"} (status: ${md.status ?? "—"})`;
       break;
+    case "tracking_link_extended":
+      description = `Extended tracking link for ${ev.subject_label ?? "a job"} by ${md.daysAdded ?? "?"} days (new expiry: ${md.newExpiresAt ?? "—"})`;
+      break;
     default:
       description = ev.event_type;
   }
@@ -155,6 +159,7 @@ export async function buildSummary(period: SummaryPeriod) {
     "job_status_changed",
     "tracking_link_created",
     "tracking_link_opened",
+    "tracking_link_extended",
   ];
   const sections: ActivitySummarySection[] = order
     .filter((t) => grouped[t]?.length)

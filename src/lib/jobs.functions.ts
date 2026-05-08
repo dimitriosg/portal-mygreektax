@@ -604,6 +604,101 @@ export const getJobTrackingStats = createServerFn({ method: "GET" })
     };
   });
 
+export const extendClientToken = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d: { token: string; days: number }) =>
+    z
+      .object({
+        token: z.string().min(10).max(200),
+        days: z.number().int().min(1).max(3650),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { isAdmin } = await getRoleAndPartner(context.userId);
+    if (!isAdmin) throw new Error("Forbidden");
+
+    const { data: row, error: readErr } = await supabaseAdmin
+      .from("client_tokens")
+      .select("expires_at, airtable_job_id")
+      .eq("token", data.token)
+      .maybeSingle();
+    if (readErr || !row) throw new Error("Tracking link not found");
+
+    // Extend from whichever is later: now or current expiry, so already-expired
+    // links restart from today.
+    const base = new Date(
+      Math.max(Date.now(), new Date(row.expires_at).getTime()),
+    );
+    const newExpiry = new Date(
+      base.getTime() + data.days * 24 * 60 * 60 * 1000,
+    ).toISOString();
+
+    const { error: updErr } = await supabaseAdmin
+      .from("client_tokens")
+      .update({ expires_at: newExpiry })
+      .eq("token", data.token);
+    if (updErr) throw new Error(updErr.message);
+
+    const actor = await getActorIdentity(context.userId);
+    await supabaseAdmin.from("client_token_events").insert({
+      token: data.token,
+      event_type: "extended",
+      actor_user_id: context.userId,
+      actor_email: actor.email,
+      actor_name: actor.name,
+      metadata: {
+        days_added: data.days,
+        previous_expires_at: row.expires_at,
+        new_expires_at: newExpiry,
+      },
+    });
+    await logActivityEvent({
+      eventType: "tracking_link_extended",
+      actorUserId: context.userId,
+      actorEmail: actor.email,
+      actorName: actor.name,
+      subjectLabel: row.airtable_job_id,
+      metadata: {
+        daysAdded: data.days,
+        newExpiresAt: newExpiry,
+      },
+    });
+
+    return { expires_at: newExpiry };
+  });
+
+export type ClientTokenEventRow = {
+  id: string;
+  occurred_at: string;
+  event_type: string;
+  actor_email: string | null;
+  actor_name: string | null;
+  metadata: {
+    days_added?: number;
+    previous_expires_at?: string;
+    new_expires_at?: string;
+  };
+};
+
+export const getClientTokenHistory = createServerFn({ method: "GET" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d: { token: string }) =>
+    z.object({ token: z.string().min(10).max(200) }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { isAdmin } = await getRoleAndPartner(context.userId);
+    if (!isAdmin) throw new Error("Forbidden");
+    const { data: events, error } = await supabaseAdmin
+      .from("client_token_events")
+      .select("id, occurred_at, event_type, actor_email, actor_name, metadata")
+      .eq("token", data.token)
+      .order("occurred_at", { ascending: false })
+      .limit(100);
+    if (error) throw new Error(error.message);
+    return { events: (events ?? []) as ClientTokenEventRow[] };
+  });
+
 export const listTrackingLinks = createServerFn({ method: "GET" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .handler(async ({ context }): Promise<{ links: TrackingLinkSummary[] }> => {

@@ -8,7 +8,8 @@ export type ActivityEventType =
   | "job_created"
   | "job_status_changed"
   | "tracking_link_created"
-  | "tracking_link_opened";
+  | "tracking_link_opened"
+  | "tracking_link_extended";
 
 export type ActivityEventInput = {
   eventType: ActivityEventType;

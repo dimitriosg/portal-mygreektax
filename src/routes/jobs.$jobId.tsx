@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { getJob, updateJob, createClientToken, listJobEvents, getJobTrackingStats } from "@/lib/jobs.functions";
+import { getJob, updateJob, createClientToken, listJobEvents, getJobTrackingStats, extendClientToken, getClientTokenHistory } from "@/lib/jobs.functions";
 import { JOB_STATUSES } from "@/lib/airtable-shared";
 import { useAuth } from "@/lib/auth-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -28,6 +28,8 @@ function JobDetail() {
   const tokenFn = useServerFn(createClientToken);
   const fetchEvents = useServerFn(listJobEvents);
   const fetchTrackingStats = useServerFn(getJobTrackingStats);
+  const extendFn = useServerFn(extendClientToken);
+  const fetchTokenHistory = useServerFn(getClientTokenHistory);
   const qc = useQueryClient();
 
   const { data, isLoading, error } = useQuery({
@@ -44,6 +46,23 @@ function JobDetail() {
     queryKey: ["job-tracking", jobId],
     queryFn: () => fetchTrackingStats({ data: { jobId } }),
     enabled: !!user && !!isAdmin,
+  });
+  const tokenForHistory = trackingQ.data?.token?.token;
+  const historyQ = useQuery({
+    queryKey: ["token-history", tokenForHistory],
+    queryFn: () => fetchTokenHistory({ data: { token: tokenForHistory! } }),
+    enabled: !!tokenForHistory,
+  });
+
+  const extendMut = useMutation({
+    mutationFn: (days: number) =>
+      extendFn({ data: { token: tokenForHistory!, days } }),
+    onSuccess: ({ expires_at }) => {
+      toast.success(`Link extended — new expiry ${formatDate(expires_at)}`);
+      qc.invalidateQueries({ queryKey: ["job-tracking", jobId] });
+      qc.invalidateQueries({ queryKey: ["token-history", tokenForHistory] });
+    },
+    onError: (e) => toast.error((e as Error).message),
   });
 
   const [status, setStatus] = useState<string>("");
@@ -84,6 +103,8 @@ function JobDetail() {
   });
 
   const [showOpens, setShowOpens] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [extendDays, setExtendDays] = useState<number>(90);
 
   if (!user) return null;
   if (isLoading) return <p className="mx-auto max-w-3xl px-4 py-8 text-sm text-muted-foreground">Loading…</p>;
@@ -206,6 +227,27 @@ function JobDetail() {
                 Expires {formatDate(trackingQ.data.token.expires_at)}
               </div>
             </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={extendDays}
+                onChange={(e) => setExtendDays(Number(e.target.value))}
+                className="rounded border border-input bg-background px-2 py-1.5 text-xs"
+              >
+                <option value={30}>+30 days</option>
+                <option value={60}>+60 days</option>
+                <option value={90}>+90 days</option>
+                <option value={180}>+180 days</option>
+                <option value={365}>+365 days</option>
+              </select>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => extendMut.mutate(extendDays)}
+                disabled={extendMut.isPending}
+              >
+                {extendMut.isPending ? "Extending…" : "Extend expiry"}
+              </Button>
+            </div>
             {trackingQ.data.opens.length > 0 && (
               <>
                 <button
@@ -240,6 +282,37 @@ function JobDetail() {
                       </tbody>
                     </table>
                   </div>
+                )}
+              </>
+            )}
+            {(historyQ.data?.events.length ?? 0) > 0 && (
+              <>
+                <button
+                  type="button"
+                  className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+                  onClick={() => setShowHistory((v) => !v)}
+                >
+                  {showHistory ? "Hide" : "Show"} link history ({historyQ.data!.events.length})
+                </button>
+                {showHistory && (
+                  <ol className="space-y-2 text-xs">
+                    {historyQ.data!.events.map((ev) => (
+                      <li key={ev.id} className="border-l-2 border-border pl-3">
+                        <div className="flex flex-wrap items-baseline justify-between gap-2 text-muted-foreground">
+                          <span className="font-medium text-foreground">{ev.actor_name ?? ev.actor_email ?? "Admin"}</span>
+                          <span>{formatDateTime(ev.occurred_at)}</span>
+                        </div>
+                        {ev.event_type === "extended" ? (
+                          <p className="mt-1">
+                            Extended by <span className="font-medium">{ev.metadata.days_added} days</span>
+                            {ev.metadata.new_expires_at && <> · new expiry {formatDate(ev.metadata.new_expires_at)}</>}
+                          </p>
+                        ) : (
+                          <p className="mt-1">{ev.event_type}</p>
+                        )}
+                      </li>
+                    ))}
+                  </ol>
                 )}
               </>
             )}

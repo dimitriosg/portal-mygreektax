@@ -2,7 +2,12 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { listTrackingLinks, getTrackingLinkOpens } from "@/lib/jobs.functions";
+import {
+  listTrackingLinks,
+  getTrackingLinkOpens,
+  extendClientToken,
+  getClientTokenHistory,
+} from "@/lib/jobs.functions";
 import { useAuth } from "@/lib/auth-context";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,6 +16,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { StatusBadge } from "@/lib/badges";
 import { formatDate, formatDateTime } from "@/lib/utils";
 import { toast } from "sonner";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 export const Route = createFileRoute("/admin/tracking-links")({
   component: TrackingLinksPage,
@@ -29,6 +35,9 @@ function TrackingLinksPage() {
 
   const fetchLinks = useServerFn(listTrackingLinks);
   const fetchOpens = useServerFn(getTrackingLinkOpens);
+  const fetchHistory = useServerFn(getClientTokenHistory);
+  const extendFn = useServerFn(extendClientToken);
+  const qc = useQueryClient();
 
   const linksQ = useQuery({
     queryKey: ["tracking-links"],
@@ -39,11 +48,29 @@ function TrackingLinksPage() {
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<SortKey>("last_opened");
   const [openToken, setOpenToken] = useState<string | null>(null);
+  const [extendDays, setExtendDays] = useState<number>(90);
 
   const opensQ = useQuery({
     queryKey: ["tracking-link-opens", openToken],
     queryFn: () => fetchOpens({ data: { token: openToken! } }),
     enabled: !!openToken,
+  });
+
+  const historyQ = useQuery({
+    queryKey: ["token-history", openToken],
+    queryFn: () => fetchHistory({ data: { token: openToken! } }),
+    enabled: !!openToken,
+  });
+
+  const extendMut = useMutation({
+    mutationFn: ({ token, days }: { token: string; days: number }) =>
+      extendFn({ data: { token, days } }),
+    onSuccess: ({ expires_at }) => {
+      toast.success(`Extended — new expiry ${formatDate(expires_at)}`);
+      qc.invalidateQueries({ queryKey: ["tracking-links"] });
+      qc.invalidateQueries({ queryKey: ["token-history", openToken] });
+    },
+    onError: (e) => toast.error((e as Error).message),
   });
 
   const filtered = useMemo(() => {
@@ -189,7 +216,6 @@ function TrackingLinksPage() {
                       size="sm"
                       variant="outline"
                       onClick={() => setOpenToken(l.token)}
-                      disabled={l.open_count === 0}
                     >
                       Details
                     </Button>
@@ -204,9 +230,63 @@ function TrackingLinksPage() {
       <Sheet open={!!openToken} onOpenChange={(v) => !v && setOpenToken(null)}>
         <SheetContent className="w-full sm:max-w-2xl overflow-y-auto">
           <SheetHeader>
-            <SheetTitle>Open log</SheetTitle>
+            <SheetTitle>Tracking link details</SheetTitle>
           </SheetHeader>
-          <div className="mt-4">
+          <div className="mt-4 space-y-6">
+            <section className="space-y-2">
+              <h3 className="text-sm font-semibold">Extend expiry</h3>
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  value={extendDays}
+                  onChange={(e) => setExtendDays(Number(e.target.value))}
+                  className="rounded border border-input bg-background px-2 py-1.5 text-xs"
+                >
+                  <option value={30}>+30 days</option>
+                  <option value={60}>+60 days</option>
+                  <option value={90}>+90 days</option>
+                  <option value={180}>+180 days</option>
+                  <option value={365}>+365 days</option>
+                </select>
+                <Button
+                  size="sm"
+                  onClick={() => openToken && extendMut.mutate({ token: openToken, days: extendDays })}
+                  disabled={extendMut.isPending}
+                >
+                  {extendMut.isPending ? "Extending…" : "Extend"}
+                </Button>
+              </div>
+            </section>
+
+            <section className="space-y-2">
+              <h3 className="text-sm font-semibold">Link history</h3>
+              {historyQ.isLoading && <p className="text-xs text-muted-foreground">Loading…</p>}
+              {historyQ.data && historyQ.data.events.length === 0 && (
+                <p className="text-xs text-muted-foreground">No changes recorded yet.</p>
+              )}
+              {historyQ.data && historyQ.data.events.length > 0 && (
+                <ol className="space-y-2 text-xs">
+                  {historyQ.data.events.map((ev) => (
+                    <li key={ev.id} className="border-l-2 border-border pl-3">
+                      <div className="flex flex-wrap items-baseline justify-between gap-2 text-muted-foreground">
+                        <span className="font-medium text-foreground">{ev.actor_name ?? ev.actor_email ?? "Admin"}</span>
+                        <span>{formatDateTime(ev.occurred_at)}</span>
+                      </div>
+                      {ev.event_type === "extended" ? (
+                        <p className="mt-1">
+                          Extended by <span className="font-medium">{ev.metadata.days_added} days</span>
+                          {ev.metadata.new_expires_at && <> · new expiry {formatDate(ev.metadata.new_expires_at)}</>}
+                        </p>
+                      ) : (
+                        <p className="mt-1">{ev.event_type}</p>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </section>
+
+            <section className="space-y-2">
+              <h3 className="text-sm font-semibold">Open log</h3>
             {opensQ.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
             {opensQ.data && opensQ.data.opens.length === 0 && (
               <p className="text-sm text-muted-foreground">No opens recorded.</p>
@@ -245,6 +325,7 @@ function TrackingLinksPage() {
                 </table>
               </div>
             )}
+            </section>
           </div>
         </SheetContent>
       </Sheet>
