@@ -14,6 +14,39 @@ export type Database = {
   }
   public: {
     Tables: {
+      activity_events: {
+        Row: {
+          actor_email: string | null
+          actor_name: string | null
+          actor_user_id: string | null
+          event_type: string
+          id: string
+          metadata: Json
+          occurred_at: string
+          subject_label: string | null
+        }
+        Insert: {
+          actor_email?: string | null
+          actor_name?: string | null
+          actor_user_id?: string | null
+          event_type: string
+          id?: string
+          metadata?: Json
+          occurred_at?: string
+          subject_label?: string | null
+        }
+        Update: {
+          actor_email?: string | null
+          actor_name?: string | null
+          actor_user_id?: string | null
+          event_type?: string
+          id?: string
+          metadata?: Json
+          occurred_at?: string
+          subject_label?: string | null
+        }
+        Relationships: []
+      }
       client_tokens: {
         Row: {
           airtable_client_id: string

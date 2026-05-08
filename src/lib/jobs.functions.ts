@@ -14,6 +14,17 @@ import {
   type AccountantFields,
 } from "./airtable.server";
 import { JOB_STATUSES, STATUS_PROGRESS } from "./airtable-shared";
+import { logActivityEvent } from "./activity.server";
+
+async function getActorIdentity(userId: string): Promise<{ email: string | null; name: string | null }> {
+  const [{ data: authUser }, { data: partner }] = await Promise.all([
+    supabaseAdmin.auth.admin.getUserById(userId),
+    supabaseAdmin.from("partner_profiles").select("full_name, email").eq("user_id", userId).maybeSingle(),
+  ]);
+  const email = authUser?.user?.email ?? partner?.email ?? null;
+  const name = partner?.full_name ?? email ?? null;
+  return { email, name };
+}
 
 async function getRoleAndPartner(userId: string) {
   const [{ data: roles }, { data: partner }] = await Promise.all([
@@ -163,6 +174,20 @@ export const updateJob = createServerFn({ method: "POST" })
     if (events.length > 0) {
       await supabaseAdmin.from("job_events").insert(events);
     }
+    if (data.status && data.status !== previousStatus) {
+      await logActivityEvent({
+        eventType: "job_status_changed",
+        actorUserId: userId,
+        actorEmail: actorEmail,
+        actorName: actorName,
+        subjectLabel: job.fields["Job Code"] ?? data.jobId,
+        metadata: {
+          from: previousStatus,
+          to: data.status,
+          jobCode: job.fields["Job Code"] ?? null,
+        },
+      });
+    }
     return { ok: true };
   });
 
@@ -292,6 +317,19 @@ export const createJob = createServerFn({ method: "POST" })
     if (data.dateSent) fields["Date Sent"] = data.dateSent;
     if (data.notes) fields["Notes"] = data.notes;
     const record = await airtablePost(TABLES.jobs, fields);
+    const actor = await getActorIdentity(context.userId);
+    await logActivityEvent({
+      eventType: "job_created",
+      actorUserId: context.userId,
+      actorEmail: actor.email,
+      actorName: actor.name,
+      subjectLabel: nextCode,
+      metadata: {
+        jobCode: nextCode,
+        status: data.status ?? "To Assign",
+        assigned: data.accountantId ? "yes" : "no",
+      },
+    });
     return { ok: true, jobId: record.id };
   });
 
@@ -391,6 +429,15 @@ export const createClientToken = createServerFn({ method: "POST" })
       console.error("[createClientToken] DB error:", error);
       throw new Error("Could not create tracking link. Please try again.");
     }
+    const actor = await getActorIdentity(context.userId);
+    await logActivityEvent({
+      eventType: "tracking_link_created",
+      actorUserId: context.userId,
+      actorEmail: actor.email,
+      actorName: actor.name,
+      subjectLabel: job.fields["Job Code"] ?? data.jobId,
+      metadata: { jobCode: job.fields["Job Code"] ?? null, recipient: email },
+    });
     return { token, email };
   });
 
@@ -408,6 +455,13 @@ export const getClientTracking = createServerFn({ method: "GET" })
     const job = (await airtableGet(`${TABLES.jobs}/${row.airtable_job_id}`)) as AirtableRecord<JobFields>;
     const client = (await airtableGet(`${TABLES.clients}/${row.airtable_client_id}`)) as AirtableRecord<ClientFields>;
     const status = job.fields.Status ?? "Pending";
+    await logActivityEvent({
+      eventType: "tracking_link_opened",
+      actorEmail: row.client_email ?? null,
+      actorName: client.fields["Full Name"] ?? null,
+      subjectLabel: job.fields["Job Code"] ?? row.airtable_job_id,
+      metadata: { jobCode: job.fields["Job Code"] ?? null, status },
+    });
     return {
       clientName: client.fields["Full Name"] ?? "Client",
       jobCode: job.fields["Job Code"] ?? "",
