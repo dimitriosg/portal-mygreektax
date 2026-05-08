@@ -192,7 +192,11 @@ function AdminPage() {
             <h1 className="text-2xl font-semibold tracking-tight">Admin overview</h1>
             <p className="text-sm text-muted-foreground">All jobs across all partners.</p>
           </div>
-          <Dialog open={open} onOpenChange={setOpen}>
+          <div className="flex items-center gap-2">
+            <Link to="/admin/tracking-links">
+              <Button variant="outline">Tracking links</Button>
+            </Link>
+            <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
               <Button>+ New job</Button>
             </DialogTrigger>
