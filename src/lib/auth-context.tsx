@@ -99,6 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (typeof window !== "undefined") {
       sessionStorage.removeItem(IMP_ID_KEY);
       sessionStorage.removeItem(IMP_NAME_KEY);
+      sessionStorage.removeItem("mgt:loginTracked");
     }
     await supabase.auth.signOut();
   };
