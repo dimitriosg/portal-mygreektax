@@ -1,69 +1,90 @@
-# Beautify the client tracking page
+# Partner Invitations (Admin-Only Onboarding)
 
-Redesign `/track/$token` into a polished, branded experience for clients — premium-minimal aesthetic with a horizontal progress stepper, MyGreekTax branded header, and an estimated time remaining indicator.
+Replace public partner signup with an admin-issued invite flow. Admins create the partner record from the console, then either email the invite link or copy it to send manually. The partner clicks the link, sets a password, and signs in normally afterward.
 
-## Visual direction
+## 1. Remove public signup
 
-Premium-minimal, calm and trustworthy. Soft gradient background, generous whitespace, refined typography, subtle elevation on cards, a discreet brand accent color. Mobile-first and fully responsive.
+- **`src/routes/login.tsx`**: drop the `mode` toggle and the signup branch. Keep email + password sign-in only. Add a small "Forgot password?" link (out of scope for this plan, but leave room).
+- Remove the "Need an account? Create one" button.
+- Update copy: "Partner & admin sign in. Access is by invitation only."
+- Lock down public signup at the auth provider level: disable open signups (`disable_signup: true`) so even a direct `supabase.auth.signUp` call from outside is rejected.
 
-## Files to change
+## 2. Database changes
 
-### 1. `src/styles.css`
-Add a few brand tokens used by the tracking page (kept as semantic CSS variables in `oklch`, both light and dark mode):
-- `--brand` and `--brand-foreground` (MyGreekTax accent — refined deep blue/teal)
-- `--brand-muted` (soft tinted surface for header band)
-- `--gradient-hero` (subtle top-to-bottom gradient for the page background)
-- `--shadow-soft` (low, diffuse elevation for cards)
+New table `partner_invites`:
 
-### 2. `src/assets/mygreektax-logo.png` (new)
-Generate a small, refined wordmark/monogram logo with `imagegen` (transparent PNG, premium quality) — clean, professional, suitable for a tax service. Imported as an ES module into the tracking page.
+| column | type | notes |
+|---|---|---|
+| id | uuid PK | |
+| token | text unique | 32-byte random hex, stored hashed (sha256) |
+| email | text | normalized lowercase |
+| first_name | text | |
+| last_name | text | |
+| airtable_accountant_id | text | links to Airtable Accountants record (optional at create time, can be created on accept) |
+| created_by | uuid | admin user id |
+| created_at | timestamptz | default now() |
+| expires_at | timestamptz | default now() + 7 days |
+| consumed_at | timestamptz | nullable |
+| consumed_user_id | uuid | nullable |
 
-### 3. `src/routes/track.$token.tsx` (main redesign)
+RLS:
+- Admins can do everything (`has_role(auth.uid(), 'admin')`).
+- No public/anon select. Token validation happens server-side via service role inside a server function.
 
-**Header band**
-- Soft branded strip across the top with the MyGreekTax logo + name on the left and a subtle "Job tracker" label on the right.
-- Below it, a warm greeting (`Hello {clientName}`) with a one-line description of the service and job code styled as a small chip/badge.
+## 3. Server functions (`src/lib/invites.functions.ts`)
 
-**Horizontal stepper (replaces vertical list + bar)**
-- 6 stages (Sent → In Progress → Delivered → Invoiced → Paid → Completed) shown as numbered circles connected by a thin line.
-- Completed stages: filled with brand color + checkmark icon.
-- Current stage: ringed/highlighted with a soft pulse, label bold below.
-- Upcoming stages: muted outline.
-- On mobile: horizontally scrollable with snap points, or compressed into a tight row that still fits 360px width (icons + small numbers, label only under the active step).
-- A thin progress line behind the circles fills proportionally to `data.progress`.
+All admin-gated functions check `has_role` via `supabaseAdmin` after `requireSupabaseAuth`:
 
-**Status summary card**
-- Large current status label, small percentage, a refined slim progress bar underneath as a secondary cue.
-- Status badge color-mapped (e.g. Pending = amber, In Progress = blue, Completed = green) using semantic tokens.
+- `createPartnerInvite({ firstName, lastName, email, airtableAccountantId? })`
+  - Admin only. Normalizes email, generates 32-byte token, stores sha256 hash, returns the **plaintext token + invite URL** to the admin once.
+  - Optionally creates an Airtable Accountant record up-front, or links to existing one by id.
+- `sendInviteEmail({ inviteId })` — admin only. Enqueues a branded email via Lovable Email infrastructure containing the invite link.
+- `getInviteByToken({ token })` — public (no auth). Returns `{ firstName, lastName, email }` if token is valid, unconsumed, and unexpired. Otherwise returns `{ valid: false }` with no detail.
+- `acceptPartnerInvite({ token, password })` — public. Validates token, creates the auth user via `supabaseAdmin.auth.admin.createUser` with `email_confirm: true` and the chosen password, creates the `partner_profiles` row linked to the Airtable accountant, assigns `partner` role, marks the invite consumed, and signs the user in (returns a session or asks the client to call `signInWithPassword` immediately after).
+- `listPartnerInvites()` / `revokePartnerInvite({ inviteId })` — admin only, for the management UI.
 
-**Timeline / dates card**
-- "Started" and "Expected by" with icons (Calendar, Clock from lucide-react).
-- New: **Estimated time remaining** — computed client-side from `data.sla`:
-  - If `sla` is in the future: show "X days remaining" (or "Due today" / "Due tomorrow").
-  - If past and not completed: show "X days overdue" in a warning color.
-  - If status is Completed: show "Delivered on time" or "Completed".
-  - Hidden gracefully when `sla` is null.
+Rate-limit `getInviteByToken` and `acceptPartnerInvite` (simple per-IP counter via a small `invite_attempts` table, or in-memory if acceptable). Always use timing-safe comparison on the token hash.
 
-**Latest update card**
-- Keep current notes card but with a quote/message icon and slightly softer typography.
+## 4. Admin console UI (`src/routes/admin.tsx` — new "Partners" section)
 
-**Footer**
-- Tiny line: "Secured tracking link · MyGreekTax" with a small lock icon, muted.
+Add a new card/tab "Partners":
+- Table of existing partners (from `partner_profiles`) and pending invites (from `partner_invites` where `consumed_at IS NULL`).
+- Button **"Invite partner"** → dialog with: First name, Last name, Email, optional Airtable Accountant link (dropdown of existing Accountants from Airtable, or "Create new").
+- On submit, call `createPartnerInvite`. On success, open a follow-up dialog showing:
+  - The full invite URL
+  - Two buttons: **"Send via email"** (calls `sendInviteEmail`) and **"Copy link"** (clipboard)
+  - The token plaintext is shown only on this screen and never again (re-issuing requires revoke + new invite).
+- Each pending invite row: shows expiry, has "Resend email", "Copy link" (re-shows URL since admin can re-derive — actually cannot, since hash is stored; provide "Revoke & reissue" instead), and "Revoke".
 
-### 4. SEO / `<head>`
-Add a `head()` to the route with title `Track your job · MyGreekTax` and a generic meta description. No og:image (link is private/per-client).
+## 5. Public invite acceptance route (`src/routes/invite.$token.tsx`)
 
-## Technical notes
+Public route, mirrors the styling of `/track/$token`:
+- On mount, calls `getInviteByToken`.
+- If invalid/expired: friendly card "This invitation link is no longer valid. Please contact your administrator."
+- If valid: shows "Welcome, {firstName}" + email (read-only) + password + confirm password fields. Validate with Zod (min 12 chars, mix recommended).
+- On submit: call `acceptPartnerInvite`, then `supabase.auth.signInWithPassword`, then redirect to `/dashboard`.
 
-- All colors via semantic tokens in `src/styles.css` — no hard-coded hex in the component.
-- Icons from `lucide-react` (already in deps): `Check`, `Calendar`, `Clock`, `Lock`, `MessageSquare`, `ShieldCheck`.
-- `STAGES` array stays the same; "Pending" maps to position before "In Progress" (treated as still at "Sent" in the stepper, but shown explicitly in the status card).
-- Date math for "remaining" uses local Date; reuse `formatDate` from `@/lib/utils`.
-- No backend / server-function changes; `getClientTracking` already returns everything needed (`status`, `progress`, `sla`, `dateSent`, `notes`, `clientName`, `serviceName`, `jobCode`).
-- Loading state replaced with a skeleton matching the new layout (using existing `Skeleton` component) instead of a plain "Loading…" line.
-- Error state keeps the generic "invalid or expired" message (security fix preserved).
+## 6. Email template
 
-## Out of scope
-- No changes to authenticated dashboard, admin, or job pages.
-- No new server functions, DB migrations, or auth changes.
-- No contact-accountant CTA (not requested).
+Use Lovable's transactional email infrastructure (already used for auth emails if set up):
+- Subject: "You've been invited to MyGreekTax Partner Portal"
+- Body: branded with the existing logo + colors, one CTA button to the invite URL, expiry note ("This link expires in 7 days").
+
+## 7. Security details
+
+- Tokens: 32 bytes from `crypto.randomBytes`, hex-encoded. Stored as sha256 hash; never log plaintext.
+- Single use: `consumed_at` set atomically with the user creation. Use a transaction/RPC to avoid races.
+- Email match: the auth user is created with the invited email; the partner cannot change it during acceptance.
+- Existing-email guard: if `auth.users` already has that email, return a clear admin-side error instead of creating a duplicate.
+- Strip the invite token from URL after acceptance (`history.replaceState`).
+- Audit: keep `created_by` and `consumed_at` for traceability.
+
+## What we are not doing
+
+- No self-service partner signup anywhere.
+- No "secret universal link" — every invite is per-partner.
+- Forgot-password flow is unchanged (out of scope; can be added later).
+
+## Open question (default if you don't answer)
+
+If you don't already have Lovable Emails / a verified email domain set up, the "Send via email" button will be disabled until that's configured. The "Copy link" path works regardless. Default: I'll wire the email button to gracefully degrade to "Email not configured — copy link instead" if no domain is active, and we can set up the email domain in a follow-up.
