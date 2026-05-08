@@ -674,7 +674,11 @@ export type ClientTokenEventRow = {
   event_type: string;
   actor_email: string | null;
   actor_name: string | null;
-  metadata: Record<string, unknown>;
+  metadata: {
+    days_added?: number;
+    previous_expires_at?: string;
+    new_expires_at?: string;
+  };
 };
 
 export const getClientTokenHistory = createServerFn({ method: "GET" })
