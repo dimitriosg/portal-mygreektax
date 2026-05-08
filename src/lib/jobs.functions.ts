@@ -182,7 +182,10 @@ export const listJobEvents = createServerFn({ method: "GET" })
       .select("*")
       .eq("airtable_job_id", data.jobId)
       .order("created_at", { ascending: false });
-    if (error) throw new Error(error.message);
+    if (error) {
+      console.error("[listJobEvents] DB error:", error);
+      throw new Error("A database error occurred. Please try again.");
+    }
     return { events: rows ?? [] };
   });
 
@@ -329,7 +332,10 @@ export const saveJobOrder = createServerFn({ method: "POST" })
         },
         { onConflict: "user_id,scope_key" },
       );
-    if (error) throw new Error(error.message);
+    if (error) {
+      console.error("[saveJobOrder] DB error:", error);
+      throw new Error("A database error occurred. Please try again.");
+    }
     return { ok: true };
   });
 
@@ -381,7 +387,10 @@ export const createClientToken = createServerFn({ method: "POST" })
       expires_at: expires,
       created_by: context.userId,
     });
-    if (error) throw new Error(error.message);
+    if (error) {
+      console.error("[createClientToken] DB error:", error);
+      throw new Error("Could not create tracking link. Please try again.");
+    }
     return { token, email };
   });
 
