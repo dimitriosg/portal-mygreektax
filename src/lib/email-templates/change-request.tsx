@@ -43,7 +43,7 @@ const AdminEmail = ({
     <Preview>{partnerName} requests a change to {jobCode}</Preview>
     <Body style={main}>
       <Container style={container}>
-        <Heading style={h1}>Change request — {jobCode}</Heading>
+        <Heading style={h1}>{`Change request — ${jobCode ?? ""}`}</Heading>
         <Text style={text}>
           <strong>{partnerName}</strong> requests an update to{" "}
           <strong>{FIELD_LABELS[field ?? ""] ?? field}</strong>.
@@ -103,7 +103,7 @@ const DecisionEmail = ({
     <Preview>Your change request for {jobCode} was {decision}</Preview>
     <Body style={main}>
       <Container style={container}>
-        <Heading style={h1}>Request {decision} — {jobCode}</Heading>
+        <Heading style={h1}>{`Request ${decision ?? ""} — ${jobCode ?? ""}`}</Heading>
         <Text style={text}>
           Hi {partnerName ?? "there"}, your change request for{" "}
           <strong>{FIELD_LABELS[field ?? ""] ?? field}</strong> on{" "}
