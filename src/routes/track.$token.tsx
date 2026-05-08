@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Check, Calendar, Clock, ShieldCheck, MessageSquare } from "lucide-react";
-import logo from "@/assets/mygreektax-logo.png";
+import logo from "@/assets/mygreektax-mark.svg";
 import { formatDate } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
@@ -72,13 +72,19 @@ function TrackPage() {
 
 function BrandHeader() {
   return (
-    <header className="border-b border-border/60 bg-background/60 backdrop-blur-sm">
+    <header className="border-b border-border/40 bg-background/40 backdrop-blur-sm">
       <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-4">
         <div className="flex items-center gap-2.5">
-          <img src={logo} alt="MyGreekTax" width={32} height={32} className="h-8 w-8" />
-          <span className="text-sm font-semibold tracking-tight">MyGreekTax</span>
+          <img src={logo} alt="MyGreekTax" width={36} height={36} className="h-9 w-9 rounded-md" />
+          <span className="font-serif text-lg font-semibold tracking-tight">
+            <span className="text-olive">My</span>
+            <span className="italic">Greek</span>
+            <span className="text-brand">Tax</span>
+          </span>
         </div>
-        <span className="text-xs uppercase tracking-wider text-muted-foreground">Job tracker</span>
+        <span className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+          Job tracker
+        </span>
       </div>
     </header>
   );
@@ -135,8 +141,8 @@ function TrackContent({ data }: { data: TrackData }) {
           <span className="h-1.5 w-1.5 rounded-full bg-brand" />
           {data.jobCode}
         </div>
-        <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-          Hello {data.clientName}
+        <h1 className="font-serif text-3xl font-medium tracking-tight sm:text-[2.5rem] sm:leading-[1.1]">
+          Hello <span className="italic">{data.clientName}</span>
         </h1>
         <p className="text-sm sm:text-base text-muted-foreground">
           Here is the live status of{" "}
@@ -155,7 +161,7 @@ function TrackContent({ data }: { data: TrackData }) {
               <div className="text-xs uppercase tracking-wider text-muted-foreground">
                 Current status
               </div>
-              <div className="mt-1 flex items-center gap-2.5">
+              <div className="mt-1.5 flex items-center gap-2.5">
                 <span
                   className={cn(
                     "inline-flex h-2.5 w-2.5 rounded-full",
@@ -164,11 +170,11 @@ function TrackContent({ data }: { data: TrackData }) {
                     tone === "brand" && "bg-brand",
                   )}
                 />
-                <span className="text-2xl font-semibold tracking-tight">{data.status}</span>
+                <span className="font-serif text-2xl font-medium tracking-tight">{data.status}</span>
               </div>
             </div>
             <div className="text-right">
-              <div className="text-3xl font-semibold tabular-nums tracking-tight">
+              <div className="font-serif text-3xl font-medium tabular-nums tracking-tight">
                 {data.progress}
                 <span className="text-base text-muted-foreground">%</span>
               </div>
@@ -210,7 +216,7 @@ function TrackContent({ data }: { data: TrackData }) {
       {data.notes && (
         <Card className="border-border/60" style={{ boxShadow: "var(--shadow-soft)" }}>
           <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-base">
+            <CardTitle className="flex items-center gap-2 font-serif text-base font-medium">
               <MessageSquare className="h-4 w-4 text-brand" />
               Latest update from your accountant
             </CardTitle>
