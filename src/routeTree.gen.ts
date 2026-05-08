@@ -15,6 +15,7 @@ import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as TrackTokenRouteImport } from './routes/track.$token'
 import { Route as JobsJobIdRouteImport } from './routes/jobs.$jobId'
+import { Route as InviteRouteImport } from './routes/invite.'
 
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
@@ -46,12 +47,18 @@ const JobsJobIdRoute = JobsJobIdRouteImport.update({
   path: '/jobs/$jobId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const InviteRoute = InviteRouteImport.update({
+  id: '/invite/',
+  path: '/invite/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
+  '/invite/': typeof InviteRoute
   '/jobs/$jobId': typeof JobsJobIdRoute
   '/track/$token': typeof TrackTokenRoute
 }
@@ -60,6 +67,7 @@ export interface FileRoutesByTo {
   '/admin': typeof AdminRoute
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
+  '/invite': typeof InviteRoute
   '/jobs/$jobId': typeof JobsJobIdRoute
   '/track/$token': typeof TrackTokenRoute
 }
@@ -69,6 +77,7 @@ export interface FileRoutesById {
   '/admin': typeof AdminRoute
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
+  '/invite/': typeof InviteRoute
   '/jobs/$jobId': typeof JobsJobIdRoute
   '/track/$token': typeof TrackTokenRoute
 }
@@ -79,6 +88,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/dashboard'
     | '/login'
+    | '/invite/'
     | '/jobs/$jobId'
     | '/track/$token'
   fileRoutesByTo: FileRoutesByTo
@@ -87,6 +97,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/dashboard'
     | '/login'
+    | '/invite'
     | '/jobs/$jobId'
     | '/track/$token'
   id:
@@ -95,6 +106,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/dashboard'
     | '/login'
+    | '/invite/'
     | '/jobs/$jobId'
     | '/track/$token'
   fileRoutesById: FileRoutesById
@@ -104,6 +116,7 @@ export interface RootRouteChildren {
   AdminRoute: typeof AdminRoute
   DashboardRoute: typeof DashboardRoute
   LoginRoute: typeof LoginRoute
+  InviteRoute: typeof InviteRoute
   JobsJobIdRoute: typeof JobsJobIdRoute
   TrackTokenRoute: typeof TrackTokenRoute
 }
@@ -152,6 +165,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof JobsJobIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/invite/': {
+      id: '/invite/'
+      path: '/invite'
+      fullPath: '/invite/'
+      preLoaderRoute: typeof InviteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -160,6 +180,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRoute: AdminRoute,
   DashboardRoute: DashboardRoute,
   LoginRoute: LoginRoute,
+  InviteRoute: InviteRoute,
   JobsJobIdRoute: JobsJobIdRoute,
   TrackTokenRoute: TrackTokenRoute,
 }

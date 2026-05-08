@@ -10,7 +10,6 @@ export const Route = createFileRoute("/login")({ component: LoginPage });
 
 function LoginPage() {
   const navigate = useNavigate();
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -19,23 +18,11 @@ function LoginPage() {
     e.preventDefault();
     setLoading(true);
     try {
-      if (mode === "signup") {
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: { emailRedirectTo: `${window.location.origin}/dashboard` },
-        });
-        if (error) throw error;
-        toast.success("Account created. Check your email to confirm, then sign in.");
-        setMode("signin");
-      } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-        navigate({ to: "/dashboard" });
-      }
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      navigate({ to: "/dashboard" });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Something went wrong";
-      toast.error(msg);
+      toast.error(err instanceof Error ? err.message : "Something went wrong");
     } finally {
       setLoading(false);
     }
@@ -43,11 +30,9 @@ function LoginPage() {
 
   return (
     <div className="mx-auto max-w-sm px-4 py-16">
-      <h1 className="text-2xl font-semibold tracking-tight">
-        {mode === "signin" ? "Partner sign in" : "Create partner account"}
-      </h1>
+      <h1 className="text-2xl font-semibold tracking-tight">Partner sign in</h1>
       <p className="mt-2 text-sm text-muted-foreground">
-        This sign-in is for partners and admins. Client tracking links open directly and do not require a login.
+        Access is by invitation only. Client tracking links open directly and do not require a login.
       </p>
       <form onSubmit={submit} className="mt-6 space-y-4">
         <div className="space-y-1.5">
@@ -59,16 +44,9 @@ function LoginPage() {
           <Input id="password" type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} />
         </div>
         <Button type="submit" disabled={loading} className="w-full">
-          {loading ? "Please wait…" : mode === "signin" ? "Sign in" : "Create account"}
+          {loading ? "Please wait…" : "Sign in"}
         </Button>
       </form>
-      <button
-        type="button"
-        className="mt-4 text-sm text-muted-foreground hover:text-foreground"
-        onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
-      >
-        {mode === "signin" ? "Need an account? Create one" : "Have an account? Sign in"}
-      </button>
     </div>
   );
 }
