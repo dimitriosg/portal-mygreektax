@@ -20,7 +20,15 @@ export const Route = createFileRoute("/track/$token")({
   }),
 });
 
-const STAGES = ["Sent", "In Progress", "Delivered", "Invoiced", "Paid", "Completed"];
+const STAGES = [
+  "To Assign",
+  "Pending",
+  "Paid",
+  "In Progress",
+  "Delivered",
+  "Invoiced",
+  "Completed",
+];
 
 function getRemaining(sla: string | null | undefined, status: string) {
   if (!sla) return null;
