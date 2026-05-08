@@ -215,6 +215,60 @@ export type Database = {
         }
         Relationships: []
       }
+      job_change_requests: {
+        Row: {
+          airtable_job_id: string
+          created_at: string
+          current_value: string | null
+          decided_at: string | null
+          decided_by: string | null
+          decision_note: string | null
+          field_name: string
+          id: string
+          job_code: string | null
+          reason: string | null
+          requested_by: string
+          requested_value: string | null
+          requester_email: string | null
+          requester_name: string | null
+          status: string
+        }
+        Insert: {
+          airtable_job_id: string
+          created_at?: string
+          current_value?: string | null
+          decided_at?: string | null
+          decided_by?: string | null
+          decision_note?: string | null
+          field_name: string
+          id?: string
+          job_code?: string | null
+          reason?: string | null
+          requested_by: string
+          requested_value?: string | null
+          requester_email?: string | null
+          requester_name?: string | null
+          status?: string
+        }
+        Update: {
+          airtable_job_id?: string
+          created_at?: string
+          current_value?: string | null
+          decided_at?: string | null
+          decided_by?: string | null
+          decision_note?: string | null
+          field_name?: string
+          id?: string
+          job_code?: string | null
+          reason?: string | null
+          requested_by?: string
+          requested_value?: string | null
+          requester_email?: string | null
+          requester_name?: string | null
+          status?: string
+        }
+        Relationships: []
+      }
       job_events: {
         Row: {
           actor_email: string | null
@@ -473,6 +527,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      is_my_partner_profile: { Args: { _user_id: string }; Returns: boolean }
       move_to_dlq: {
         Args: {
           dlq_name: string
