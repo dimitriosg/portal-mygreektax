@@ -52,7 +52,7 @@ export const Route = createFileRoute("/lovable/email/transactional/send")({
         }
 
         const token = authHeader.slice('Bearer '.length).trim()
-        const supabase = createClient(supabaseUrl, supabaseServiceKey)
+        const supabase = createClient<any>(supabaseUrl, supabaseServiceKey)
         const { data: { user }, error: authError } = await supabase.auth.getUser(token)
 
         if (authError || !user) {
