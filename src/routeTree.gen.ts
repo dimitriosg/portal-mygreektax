@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as UnsubscribeRouteImport } from './routes/unsubscribe'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as AdminRouteImport } from './routes/admin'
@@ -22,6 +23,11 @@ import { Route as LovableEmailTransactionalSendRouteImport } from './routes/lova
 import { Route as LovableEmailTransactionalPreviewRouteImport } from './routes/lovable/email/transactional/preview'
 import { Route as LovableEmailQueueProcessRouteImport } from './routes/lovable/email/queue/process'
 
+const UnsubscribeRoute = UnsubscribeRouteImport.update({
+  id: '/unsubscribe',
+  path: '/unsubscribe',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -91,6 +97,7 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminRoute
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
+  '/unsubscribe': typeof UnsubscribeRoute
   '/invite/': typeof InviteRoute
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
   '/jobs/$jobId': typeof JobsJobIdRoute
@@ -105,6 +112,7 @@ export interface FileRoutesByTo {
   '/admin': typeof AdminRoute
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
+  '/unsubscribe': typeof UnsubscribeRoute
   '/invite': typeof InviteRoute
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
   '/jobs/$jobId': typeof JobsJobIdRoute
@@ -120,6 +128,7 @@ export interface FileRoutesById {
   '/admin': typeof AdminRoute
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
+  '/unsubscribe': typeof UnsubscribeRoute
   '/invite/': typeof InviteRoute
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
   '/jobs/$jobId': typeof JobsJobIdRoute
@@ -136,6 +145,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/dashboard'
     | '/login'
+    | '/unsubscribe'
     | '/invite/'
     | '/email/unsubscribe'
     | '/jobs/$jobId'
@@ -150,6 +160,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/dashboard'
     | '/login'
+    | '/unsubscribe'
     | '/invite'
     | '/email/unsubscribe'
     | '/jobs/$jobId'
@@ -164,6 +175,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/dashboard'
     | '/login'
+    | '/unsubscribe'
     | '/invite/'
     | '/email/unsubscribe'
     | '/jobs/$jobId'
@@ -179,6 +191,7 @@ export interface RootRouteChildren {
   AdminRoute: typeof AdminRoute
   DashboardRoute: typeof DashboardRoute
   LoginRoute: typeof LoginRoute
+  UnsubscribeRoute: typeof UnsubscribeRoute
   InviteRoute: typeof InviteRoute
   EmailUnsubscribeRoute: typeof EmailUnsubscribeRoute
   JobsJobIdRoute: typeof JobsJobIdRoute
@@ -191,6 +204,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/unsubscribe': {
+      id: '/unsubscribe'
+      path: '/unsubscribe'
+      fullPath: '/unsubscribe'
+      preLoaderRoute: typeof UnsubscribeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/login': {
       id: '/login'
       path: '/login'
@@ -283,6 +303,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRoute: AdminRoute,
   DashboardRoute: DashboardRoute,
   LoginRoute: LoginRoute,
+  UnsubscribeRoute: UnsubscribeRoute,
   InviteRoute: InviteRoute,
   EmailUnsubscribeRoute: EmailUnsubscribeRoute,
   JobsJobIdRoute: JobsJobIdRoute,

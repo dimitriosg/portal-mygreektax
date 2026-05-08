@@ -89,8 +89,11 @@ export async function enqueuePartnerInviteEmail(params: {
         sender_domain: SENDER_DOMAIN,
         subject:
           typeof partnerInviteTemplate.subject === "function"
-            ? partnerInviteTemplate.subject({ firstName, inviteUrl })
-            : partnerInviteTemplate.subject,
+            ? (partnerInviteTemplate.subject as (d: any) => string)({
+                firstName,
+                inviteUrl,
+              })
+            : (partnerInviteTemplate.subject as string),
         html,
         text,
         purpose: "transactional",
