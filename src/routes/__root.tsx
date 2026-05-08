@@ -108,6 +108,15 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         href: "https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,600;1,400;1,500&display=swap",
       },
     ],
+    scripts: [
+      // Host-gated Plausible loader. Only loads the real tracking script
+      // when the page is served from portal.mygreektax.eu. On previews
+      // (*.lovable.app, localhost) it installs a no-op `window.plausible`
+      // shim so calls from `@/lib/analytics` never throw.
+      {
+        children: `(function(){try{var h=window.location.hostname;if(h==="portal.mygreektax.eu"){var s=document.createElement("script");s.defer=true;s.setAttribute("data-domain","portal.mygreektax.eu");s.src="https://plausible.io/js/script.tagged-events.outbound-links.file-downloads.js";document.head.appendChild(s);window.plausible=window.plausible||function(){(window.plausible.q=window.plausible.q||[]).push(arguments)};}else{window.plausible=window.plausible||function(){};}}catch(e){}})();`,
+      },
+    ],
   }),
   shellComponent: RootShell,
   component: RootComponent,

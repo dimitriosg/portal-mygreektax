@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { linkPartnerProfile, claimFirstAdmin, getMyContext } from "@/lib/auth.functions";
+import { track } from "@/lib/analytics";
 
 type Ctx = {
   user: User | null;
@@ -42,6 +43,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const ctx = await getMyContext();
       setIsRealAdmin(ctx.isAdmin);
       setIsPartner(ctx.isPartner);
+      try {
+        if (typeof window !== "undefined") {
+          const flag = "mgt:loginTracked";
+          if (!sessionStorage.getItem(flag)) {
+            sessionStorage.setItem(flag, "1");
+            track("partner_login", {
+              role: ctx.isAdmin ? "admin" : ctx.isPartner ? "partner" : "user",
+            });
+          }
+        }
+      } catch {
+        // ignore
+      }
     } catch {
       setIsRealAdmin(false);
       setIsPartner(false);
@@ -85,6 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (typeof window !== "undefined") {
       sessionStorage.removeItem(IMP_ID_KEY);
       sessionStorage.removeItem(IMP_NAME_KEY);
+      sessionStorage.removeItem("mgt:loginTracked");
     }
     await supabase.auth.signOut();
   };

@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { StatusBadge, TierBadge } from "@/lib/badges";
 import { toast } from "sonner";
 import { formatDate, formatDateTime } from "@/lib/utils";
+import { track } from "@/lib/analytics";
 
 export const Route = createFileRoute("/jobs/$jobId")({ component: JobDetail });
 
@@ -53,6 +54,10 @@ function JobDetail() {
     mutationFn: () => updateFn({ data: { jobId, status: status || undefined, notes } }),
     onSuccess: () => {
       toast.success("Job updated");
+      const previous = data?.job?.fields.Status ?? "";
+      if (status && status !== previous) {
+        track("job_status_changed", { from: previous || "unknown", to: status });
+      }
       qc.invalidateQueries({ queryKey: ["job", jobId] });
       qc.invalidateQueries({ queryKey: ["jobs"] });
       qc.invalidateQueries({ queryKey: ["job-events", jobId] });
@@ -64,6 +69,7 @@ function JobDetail() {
     mutationFn: () => tokenFn({ data: { jobId } }),
     onSuccess: ({ token, email }) => {
       const url = `${window.location.origin}/track/${token}`;
+      track("tracking_link_created");
       navigator.clipboard?.writeText(url).catch(() => {});
       toast.success(`Tracking link copied for ${email}`);
     },

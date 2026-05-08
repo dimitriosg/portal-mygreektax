@@ -34,6 +34,8 @@ import { CalendarIcon } from "lucide-react";
 import { cn, formatDate } from "@/lib/utils";
 import type { DateRange } from "react-day-picker";
 import { PartnersSection } from "@/components/admin-partners";
+import { AdminAnalytics } from "@/components/admin-analytics";
+import { track } from "@/lib/analytics";
 
 export const Route = createFileRoute("/admin")({ component: AdminPage });
 
@@ -73,8 +75,14 @@ function AdminPage() {
 
   const createMut = useMutation({
     mutationFn: (vars: Parameters<typeof createJobFn>[0]["data"]) => createJobFn({ data: vars }),
-    onSuccess: () => {
+    onSuccess: (_res, vars) => {
       toast.success("Job created");
+      const svc = (servicesQ.data?.services ?? []).find((s) => s.id === vars.serviceId);
+      track("job_created", {
+        tier: svc?.tier ?? "unknown",
+        status: vars.status ?? "To Assign",
+        assigned: vars.accountantId ? "yes" : "no",
+      });
       qc.invalidateQueries({ queryKey: ["jobs"] });
       setOpen(false);
       setForm({ clientId: "", serviceId: "", accountantId: "", status: "To Assign", slaDeadline: "", dateSent: "", notes: "" });
@@ -95,6 +103,7 @@ function AdminPage() {
     mutationFn: (vars: { jobId: string }) => createTokenFn({ data: vars }),
     onSuccess: async ({ token, email }) => {
       const url = `${window.location.origin}/track/${token}`;
+      track("tracking_link_created");
       try {
         await navigator.clipboard.writeText(url);
         toast.success(`Tracking link copied (for ${email})`);
@@ -441,6 +450,8 @@ function AdminPage() {
       </div>
 
       <PartnersSection accountants={accountants} />
+
+      <AdminAnalytics />
     </div>
   );
 }

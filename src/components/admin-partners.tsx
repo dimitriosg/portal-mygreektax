@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { formatDate } from "@/lib/utils";
+import { track } from "@/lib/analytics";
 
 type AirtableAcc = { id: string; fields: { Name?: string } };
 
@@ -67,6 +68,7 @@ export function PartnersSection({ accountants }: { accountants: AirtableAcc[] })
       sendEmailFn({ data: vars }),
     onSuccess: () => {
       toast.success("Invite email queued");
+      track("partner_invite_sent");
       setIssued(null);
     },
     onError: (e) => toast.error((e as Error).message),
