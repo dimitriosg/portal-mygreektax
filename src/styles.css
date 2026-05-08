@@ -64,6 +64,10 @@
   --color-brand-muted: var(--brand-muted);
   --color-success: var(--success);
   --color-warning: var(--warning);
+  --color-cream: var(--cream);
+  --color-navy: var(--navy);
+  --color-olive: var(--olive);
+  --font-serif: "Playfair Display", ui-serif, Georgia, serif;
 }
 
 :root {
@@ -100,13 +104,17 @@
   --sidebar-accent-foreground: oklch(0.208 0.042 265.755);
   --sidebar-border: oklch(0.929 0.013 255.508);
   --sidebar-ring: oklch(0.704 0.04 256.788);
-  --brand: oklch(0.42 0.07 215);
-  --brand-foreground: oklch(0.985 0.005 220);
-  --brand-muted: oklch(0.97 0.018 215);
-  --success: oklch(0.62 0.14 155);
+  /* MyGreekTax brand: amber gold, navy ink, cream paper, olive accent */
+  --brand: oklch(0.66 0.12 75);            /* amber #B8812E */
+  --brand-foreground: oklch(0.97 0.02 85); /* cream */
+  --brand-muted: oklch(0.95 0.03 80);      /* tinted cream */
+  --navy: oklch(0.28 0.05 260);            /* deep ink #1F2A44 */
+  --cream: oklch(0.965 0.018 85);          /* #F7F3EE */
+  --olive: oklch(0.6 0.06 130);            /* #7A8A5A */
+  --success: oklch(0.6 0.08 145);
   --warning: oklch(0.74 0.16 70);
-  --gradient-hero: linear-gradient(180deg, oklch(0.985 0.012 215) 0%, oklch(1 0 0) 60%);
-  --shadow-soft: 0 1px 2px oklch(0.42 0.07 215 / 0.04), 0 8px 24px -12px oklch(0.42 0.07 215 / 0.12);
+  --gradient-hero: linear-gradient(180deg, oklch(0.965 0.018 85) 0%, oklch(0.985 0.01 85) 100%);
+  --shadow-soft: 0 1px 2px oklch(0.28 0.05 260 / 0.05), 0 12px 32px -16px oklch(0.28 0.05 260 / 0.18);
 }
 
 .dark {
@@ -142,12 +150,15 @@
   --sidebar-accent-foreground: oklch(0.984 0.003 247.858);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.551 0.027 264.364);
-  --brand: oklch(0.7 0.09 215);
-  --brand-foreground: oklch(0.15 0.03 220);
-  --brand-muted: oklch(0.27 0.04 220);
-  --success: oklch(0.7 0.14 155);
+  --brand: oklch(0.78 0.13 80);
+  --brand-foreground: oklch(0.18 0.02 80);
+  --brand-muted: oklch(0.27 0.04 80);
+  --navy: oklch(0.85 0.04 260);
+  --cream: oklch(0.22 0.02 85);
+  --olive: oklch(0.7 0.08 130);
+  --success: oklch(0.7 0.1 145);
   --warning: oklch(0.78 0.15 70);
-  --gradient-hero: linear-gradient(180deg, oklch(0.18 0.04 220) 0%, oklch(0.129 0.042 264.695) 60%);
+  --gradient-hero: linear-gradient(180deg, oklch(0.18 0.02 80) 0%, oklch(0.129 0.042 264.695) 100%);
   --shadow-soft: 0 1px 2px oklch(0 0 0 / 0.4), 0 8px 24px -12px oklch(0 0 0 / 0.5);
 }
 
