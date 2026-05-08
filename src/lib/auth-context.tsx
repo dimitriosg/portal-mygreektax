@@ -44,9 +44,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsRealAdmin(ctx.isAdmin);
       setIsPartner(ctx.isPartner);
       try {
-        track("partner_login", {
-          role: ctx.isAdmin ? "admin" : ctx.isPartner ? "partner" : "user",
-        });
+        if (typeof window !== "undefined") {
+          const flag = "mgt:loginTracked";
+          if (!sessionStorage.getItem(flag)) {
+            sessionStorage.setItem(flag, "1");
+            track("partner_login", {
+              role: ctx.isAdmin ? "admin" : ctx.isPartner ? "partner" : "user",
+            });
+          }
+        }
       } catch {
         // ignore
       }
