@@ -40,7 +40,7 @@ const AdminEmail = ({
 }: AdminProps) => (
   <Html lang="en">
     <Head />
-    <Preview>{partnerName} requests a change to {jobCode}</Preview>
+    <Preview>{`${partnerName ?? ""} requests a change to ${jobCode ?? ""}`}</Preview>
     <Body style={main}>
       <Container style={container}>
         <Heading style={h1}>{`Change request — ${jobCode ?? ""}`}</Heading>
@@ -100,7 +100,7 @@ const DecisionEmail = ({
 }: DecisionProps) => (
   <Html lang="en">
     <Head />
-    <Preview>Your change request for {jobCode} was {decision}</Preview>
+    <Preview>{`Your change request for ${jobCode ?? ""} was ${decision ?? ""}`}</Preview>
     <Body style={main}>
       <Container style={container}>
         <Heading style={h1}>{`Request ${decision ?? ""} — ${jobCode ?? ""}`}</Heading>
