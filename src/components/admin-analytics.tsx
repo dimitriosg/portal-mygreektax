@@ -61,7 +61,7 @@ export function AdminAnalytics() {
         </Card>
       )}
 
-      {q.data && !q.data.error && (
+      {q.data && !q.data.error && q.data.aggregate && (
         <>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Kpi label="Visitors" value={q.data.aggregate.visitors.toLocaleString()} />
@@ -116,12 +116,12 @@ export function AdminAnalytics() {
           <div className="grid gap-3 md:grid-cols-2">
             <BreakdownTable
               title="Top pages (last 7d)"
-              rows={q.data.topPages.map((p) => ({ label: p.page || "/", value: p.visitors }))}
+              rows={(q.data.topPages ?? []).map((p) => ({ label: p.page || "/", value: p.visitors }))}
               empty="No page views yet."
             />
             <BreakdownTable
               title="Top events (last 7d)"
-              rows={q.data.topEvents.map((e) => ({ label: e.name, value: e.visitors }))}
+              rows={(q.data.topEvents ?? []).map((e) => ({ label: e.name, value: e.visitors }))}
               empty="No custom events yet."
             />
           </div>
