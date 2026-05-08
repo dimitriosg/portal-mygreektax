@@ -109,12 +109,17 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       },
     ],
     scripts: [
-      // Host-gated Plausible loader. Only loads the real tracking script
-      // when the page is served from portal.mygreektax.eu. On previews
-      // (*.lovable.app, localhost) it installs a no-op `window.plausible`
-      // shim so calls from `@/lib/analytics` never throw.
+      // Static Plausible tag so the verifier can detect it in raw HTML.
+      // The script itself ignores hostnames that don't match data-domain
+      // (and localhost), so previews are automatically no-ops.
       {
-        children: `(function(){try{if(window.location.hostname==="portal.mygreektax.eu"){window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)};plausible.init=plausible.init||function(i){plausible.o=i||{}};var s=document.createElement("script");s.async=true;s.src="https://plausible.io/js/pa-jHCy-4-ii1HrtB2pU_pbx.js";document.head.appendChild(s);plausible.init();}else{window.plausible=window.plausible||function(){};}}catch(e){}})();`,
+        src: "https://plausible.io/js/pa-jHCy-4-ii1HrtB2pU_pbx.js",
+        defer: true,
+        "data-domain": "portal.mygreektax.eu",
+      },
+      {
+        children:
+          "window.plausible=window.plausible||function(){(window.plausible.q=window.plausible.q||[]).push(arguments)}",
       },
     ],
   }),

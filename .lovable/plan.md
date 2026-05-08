@@ -1,47 +1,44 @@
-## Goal
+## Why verification is failing
 
-In **Admin overview → Partners**, surface partner status at a glance, show last activity, and let admins disable/enable a partner's access.
+Plausible verifies installation by fetching the HTML of `portal.mygreektax.eu` and searching for a `<script src="…plausible.io…">` tag inside `<head>`.
 
-## Changes
+The current loader in `src/routes/__root.tsx` (line 117) is an IIFE that:
+1. Checks `window.location.hostname` at runtime, then
+2. Calls `document.createElement("script")` to inject the real tag.
 
-### 1. Database (migration)
+Both steps require JavaScript execution. The verifier sees only the inline IIFE source, never a `plausible.io` script URL — so it reports "We couldn't detect Plausible on your site".
 
-- Add `disabled_at timestamptz` and `disabled_by uuid` columns to `partner_profiles`.
-- Add a SQL helper `get_partner_last_seen(uuid[])` returning `(user_id, last_seen_at)` — computed from the most recent `partner_login` event in `activity_events` per user. Admin-only (SECURITY DEFINER, `has_role`).
-- (Auth enforcement happens in app code — see step 3 — since revoking Supabase sessions requires the service role.)
+## Fix
 
-### 2. Server functions (`src/lib/invites.functions.ts`)
+Replace the dynamic loader with a **static** `<script>` entry in `head().scripts` so SSR emits it directly into `<head>` of the rendered HTML. Plausible's bundled script already ignores `localhost` and unknown domains by default, so the host-gating IIFE is unnecessary.
 
-- Extend `listPartnerProfilesAdmin` to also return `last_seen_at` and `disabled_at` for each partner (single batched call to the new RPC).
-- Add `setPartnerDisabled({ userId, disabled })` — admin-only:
-  - Updates `partner_profiles.disabled_at` / `disabled_by`.
-  - When disabling: calls `supabaseAdmin.auth.admin.signOut(userId, 'global')` to invalidate existing sessions immediately.
-  - Logs an `activity_events` row (`partner_disabled` / `partner_enabled`) so it appears in the daily summary.
+### Change in `src/routes/__root.tsx`
 
-### 3. Login gate (`src/lib/activity.functions.ts` / auth flow)
+Replace the current `scripts: [...]` block inside `head()` with:
 
-- In `recordPartnerLogin` (called right after sign-in): if the user is a partner and `partner_profiles.disabled_at` is set, call `supabase.auth.signOut()` server-side and return `{ disabled: true }`.
-- In `auth-context.tsx`: if the response indicates `disabled`, sign out client-side and toast "Your access has been disabled. Please contact your administrator."
-
-### 4. UI (`src/components/admin-partners.tsx`)
-
-Replace the **Active partners** table with new columns:
-
-```text
-Name | Email | Airtable | Status | Last seen | Joined | Actions
+```ts
+scripts: [
+  {
+    src: "https://plausible.io/js/pa-jHCy-4-ii1HrtB2pU_pbx.js",
+    defer: true,
+    "data-domain": "portal.mygreektax.eu",
+  },
+  {
+    children:
+      'window.plausible=window.plausible||function(){(window.plausible.q=window.plausible.q||[]).push(arguments)}',
+  },
+],
 ```
 
-- **Status** badge:
-  - `Active` (green) — has account, not disabled, seen in last 30 days.
-  - `Inactive` (gray) — has account, not disabled, no login in 30+ days (or never logged in).
-  - `Disabled` (red) — `disabled_at` is set.
-- **Last seen** column: relative time ("2 hours ago", "5 days ago", "Never") from `last_seen_at`.
-- **Actions** column: dropdown with "Disable access" / "Enable access" — opens a small confirm dialog before mutating; on success, invalidates the `partners` query.
+- The first entry renders `<script defer src="…pa-jHCy-…js" data-domain="portal.mygreektax.eu">` directly in `<head>` — what the verifier looks for.
+- The second entry installs the queue shim so `plausible(...)` calls from `@/lib/analytics` never throw before the script loads (and on preview/localhost where the script no-ops).
 
-For the **Pending invitations** table — no change to columns, but clarify the section subtitle: *"Partners who haven't accepted yet."* And add a tiny help line under the **Active partners** header: *"Partners with an account. 'Inactive' = no login in the last 30 days."*
+### Preview / localhost behavior
 
-## Out of scope
+Plausible's script automatically refuses to send events from hostnames that don't match `data-domain` (and from `localhost`), so no host gating is needed. Calls from the app become no-ops on `*.lovable.app` and `localhost`.
 
-- No deletion of partner accounts (only disable/enable).
-- No per-partner activity drill-down view (could be a follow-up).
-- No change to the daily/weekly summary email template — `partner_disabled` / `partner_enabled` will show up automatically once added to `TYPE_TITLES` in `activity-summary.server.tsx`.
+### Verification steps
+
+1. After deploy, view source of `https://portal.mygreektax.eu/` and confirm the `<script src="…plausible.io/js/pa-jHCy-4-ii1HrtB2pU_pbx.js" data-domain="portal.mygreektax.eu">` tag is present inside `<head>`.
+2. Click "Verify installation again" in Plausible — it should succeed.
+3. Confirm preview (`*.lovable.app`) still loads without console errors and that `plausible(...)` calls don't throw.
