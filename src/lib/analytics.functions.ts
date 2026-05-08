@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
-import { createClient } from "@supabase/supabase-js";
-import { getRequestHeader } from "@tanstack/react-start/server";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 const PLAUSIBLE_SITE_ID = "portal.mygreektax.eu";
 const PLAUSIBLE_BASE = "https://plausible.io/api/v1/stats";
@@ -35,31 +36,17 @@ export type AdminAnalyticsData = {
   topEvents: { name: string; visitors: number }[];
 };
 
-async function requireAdmin(): Promise<void> {
-  const url = process.env.SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !serviceKey) {
-    throw new Response("Server configuration error", { status: 500 });
-  }
-  const authHeader = getRequestHeader("authorization");
-  if (!authHeader?.startsWith("Bearer ")) {
-    throw new Response("Unauthorized", { status: 401 });
-  }
-  const token = authHeader.slice("Bearer ".length).trim();
-  const supabase = createClient(url, serviceKey);
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser(token);
-  if (authError || !user) {
-    throw new Response("Unauthorized", { status: 401 });
-  }
-  const { data: roles, error: rolesError } = await supabase
+async function requireAdmin(userId: string): Promise<void> {
+  const { data: roles, error: rolesError } = await supabaseAdmin
     .from("user_roles")
     .select("role")
-    .eq("user_id", user.id);
-  if (rolesError || !roles?.some((r) => r.role === "admin")) {
-    throw new Response("Forbidden", { status: 403 });
+    .eq("user_id", userId);
+  if (rolesError) {
+    console.error("[getPlausibleStats] Failed to verify admin role", rolesError);
+    throw new Error("Could not verify analytics access.");
+  }
+  if (!roles?.some((r) => r.role === "admin")) {
+    throw new Error("You do not have access to analytics.");
   }
 }
 
@@ -86,20 +73,21 @@ const EMPTY: AdminAnalyticsData = {
   topEvents: [],
 };
 
-export const getPlausibleStats = createServerFn({ method: "GET" }).handler(
-  async (): Promise<AdminAnalyticsData> => {
-    await requireAdmin();
-
-    if (!process.env.PLAUSIBLE_API_KEY) {
-      return {
-        ...EMPTY,
-        enabled: false,
-        error:
-          "Plausible analytics is not configured yet. Add a PLAUSIBLE_API_KEY secret to enable this panel.",
-      };
-    }
-
+export const getPlausibleStats = createServerFn({ method: "GET" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .handler(async ({ context }): Promise<AdminAnalyticsData> => {
     try {
+      await requireAdmin(context.userId);
+
+      if (!process.env.PLAUSIBLE_API_KEY) {
+        return {
+          ...EMPTY,
+          enabled: false,
+          error:
+            "Plausible analytics is not configured yet. Add a PLAUSIBLE_API_KEY secret to enable this panel.",
+        };
+      }
+
       const [aggregate, timeseries, topPages, topEvents] = await Promise.all([
         plausibleFetch<AggregateResponse>("aggregate", {
           period: "30d",
@@ -149,12 +137,11 @@ export const getPlausibleStats = createServerFn({ method: "GET" }).handler(
       console.error("getPlausibleStats failed", err);
       return {
         ...EMPTY,
-        enabled: true,
+        enabled: Boolean(process.env.PLAUSIBLE_API_KEY),
         error:
           err instanceof Error
             ? err.message
             : "Could not load analytics from Plausible.",
       };
     }
-  },
-);
+  });
