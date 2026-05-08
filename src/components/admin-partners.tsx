@@ -7,6 +7,7 @@ import {
   listPartnerProfilesAdmin,
   revokePartnerInvite,
   sendPartnerInviteEmail,
+  setPartnerDisabled,
 } from "@/lib/invites.functions";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -20,11 +21,45 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { MoreHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import { formatDate } from "@/lib/utils";
 import { track } from "@/lib/analytics";
 
 type AirtableAcc = { id: string; fields: { Name?: string } };
+
+const INACTIVE_DAYS = 30;
+
+function relativeTime(iso: string | null | undefined): string {
+  if (!iso) return "Never";
+  const ms = Date.now() - new Date(iso).getTime();
+  if (ms < 0) return "just now";
+  const mins = Math.floor(ms / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs} hour${hrs === 1 ? "" : "s"} ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 30) return `${days} day${days === 1 ? "" : "s"} ago`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months} month${months === 1 ? "" : "s"} ago`;
+  const years = Math.floor(days / 365);
+  return `${years} year${years === 1 ? "" : "s"} ago`;
+}
+
+function partnerStatus(p: { disabled_at: string | null; last_seen_at: string | null }) {
+  if (p.disabled_at) return "disabled" as const;
+  if (!p.last_seen_at) return "inactive" as const;
+  const days = (Date.now() - new Date(p.last_seen_at).getTime()) / 86400000;
+  return days <= INACTIVE_DAYS ? ("active" as const) : ("inactive" as const);
+}
 
 export function PartnersSection({ accountants }: { accountants: AirtableAcc[] }) {
   const qc = useQueryClient();
@@ -33,6 +68,7 @@ export function PartnersSection({ accountants }: { accountants: AirtableAcc[] })
   const createFn = useServerFn(createPartnerInvite);
   const revokeFn = useServerFn(revokePartnerInvite);
   const sendEmailFn = useServerFn(sendPartnerInviteEmail);
+  const toggleDisabledFn = useServerFn(setPartnerDisabled);
 
   const invitesQ = useQuery({ queryKey: ["partner-invites"], queryFn: () => fetchInvites() });
   const partnersQ = useQuery({ queryKey: ["partners"], queryFn: () => fetchPartners() });
@@ -79,6 +115,21 @@ export function PartnersSection({ accountants }: { accountants: AirtableAcc[] })
     onSuccess: () => {
       toast.success("Invite revoked");
       qc.invalidateQueries({ queryKey: ["partner-invites"] });
+    },
+    onError: (e) => toast.error((e as Error).message),
+  });
+
+  const [confirm, setConfirm] = useState<
+    { userId: string; name: string; disable: boolean } | null
+  >(null);
+
+  const toggleMut = useMutation({
+    mutationFn: (vars: { userId: string; disabled: boolean }) =>
+      toggleDisabledFn({ data: vars }),
+    onSuccess: (_d, vars) => {
+      toast.success(vars.disabled ? "Partner access disabled" : "Partner access enabled");
+      setConfirm(null);
+      qc.invalidateQueries({ queryKey: ["partners"] });
     },
     onError: (e) => toast.error((e as Error).message),
   });
@@ -211,8 +262,9 @@ export function PartnersSection({ accountants }: { accountants: AirtableAcc[] })
       {/* Pending invites */}
       <Card className="mb-4">
         <CardContent className="p-0">
-          <div className="border-b border-border px-4 py-3 text-sm font-medium">
-            Pending invitations ({pending.length})
+          <div className="border-b border-border px-4 py-3">
+            <div className="text-sm font-medium">Pending invitations ({pending.length})</div>
+            <div className="text-xs text-muted-foreground">Partners who haven't accepted yet.</div>
           </div>
           {pending.length === 0 ? (
             <div className="px-4 py-6 text-sm text-muted-foreground">No pending invites.</div>
@@ -257,25 +309,33 @@ export function PartnersSection({ accountants }: { accountants: AirtableAcc[] })
       {/* Active partners */}
       <Card>
         <CardContent className="p-0">
-          <div className="border-b border-border px-4 py-3 text-sm font-medium">
-            Active partners ({partners.length})
+          <div className="border-b border-border px-4 py-3">
+            <div className="text-sm font-medium">Active partners ({partners.length})</div>
+            <div className="text-xs text-muted-foreground">
+              Partners with an account. "Inactive" = no login in the last {INACTIVE_DAYS} days.
+            </div>
           </div>
           {partners.length === 0 ? (
             <div className="px-4 py-6 text-sm text-muted-foreground">No partners yet.</div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[560px] text-sm">
+              <table className="w-full min-w-[760px] text-sm">
                 <thead className="bg-muted/40 text-left">
                   <tr>
                     <th className="px-3 py-2">Name</th>
                     <th className="px-3 py-2">Email</th>
                     <th className="px-3 py-2">Airtable</th>
+                    <th className="px-3 py-2">Status</th>
+                    <th className="px-3 py-2">Last seen</th>
                     <th className="px-3 py-2">Joined</th>
+                    <th className="px-3 py-2"></th>
                   </tr>
                 </thead>
                 <tbody>
                   {partners.map((p) => {
                     const acc = accountants.find((a) => a.id === p.airtable_accountant_id);
+                    const status = partnerStatus(p);
+                    const isDisabled = status === "disabled";
                     return (
                       <tr key={p.user_id} className="border-t border-border">
                         <td className="px-3 py-2">{p.full_name ?? "—"}</td>
@@ -283,7 +343,43 @@ export function PartnersSection({ accountants }: { accountants: AirtableAcc[] })
                         <td className="px-3 py-2 text-muted-foreground">
                           {acc?.fields.Name ?? p.airtable_accountant_id ?? "—"}
                         </td>
+                        <td className="px-3 py-2">
+                          {status === "active" ? (
+                            <Badge className="bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/15 dark:text-emerald-400">
+                              Active
+                            </Badge>
+                          ) : status === "inactive" ? (
+                            <Badge variant="secondary">Inactive</Badge>
+                          ) : (
+                            <Badge variant="destructive">Disabled</Badge>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-muted-foreground">
+                          {relativeTime(p.last_seen_at)}
+                        </td>
                         <td className="px-3 py-2 text-muted-foreground">{formatDate(p.created_at)}</td>
+                        <td className="px-3 py-2 text-right">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button size="sm" variant="ghost" className="h-8 w-8 p-0">
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  setConfirm({
+                                    userId: p.user_id,
+                                    name: p.full_name ?? p.email,
+                                    disable: !isDisabled,
+                                  })
+                                }
+                              >
+                                {isDisabled ? "Enable access" : "Disable access"}
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </td>
                       </tr>
                     );
                   })}
@@ -293,6 +389,48 @@ export function PartnersSection({ accountants }: { accountants: AirtableAcc[] })
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={!!confirm} onOpenChange={(o) => !o && setConfirm(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {confirm?.disable ? "Disable partner access?" : "Enable partner access?"}
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            {confirm?.disable ? (
+              <>
+                <span className="font-medium text-foreground">{confirm?.name}</span> will be
+                signed out immediately and won't be able to sign back in.
+              </>
+            ) : (
+              <>
+                <span className="font-medium text-foreground">{confirm?.name}</span> will be
+                able to sign in again with their existing credentials.
+              </>
+            )}
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirm(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant={confirm?.disable ? "destructive" : "default"}
+              disabled={toggleMut.isPending}
+              onClick={() =>
+                confirm &&
+                toggleMut.mutate({ userId: confirm.userId, disabled: confirm.disable })
+              }
+            >
+              {toggleMut.isPending
+                ? "Saving…"
+                : confirm?.disable
+                  ? "Disable access"
+                  : "Enable access"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
