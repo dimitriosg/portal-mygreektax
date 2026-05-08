@@ -111,12 +111,34 @@ export const getJob = createServerFn({ method: "GET" })
 
 export const updateJob = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
-  .inputValidator((d: { jobId: string; status?: string; notes?: string }) =>
+  .inputValidator((d: {
+    jobId: string;
+    status?: string;
+    notes?: string;
+    slaDeadline?: string | null;
+    dateSent?: string | null;
+    clientFee?: number | null;
+    accountantFee?: number | null;
+    tier?: string | null;
+    category?: string | null;
+    serviceId?: string | null;
+    clientId?: string | null;
+    accountantId?: string | null;
+  }) =>
     z
       .object({
         jobId: z.string().min(1).max(50),
         status: z.enum(JOB_STATUSES).optional(),
         notes: z.string().max(5000).optional(),
+        slaDeadline: z.string().max(30).nullable().optional(),
+        dateSent: z.string().max(30).nullable().optional(),
+        clientFee: z.number().min(0).max(1_000_000).nullable().optional(),
+        accountantFee: z.number().min(0).max(1_000_000).nullable().optional(),
+        tier: z.string().max(100).nullable().optional(),
+        category: z.string().max(100).nullable().optional(),
+        serviceId: z.string().min(1).max(50).nullable().optional(),
+        clientId: z.string().min(1).max(50).nullable().optional(),
+        accountantId: z.string().min(1).max(50).nullable().optional(),
       })
       .parse(d),
   )
@@ -127,10 +149,28 @@ export const updateJob = createServerFn({ method: "POST" })
     if (!isAdmin) {
       const allowed = partner && job.fields["Assigned Accountant"]?.includes(partner.airtable_accountant_id);
       if (!allowed) throw new Error("Forbidden");
+      // Partners may only update Status and Notes directly. Other fields require admin approval.
+      const partnerFields = new Set(["jobId", "status", "notes"]);
+      for (const k of Object.keys(data)) {
+        if (!partnerFields.has(k) && (data as any)[k] !== undefined) {
+          throw new Error("Partners can only update status and notes directly. Submit a change request for other fields.");
+        }
+      }
     }
     const fields: Record<string, unknown> = {};
     if (data.status) fields["Status"] = data.status;
     if (data.notes !== undefined) fields["Notes"] = data.notes;
+    if (isAdmin) {
+      if (data.slaDeadline !== undefined) fields["SLA Deadline"] = data.slaDeadline ?? null;
+      if (data.dateSent !== undefined) fields["Date Sent"] = data.dateSent ?? null;
+      if (data.clientFee !== undefined) fields["Client Fee (\u20ac)"] = data.clientFee ?? null;
+      if (data.accountantFee !== undefined) fields["Accountant Fee (\u20ac)"] = data.accountantFee ?? null;
+      if (data.tier !== undefined) fields["Tier"] = data.tier ? [data.tier] : null;
+      if (data.category !== undefined) fields["Category"] = data.category ? [data.category] : null;
+      if (data.serviceId !== undefined) fields["Service Catalog"] = data.serviceId ? [data.serviceId] : [];
+      if (data.clientId !== undefined) fields["Client"] = data.clientId ? [data.clientId] : [];
+      if (data.accountantId !== undefined) fields["Assigned Accountant"] = data.accountantId ? [data.accountantId] : [];
+    }
     if (Object.keys(fields).length === 0) return { ok: true };
     const previousStatus = job.fields.Status ?? null;
     const previousNotes = job.fields.Notes ?? "";
@@ -146,7 +186,7 @@ export const updateJob = createServerFn({ method: "POST" })
       user_id: string;
       actor_email: string | null;
       actor_name: string | null;
-      event_type: "status_change" | "comment";
+      event_type: "status_change" | "comment" | "field_change";
       from_status?: string | null;
       to_status?: string | null;
       comment?: string | null;
@@ -172,6 +212,34 @@ export const updateJob = createServerFn({ method: "POST" })
         event_type: "comment",
         comment: data.notes,
       });
+    }
+    // Log other admin field changes as comment-style events.
+    if (isAdmin) {
+      const fieldChangeMap: Array<[string, unknown, unknown]> = [
+        ["SLA deadline", job.fields["SLA Deadline"], data.slaDeadline],
+        ["Date sent", job.fields["Date Sent"], data.dateSent],
+        ["Client fee", job.fields["Client Fee (\u20ac)"], data.clientFee],
+        ["Accountant fee", job.fields["Accountant Fee (\u20ac)"], data.accountantFee],
+        ["Tier", job.fields.Tier?.[0], data.tier],
+        ["Category", job.fields.Category?.[0], data.category],
+        ["Service", job.fields["Service Catalog"]?.[0], data.serviceId],
+        ["Client", job.fields.Client?.[0], data.clientId],
+        ["Assigned accountant", job.fields["Assigned Accountant"]?.[0], data.accountantId],
+      ];
+      for (const [label, prev, next] of fieldChangeMap) {
+        if (next === undefined) continue;
+        const prevStr = prev == null ? "" : String(prev);
+        const nextStr = next == null ? "" : String(next);
+        if (prevStr === nextStr) continue;
+        events.push({
+          airtable_job_id: data.jobId,
+          user_id: userId,
+          actor_email: actorEmail,
+          actor_name: actorName,
+          event_type: "comment",
+          comment: `${label}: ${prevStr || "—"} → ${nextStr || "—"}`,
+        });
+      }
     }
     if (events.length > 0) {
       await supabaseAdmin.from("job_events").insert(events);
@@ -774,4 +842,299 @@ export const getTrackingLinkOpens = createServerFn({ method: "GET" })
       .limit(200);
     if (error) throw new Error(error.message);
     return { opens: (opens ?? []) as TrackingOpenRow[] };
+  });
+
+// ============================================================
+// Job change requests (partner → admin approval workflow)
+// ============================================================
+
+const CHANGE_FIELDS = ["sla_deadline", "status", "notes"] as const;
+export type ChangeFieldName = (typeof CHANGE_FIELDS)[number];
+
+export type JobChangeRequestRow = {
+  id: string;
+  airtable_job_id: string;
+  job_code: string | null;
+  requested_by: string;
+  requester_email: string | null;
+  requester_name: string | null;
+  field_name: ChangeFieldName;
+  current_value: string | null;
+  requested_value: string | null;
+  reason: string | null;
+  status: "pending" | "approved" | "rejected" | "cancelled";
+  decided_by: string | null;
+  decided_at: string | null;
+  decision_note: string | null;
+  created_at: string;
+};
+
+function jobFieldCurrentValue(job: AirtableRecord<JobFields>, field: ChangeFieldName): string {
+  switch (field) {
+    case "sla_deadline": return job.fields["SLA Deadline"] ?? "";
+    case "status": return job.fields.Status ?? "";
+    case "notes": return job.fields.Notes ?? "";
+  }
+}
+
+export const requestJobChange = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d: { jobId: string; field: ChangeFieldName; requestedValue: string; reason?: string }) =>
+    z.object({
+      jobId: z.string().min(1).max(50),
+      field: z.enum(CHANGE_FIELDS),
+      requestedValue: z.string().max(5000),
+      reason: z.string().max(1000).optional(),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { userId } = context;
+    const { isAdmin, partner } = await getRoleAndPartner(userId);
+    if (isAdmin) throw new Error("Admins should edit jobs directly, not request changes.");
+    if (!partner) throw new Error("Forbidden");
+    const job = (await airtableGet(`${TABLES.jobs}/${data.jobId}`)) as AirtableRecord<JobFields>;
+    const allowed = job.fields["Assigned Accountant"]?.includes(partner.airtable_accountant_id);
+    if (!allowed) throw new Error("Forbidden");
+
+    if (data.field === "status" && !(JOB_STATUSES as readonly string[]).includes(data.requestedValue)) {
+      throw new Error("Invalid status value");
+    }
+
+    const currentValue = jobFieldCurrentValue(job, data.field);
+    if (currentValue === data.requestedValue) {
+      throw new Error("Requested value matches the current value.");
+    }
+
+    // Block duplicate pending request for same field.
+    const { data: existing } = await supabaseAdmin
+      .from("job_change_requests" as any)
+      .select("id")
+      .eq("airtable_job_id", data.jobId)
+      .eq("field_name", data.field)
+      .eq("status", "pending")
+      .maybeSingle();
+    if (existing) throw new Error("You already have a pending request for this field.");
+
+    const actor = await getActorIdentity(userId);
+    const { data: inserted, error } = await supabaseAdmin
+      .from("job_change_requests" as any)
+      .insert({
+        airtable_job_id: data.jobId,
+        job_code: job.fields["Job Code"] ?? null,
+        requested_by: userId,
+        requester_email: actor.email,
+        requester_name: actor.name,
+        field_name: data.field,
+        current_value: currentValue,
+        requested_value: data.requestedValue,
+        reason: data.reason ?? null,
+      })
+      .select("*")
+      .single();
+    if (error) throw new Error(error.message);
+
+    await logActivityEvent({
+      eventType: "job_change_request_created" as any,
+      actorUserId: userId,
+      actorEmail: actor.email,
+      actorName: actor.name,
+      subjectLabel: job.fields["Job Code"] ?? data.jobId,
+      metadata: {
+        jobCode: job.fields["Job Code"] ?? null,
+        field: data.field,
+        from: currentValue,
+        to: data.requestedValue,
+      },
+    });
+
+    // Fire-and-forget admin notification email.
+    try {
+      const { enqueueChangeRequestAdminEmail } = await import("./change-request-email.server");
+      await enqueueChangeRequestAdminEmail({
+        jobCode: job.fields["Job Code"] ?? data.jobId,
+        jobId: data.jobId,
+        partnerName: actor.name ?? actor.email ?? "A partner",
+        field: data.field,
+        currentValue,
+        requestedValue: data.requestedValue,
+        reason: data.reason ?? null,
+      });
+    } catch (e) {
+      console.error("[requestJobChange] notification email failed", e);
+    }
+
+    return { ok: true, request: inserted as unknown as JobChangeRequestRow };
+  });
+
+export const cancelChangeRequest = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { error } = await supabaseAdmin
+      .from("job_change_requests" as any)
+      .update({ status: "cancelled", decided_at: new Date().toISOString() })
+      .eq("id", data.id)
+      .eq("requested_by", context.userId)
+      .eq("status", "pending");
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const decideChangeRequest = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d: { id: string; decision: "approved" | "rejected"; decisionNote?: string }) =>
+    z.object({
+      id: z.string().uuid(),
+      decision: z.enum(["approved", "rejected"]),
+      decisionNote: z.string().max(1000).optional(),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { isAdmin } = await getRoleAndPartner(context.userId);
+    if (!isAdmin) throw new Error("Forbidden");
+
+    const { data: req, error: readErr } = await supabaseAdmin
+      .from("job_change_requests" as any)
+      .select("*")
+      .eq("id", data.id)
+      .maybeSingle();
+    if (readErr || !req) throw new Error("Request not found");
+    const r = req as unknown as JobChangeRequestRow;
+    if (r.status !== "pending") throw new Error("Request already decided");
+
+    if (data.decision === "approved") {
+      // Apply the change via Airtable + log the field change.
+      const update: Record<string, unknown> = {};
+      if (r.field_name === "sla_deadline") update["SLA Deadline"] = r.requested_value || null;
+      if (r.field_name === "status") update["Status"] = r.requested_value;
+      if (r.field_name === "notes") update["Notes"] = r.requested_value;
+      await airtablePatch(TABLES.jobs, r.airtable_job_id, update);
+
+      const actor = await getActorIdentity(context.userId);
+      const eventBase = {
+        airtable_job_id: r.airtable_job_id,
+        user_id: context.userId,
+        actor_email: actor.email,
+        actor_name: actor.name,
+      };
+      if (r.field_name === "status") {
+        await supabaseAdmin.from("job_events").insert({
+          ...eventBase,
+          event_type: "status_change",
+          from_status: r.current_value,
+          to_status: r.requested_value,
+        });
+      } else {
+        const label = r.field_name === "sla_deadline" ? "SLA deadline" : "Notes";
+        await supabaseAdmin.from("job_events").insert({
+          ...eventBase,
+          event_type: "comment",
+          comment: `Approved partner request — ${label}: ${r.current_value || "—"} → ${r.requested_value || "—"}`,
+        });
+      }
+    }
+
+    const { error: updErr } = await supabaseAdmin
+      .from("job_change_requests" as any)
+      .update({
+        status: data.decision,
+        decided_by: context.userId,
+        decided_at: new Date().toISOString(),
+        decision_note: data.decisionNote ?? null,
+      })
+      .eq("id", data.id);
+    if (updErr) throw new Error(updErr.message);
+
+    const actor = await getActorIdentity(context.userId);
+    await logActivityEvent({
+      eventType: "job_change_request_decided" as any,
+      actorUserId: context.userId,
+      actorEmail: actor.email,
+      actorName: actor.name,
+      subjectLabel: r.job_code ?? r.airtable_job_id,
+      metadata: {
+        jobCode: r.job_code,
+        field: r.field_name,
+        decision: data.decision,
+        from: r.current_value,
+        to: r.requested_value,
+        partner: r.requester_name ?? r.requester_email,
+      },
+    });
+
+    // Fire-and-forget partner notification email.
+    try {
+      const { enqueueChangeRequestDecisionEmail } = await import("./change-request-email.server");
+      if (r.requester_email) {
+        await enqueueChangeRequestDecisionEmail({
+          to: r.requester_email,
+          partnerName: r.requester_name ?? r.requester_email,
+          jobCode: r.job_code ?? r.airtable_job_id,
+          field: r.field_name,
+          requestedValue: r.requested_value ?? "",
+          decision: data.decision,
+          decisionNote: data.decisionNote ?? null,
+        });
+      }
+    } catch (e) {
+      console.error("[decideChangeRequest] notification email failed", e);
+    }
+
+    return { ok: true };
+  });
+
+export const listJobChangeRequests = createServerFn({ method: "GET" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d: { jobId: string }) => z.object({ jobId: z.string().min(1).max(50) }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { userId } = context;
+    const { isAdmin, partner } = await getRoleAndPartner(userId);
+    if (!isAdmin) {
+      // Partners only see their own requests for this job.
+      if (!partner) return { requests: [] as unknown as JobChangeRequestRow[] };
+      const { data: rows } = await supabaseAdmin
+        .from("job_change_requests" as any)
+        .select("*")
+        .eq("airtable_job_id", data.jobId)
+        .eq("requested_by", userId)
+        .order("created_at", { ascending: false });
+      return { requests: (rows ?? []) as unknown as JobChangeRequestRow[] };
+    }
+    const { data: rows } = await supabaseAdmin
+      .from("job_change_requests" as any)
+      .select("*")
+      .eq("airtable_job_id", data.jobId)
+      .order("created_at", { ascending: false });
+    return { requests: (rows ?? []) as unknown as JobChangeRequestRow[] };
+  });
+
+export const listChangeRequests = createServerFn({ method: "GET" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d?: { status?: "pending" | "approved" | "rejected" | "cancelled" | "all" }) =>
+    z.object({ status: z.enum(["pending","approved","rejected","cancelled","all"]).default("pending") }).parse(d ?? {}),
+  )
+  .handler(async ({ data, context }) => {
+    const { isAdmin } = await getRoleAndPartner(context.userId);
+    if (!isAdmin) throw new Error("Forbidden");
+    let q = supabaseAdmin
+      .from("job_change_requests" as any)
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(500);
+    if (data.status !== "all") q = q.eq("status", data.status);
+    const { data: rows, error } = await q;
+    if (error) throw new Error(error.message);
+    return { requests: (rows ?? []) as unknown as JobChangeRequestRow[] };
+  });
+
+export const getPendingRequestCount = createServerFn({ method: "GET" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { isAdmin } = await getRoleAndPartner(context.userId);
+    if (!isAdmin) return { count: 0 };
+    const { count } = await supabaseAdmin
+      .from("job_change_requests" as any)
+      .select("*", { count: "exact", head: true })
+      .eq("status", "pending");
+    return { count: count ?? 0 };
   });

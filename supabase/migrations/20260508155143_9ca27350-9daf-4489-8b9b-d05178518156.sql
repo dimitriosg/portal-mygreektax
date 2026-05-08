@@ -1,0 +1,1 @@
+REVOKE EXECUTE ON FUNCTION public.is_my_partner_profile(uuid) FROM PUBLIC, anon, authenticated;

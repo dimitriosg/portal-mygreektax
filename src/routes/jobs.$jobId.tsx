@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { getJob, updateJob, createClientToken, listJobEvents, getJobTrackingStats, extendClientToken, getClientTokenHistory } from "@/lib/jobs.functions";
+import { getJob, updateJob, createClientToken, listJobEvents, getJobTrackingStats, extendClientToken, getClientTokenHistory, listJobChangeRequests, requestJobChange, cancelChangeRequest, decideChangeRequest } from "@/lib/jobs.functions";
 import { JOB_STATUSES } from "@/lib/airtable-shared";
 import { useAuth } from "@/lib/auth-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,6 +30,10 @@ function JobDetail() {
   const fetchTrackingStats = useServerFn(getJobTrackingStats);
   const extendFn = useServerFn(extendClientToken);
   const fetchTokenHistory = useServerFn(getClientTokenHistory);
+  const listRequestsFn = useServerFn(listJobChangeRequests);
+  const requestChangeFn = useServerFn(requestJobChange);
+  const cancelRequestFn = useServerFn(cancelChangeRequest);
+  const decideRequestFn = useServerFn(decideChangeRequest);
   const qc = useQueryClient();
 
   const { data, isLoading, error } = useQuery({
@@ -52,6 +56,40 @@ function JobDetail() {
     queryKey: ["token-history", tokenForHistory],
     queryFn: () => fetchTokenHistory({ data: { token: tokenForHistory! } }),
     enabled: !!tokenForHistory,
+  });
+  const requestsQ = useQuery({
+    queryKey: ["job-change-requests", jobId],
+    queryFn: () => listRequestsFn({ data: { jobId } }),
+    enabled: !!user,
+  });
+
+  const [reqField, setReqField] = useState<"sla_deadline" | "status" | "notes">("sla_deadline");
+  const [reqValue, setReqValue] = useState("");
+  const [reqReason, setReqReason] = useState("");
+
+  const submitRequest = useMutation({
+    mutationFn: () => requestChangeFn({ data: { jobId, field: reqField, requestedValue: reqValue, reason: reqReason || undefined } }),
+    onSuccess: () => {
+      toast.success("Change request submitted for admin approval");
+      setReqValue(""); setReqReason("");
+      qc.invalidateQueries({ queryKey: ["job-change-requests", jobId] });
+    },
+    onError: (e) => toast.error((e as Error).message),
+  });
+  const cancelRequest = useMutation({
+    mutationFn: (id: string) => cancelRequestFn({ data: { id } }),
+    onSuccess: () => { toast.success("Request cancelled"); qc.invalidateQueries({ queryKey: ["job-change-requests", jobId] }); },
+    onError: (e) => toast.error((e as Error).message),
+  });
+  const decideRequest = useMutation({
+    mutationFn: (vars: { id: string; decision: "approved" | "rejected" }) => decideRequestFn({ data: vars }),
+    onSuccess: () => {
+      toast.success("Decision recorded");
+      qc.invalidateQueries({ queryKey: ["job-change-requests", jobId] });
+      qc.invalidateQueries({ queryKey: ["job", jobId] });
+      qc.invalidateQueries({ queryKey: ["job-events", jobId] });
+    },
+    onError: (e) => toast.error((e as Error).message),
   });
 
   const extendMut = useMutation({
@@ -316,6 +354,70 @@ function JobDetail() {
                 )}
               </>
             )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Change requests workflow */}
+      {!isAdmin && (
+        <Card>
+          <CardHeader><CardTitle className="text-base">Request a change</CardTitle></CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <p className="text-xs text-muted-foreground">Only admins can change job data. Submit a request and an admin will approve or reject it.</p>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <select value={reqField} onChange={(e) => { setReqField(e.target.value as any); setReqValue(""); }} className="rounded border border-input bg-background px-2 py-2 text-sm">
+                <option value="sla_deadline">SLA deadline</option>
+                <option value="status">Status</option>
+                <option value="notes">Notes</option>
+              </select>
+              {reqField === "status" ? (
+                <select value={reqValue} onChange={(e) => setReqValue(e.target.value)} className="rounded border border-input bg-background px-2 py-2 text-sm sm:col-span-2">
+                  <option value="">— Select status —</option>
+                  {JOB_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              ) : reqField === "sla_deadline" ? (
+                <input type="date" value={reqValue} onChange={(e) => setReqValue(e.target.value)} className="rounded border border-input bg-background px-2 py-2 text-sm sm:col-span-2" />
+              ) : (
+                <Textarea value={reqValue} onChange={(e) => setReqValue(e.target.value)} rows={2} className="sm:col-span-2" placeholder="New notes" />
+              )}
+            </div>
+            <Textarea value={reqReason} onChange={(e) => setReqReason(e.target.value)} rows={2} placeholder="Reason (optional)" />
+            <Button size="sm" onClick={() => submitRequest.mutate()} disabled={!reqValue || submitRequest.isPending}>
+              {submitRequest.isPending ? "Submitting…" : "Submit request"}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {(requestsQ.data?.requests.length ?? 0) > 0 && (
+        <Card>
+          <CardHeader><CardTitle className="text-base">Change requests</CardTitle></CardHeader>
+          <CardContent>
+            <ol className="space-y-3 text-sm">
+              {requestsQ.data!.requests.map((r) => (
+                <li key={r.id} className="border-l-2 border-border pl-3">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2 text-xs text-muted-foreground">
+                    <span className="font-medium text-foreground">{r.requester_name ?? r.requester_email ?? "Partner"}</span>
+                    <span>{formatDateTime(r.created_at)}</span>
+                  </div>
+                  <p className="mt-1">
+                    <span className="font-medium">{r.field_name}</span>: {r.current_value || "—"} → <span className="font-medium">{r.requested_value || "—"}</span>
+                    {" "}<span className="text-xs text-muted-foreground">[{r.status}]</span>
+                  </p>
+                  {r.reason && <p className="mt-1 text-xs text-muted-foreground">Reason: {r.reason}</p>}
+                  {r.decision_note && <p className="mt-1 text-xs text-muted-foreground">Admin: {r.decision_note}</p>}
+                  {r.status === "pending" && isAdmin && (
+                    <div className="mt-2 flex gap-2">
+                      <Button size="sm" onClick={() => decideRequest.mutate({ id: r.id, decision: "approved" })} disabled={decideRequest.isPending}>Approve</Button>
+                      <Button size="sm" variant="outline" onClick={() => decideRequest.mutate({ id: r.id, decision: "rejected" })} disabled={decideRequest.isPending}>Reject</Button>
+                    </div>
+                  )}
+                  {r.status === "pending" && !isAdmin && (
+                    <Button size="sm" variant="ghost" className="mt-2" onClick={() => cancelRequest.mutate(r.id)}>Cancel</Button>
+                  )}
+                </li>
+              ))}
+            </ol>
           </CardContent>
         </Card>
       )}
