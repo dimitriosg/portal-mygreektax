@@ -196,6 +196,9 @@ function AdminPage() {
             <Link to="/admin/tracking-links">
               <Button variant="outline">Tracking links</Button>
             </Link>
+            <Link to="/admin/change-requests">
+              <Button variant="outline">Change requests</Button>
+            </Link>
             <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
               <Button>+ New job</Button>
