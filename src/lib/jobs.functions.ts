@@ -111,12 +111,34 @@ export const getJob = createServerFn({ method: "GET" })
 
 export const updateJob = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
-  .inputValidator((d: { jobId: string; status?: string; notes?: string }) =>
+  .inputValidator((d: {
+    jobId: string;
+    status?: string;
+    notes?: string;
+    slaDeadline?: string | null;
+    dateSent?: string | null;
+    clientFee?: number | null;
+    accountantFee?: number | null;
+    tier?: string | null;
+    category?: string | null;
+    serviceId?: string | null;
+    clientId?: string | null;
+    accountantId?: string | null;
+  }) =>
     z
       .object({
         jobId: z.string().min(1).max(50),
         status: z.enum(JOB_STATUSES).optional(),
         notes: z.string().max(5000).optional(),
+        slaDeadline: z.string().max(30).nullable().optional(),
+        dateSent: z.string().max(30).nullable().optional(),
+        clientFee: z.number().min(0).max(1_000_000).nullable().optional(),
+        accountantFee: z.number().min(0).max(1_000_000).nullable().optional(),
+        tier: z.string().max(100).nullable().optional(),
+        category: z.string().max(100).nullable().optional(),
+        serviceId: z.string().min(1).max(50).nullable().optional(),
+        clientId: z.string().min(1).max(50).nullable().optional(),
+        accountantId: z.string().min(1).max(50).nullable().optional(),
       })
       .parse(d),
   )
@@ -127,10 +149,28 @@ export const updateJob = createServerFn({ method: "POST" })
     if (!isAdmin) {
       const allowed = partner && job.fields["Assigned Accountant"]?.includes(partner.airtable_accountant_id);
       if (!allowed) throw new Error("Forbidden");
+      // Partners may only update Status and Notes directly. Other fields require admin approval.
+      const partnerFields = new Set(["jobId", "status", "notes"]);
+      for (const k of Object.keys(data)) {
+        if (!partnerFields.has(k) && (data as any)[k] !== undefined) {
+          throw new Error("Partners can only update status and notes directly. Submit a change request for other fields.");
+        }
+      }
     }
     const fields: Record<string, unknown> = {};
     if (data.status) fields["Status"] = data.status;
     if (data.notes !== undefined) fields["Notes"] = data.notes;
+    if (isAdmin) {
+      if (data.slaDeadline !== undefined) fields["SLA Deadline"] = data.slaDeadline ?? null;
+      if (data.dateSent !== undefined) fields["Date Sent"] = data.dateSent ?? null;
+      if (data.clientFee !== undefined) fields["Client Fee (\u20ac)"] = data.clientFee ?? null;
+      if (data.accountantFee !== undefined) fields["Accountant Fee (\u20ac)"] = data.accountantFee ?? null;
+      if (data.tier !== undefined) fields["Tier"] = data.tier ? [data.tier] : null;
+      if (data.category !== undefined) fields["Category"] = data.category ? [data.category] : null;
+      if (data.serviceId !== undefined) fields["Service Catalog"] = data.serviceId ? [data.serviceId] : [];
+      if (data.clientId !== undefined) fields["Client"] = data.clientId ? [data.clientId] : [];
+      if (data.accountantId !== undefined) fields["Assigned Accountant"] = data.accountantId ? [data.accountantId] : [];
+    }
     if (Object.keys(fields).length === 0) return { ok: true };
     const previousStatus = job.fields.Status ?? null;
     const previousNotes = job.fields.Notes ?? "";
@@ -146,7 +186,7 @@ export const updateJob = createServerFn({ method: "POST" })
       user_id: string;
       actor_email: string | null;
       actor_name: string | null;
-      event_type: "status_change" | "comment";
+      event_type: "status_change" | "comment" | "field_change";
       from_status?: string | null;
       to_status?: string | null;
       comment?: string | null;
@@ -172,6 +212,34 @@ export const updateJob = createServerFn({ method: "POST" })
         event_type: "comment",
         comment: data.notes,
       });
+    }
+    // Log other admin field changes as comment-style events.
+    if (isAdmin) {
+      const fieldChangeMap: Array<[string, unknown, unknown]> = [
+        ["SLA deadline", job.fields["SLA Deadline"], data.slaDeadline],
+        ["Date sent", job.fields["Date Sent"], data.dateSent],
+        ["Client fee", job.fields["Client Fee (\u20ac)"], data.clientFee],
+        ["Accountant fee", job.fields["Accountant Fee (\u20ac)"], data.accountantFee],
+        ["Tier", job.fields.Tier?.[0], data.tier],
+        ["Category", job.fields.Category?.[0], data.category],
+        ["Service", job.fields["Service Catalog"]?.[0], data.serviceId],
+        ["Client", job.fields.Client?.[0], data.clientId],
+        ["Assigned accountant", job.fields["Assigned Accountant"]?.[0], data.accountantId],
+      ];
+      for (const [label, prev, next] of fieldChangeMap) {
+        if (next === undefined) continue;
+        const prevStr = prev == null ? "" : String(prev);
+        const nextStr = next == null ? "" : String(next);
+        if (prevStr === nextStr) continue;
+        events.push({
+          airtable_job_id: data.jobId,
+          user_id: userId,
+          actor_email: actorEmail,
+          actor_name: actorName,
+          event_type: "comment",
+          comment: `${label}: ${prevStr || "—"} → ${nextStr || "—"}`,
+        });
+      }
     }
     if (events.length > 0) {
       await supabaseAdmin.from("job_events").insert(events);
