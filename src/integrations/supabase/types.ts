@@ -55,6 +55,12 @@ export type Database = {
           created_at: string
           created_by: string | null
           expires_at: string
+          first_opened_at: string | null
+          last_country: string | null
+          last_ip: string | null
+          last_opened_at: string | null
+          last_user_agent: string | null
+          open_count: number
           token: string
         }
         Insert: {
@@ -64,6 +70,12 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           expires_at: string
+          first_opened_at?: string | null
+          last_country?: string | null
+          last_ip?: string | null
+          last_opened_at?: string | null
+          last_user_agent?: string | null
+          open_count?: number
           token: string
         }
         Update: {
@@ -73,6 +85,12 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           expires_at?: string
+          first_opened_at?: string | null
+          last_country?: string | null
+          last_ip?: string | null
+          last_opened_at?: string | null
+          last_user_agent?: string | null
+          open_count?: number
           token?: string
         }
         Relationships: []
@@ -326,6 +344,54 @@ export type Database = {
           id?: string
           metadata?: Json | null
           reason?: string
+        }
+        Relationships: []
+      }
+      tracking_link_opens: {
+        Row: {
+          airtable_job_id: string | null
+          browser: string | null
+          city: string | null
+          client_email: string | null
+          country: string | null
+          device: string | null
+          id: string
+          ip: string | null
+          opened_at: string
+          os: string | null
+          referrer: string | null
+          token: string
+          user_agent: string | null
+        }
+        Insert: {
+          airtable_job_id?: string | null
+          browser?: string | null
+          city?: string | null
+          client_email?: string | null
+          country?: string | null
+          device?: string | null
+          id?: string
+          ip?: string | null
+          opened_at?: string
+          os?: string | null
+          referrer?: string | null
+          token: string
+          user_agent?: string | null
+        }
+        Update: {
+          airtable_job_id?: string | null
+          browser?: string | null
+          city?: string | null
+          client_email?: string | null
+          country?: string | null
+          device?: string | null
+          id?: string
+          ip?: string | null
+          opened_at?: string
+          os?: string | null
+          referrer?: string | null
+          token?: string
+          user_agent?: string | null
         }
         Relationships: []
       }
