@@ -113,6 +113,48 @@ export type Database = {
         }
         Relationships: []
       }
+      partner_invites: {
+        Row: {
+          airtable_accountant_id: string | null
+          consumed_at: string | null
+          consumed_user_id: string | null
+          created_at: string
+          created_by: string
+          email: string
+          expires_at: string
+          first_name: string
+          id: string
+          last_name: string
+          token_hash: string
+        }
+        Insert: {
+          airtable_accountant_id?: string | null
+          consumed_at?: string | null
+          consumed_user_id?: string | null
+          created_at?: string
+          created_by: string
+          email: string
+          expires_at?: string
+          first_name: string
+          id?: string
+          last_name: string
+          token_hash: string
+        }
+        Update: {
+          airtable_accountant_id?: string | null
+          consumed_at?: string | null
+          consumed_user_id?: string | null
+          created_at?: string
+          created_by?: string
+          email?: string
+          expires_at?: string
+          first_name?: string
+          id?: string
+          last_name?: string
+          token_hash?: string
+        }
+        Relationships: []
+      }
       partner_profiles: {
         Row: {
           airtable_accountant_id: string
