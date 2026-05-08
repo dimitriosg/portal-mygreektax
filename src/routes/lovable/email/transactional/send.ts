@@ -59,6 +59,21 @@ export const Route = createFileRoute("/lovable/email/transactional/send")({
           return Response.json({ error: 'Unauthorized' }, { status: 401 })
         }
 
+        // Only admins may invoke this endpoint directly. Other server-side
+        // flows (e.g. partner invite) call the enqueue helper internally
+        // with their own authorization checks.
+        const { data: roles, error: rolesError } = await supabase
+          .from('user_roles')
+          .select('role')
+          .eq('user_id', user.id)
+        if (rolesError) {
+          console.error('Role lookup failed', { error: rolesError })
+          return Response.json({ error: 'Forbidden' }, { status: 403 })
+        }
+        if (!roles?.some((r: { role: string }) => r.role === 'admin')) {
+          return Response.json({ error: 'Forbidden' }, { status: 403 })
+        }
+
         // Parse request body
         let templateName: string
         let recipientEmail: string
