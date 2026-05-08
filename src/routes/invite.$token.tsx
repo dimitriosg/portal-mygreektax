@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import logo from "@/assets/mygreektax-mark.svg";
+import { track } from "@/lib/analytics";
 
 export const Route = createFileRoute("/invite/$token")({
   component: InvitePage,
@@ -55,6 +56,7 @@ function InvitePage() {
         password,
       });
       if (error) throw error;
+      track("partner_invite_accepted");
       window.history.replaceState({}, "", "/dashboard");
       toast.success("Welcome aboard!");
       navigate({ to: "/dashboard" });
