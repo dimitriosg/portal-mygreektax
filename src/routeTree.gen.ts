@@ -19,6 +19,7 @@ import { Route as JobsJobIdRouteImport } from './routes/jobs.$jobId'
 import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as EmailUnsubscribeRouteImport } from './routes/email/unsubscribe'
 import { Route as AdminTrackingLinksRouteImport } from './routes/admin.tracking-links'
+import { Route as AdminChangeRequestsRouteImport } from './routes/admin.change-requests'
 import { Route as LovableEmailSuppressionRouteImport } from './routes/lovable/email/suppression'
 import { Route as LovableEmailTransactionalSendRouteImport } from './routes/lovable/email/transactional/send'
 import { Route as LovableEmailTransactionalPreviewRouteImport } from './routes/lovable/email/transactional/preview'
@@ -76,6 +77,11 @@ const AdminTrackingLinksRoute = AdminTrackingLinksRouteImport.update({
   path: '/tracking-links',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminChangeRequestsRoute = AdminChangeRequestsRouteImport.update({
+  id: '/change-requests',
+  path: '/change-requests',
+  getParentRoute: () => AdminRoute,
+} as any)
 const LovableEmailSuppressionRoute = LovableEmailSuppressionRouteImport.update({
   id: '/lovable/email/suppression',
   path: '/lovable/email/suppression',
@@ -116,6 +122,7 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
   '/unsubscribe': typeof UnsubscribeRoute
+  '/admin/change-requests': typeof AdminChangeRequestsRoute
   '/admin/tracking-links': typeof AdminTrackingLinksRoute
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
   '/invite/$token': typeof InviteTokenRoute
@@ -134,6 +141,7 @@ export interface FileRoutesByTo {
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
   '/unsubscribe': typeof UnsubscribeRoute
+  '/admin/change-requests': typeof AdminChangeRequestsRoute
   '/admin/tracking-links': typeof AdminTrackingLinksRoute
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
   '/invite/$token': typeof InviteTokenRoute
@@ -153,6 +161,7 @@ export interface FileRoutesById {
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
   '/unsubscribe': typeof UnsubscribeRoute
+  '/admin/change-requests': typeof AdminChangeRequestsRoute
   '/admin/tracking-links': typeof AdminTrackingLinksRoute
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
   '/invite/$token': typeof InviteTokenRoute
@@ -173,6 +182,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/login'
     | '/unsubscribe'
+    | '/admin/change-requests'
     | '/admin/tracking-links'
     | '/email/unsubscribe'
     | '/invite/$token'
@@ -191,6 +201,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/login'
     | '/unsubscribe'
+    | '/admin/change-requests'
     | '/admin/tracking-links'
     | '/email/unsubscribe'
     | '/invite/$token'
@@ -209,6 +220,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/login'
     | '/unsubscribe'
+    | '/admin/change-requests'
     | '/admin/tracking-links'
     | '/email/unsubscribe'
     | '/invite/$token'
@@ -312,6 +324,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminTrackingLinksRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/change-requests': {
+      id: '/admin/change-requests'
+      path: '/change-requests'
+      fullPath: '/admin/change-requests'
+      preLoaderRoute: typeof AdminChangeRequestsRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/lovable/email/suppression': {
       id: '/lovable/email/suppression'
       path: '/lovable/email/suppression'
@@ -358,10 +377,12 @@ declare module '@tanstack/react-router' {
 }
 
 interface AdminRouteChildren {
+  AdminChangeRequestsRoute: typeof AdminChangeRequestsRoute
   AdminTrackingLinksRoute: typeof AdminTrackingLinksRoute
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
+  AdminChangeRequestsRoute: AdminChangeRequestsRoute,
   AdminTrackingLinksRoute: AdminTrackingLinksRoute,
 }
 
@@ -387,3 +408,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
