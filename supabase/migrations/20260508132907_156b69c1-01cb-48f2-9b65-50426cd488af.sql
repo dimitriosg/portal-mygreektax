@@ -1,0 +1,1 @@
+REVOKE EXECUTE ON FUNCTION public.get_partner_last_seen(uuid[]) FROM PUBLIC, anon, authenticated;
