@@ -156,6 +156,15 @@ function AdminPage() {
     });
   })();
 
+  // Sort by Job Code ascending (e.g. JB100, JB101, JB102…). Uses natural
+  // (numeric-aware) compare so JB9 < JB10 even if widths ever differ.
+  filteredJobs.sort((a, b) =>
+    (a.fields["Job Code"] ?? "").localeCompare(b.fields["Job Code"] ?? "", undefined, {
+      numeric: true,
+      sensitivity: "base",
+    })
+  );
+
   const counts = jobs.reduce<Record<string, number>>((acc, j) => {
     const s = j.fields.Status ?? "—";
     acc[s] = (acc[s] ?? 0) + 1;
