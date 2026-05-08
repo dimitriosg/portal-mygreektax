@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
+import { useEffect, useRef } from "react";
 import { getClientTracking } from "@/lib/jobs.functions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -9,6 +10,7 @@ import { Check, Calendar, Clock, ShieldCheck, MessageSquare } from "lucide-react
 import logo from "@/assets/mygreektax-mark.svg";
 import { formatDate } from "@/lib/utils";
 import { cn } from "@/lib/utils";
+import { track } from "@/lib/analytics";
 
 export const Route = createFileRoute("/track/$token")({
   component: TrackPage,
@@ -59,6 +61,14 @@ function TrackPage() {
     queryKey: ["track", token],
     queryFn: () => fetchTracking({ data: { token } }),
   });
+
+  const tracked = useRef(false);
+  useEffect(() => {
+    if (tracked.current || !data?.job) return;
+    tracked.current = true;
+    const tier = (data.job.fields as { Tier?: string[] })?.Tier?.[0];
+    track("tracking_link_opened", { tier: tier ?? "unknown" });
+  }, [data]);
 
   return (
     <div className="min-h-screen" style={{ background: "var(--gradient-hero)" }}>
