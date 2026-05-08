@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { linkPartnerProfile, claimFirstAdmin, getMyContext } from "@/lib/auth.functions";
 import { recordPartnerLogin } from "@/lib/activity.functions";
 import { track } from "@/lib/analytics";
+import { toast } from "sonner";
 
 type Ctx = {
   user: User | null;
@@ -53,9 +54,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               role: ctx.isAdmin ? "admin" : ctx.isPartner ? "partner" : "user",
             });
             // Server-side log so it shows up in admin daily/weekly summary emails.
-            recordPartnerLogin().catch(() => {
-              /* never block UI on analytics */
-            });
+            recordPartnerLogin()
+              .then((res) => {
+                if (res && (res as any).disabled) {
+                  toast.error(
+                    "Your access has been disabled. Please contact your administrator.",
+                  );
+                  supabase.auth.signOut();
+                }
+              })
+              .catch(() => {
+                /* never block UI on analytics */
+              });
           }
         }
       } catch {
