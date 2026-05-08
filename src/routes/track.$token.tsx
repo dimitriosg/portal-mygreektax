@@ -64,10 +64,9 @@ function TrackPage() {
 
   const tracked = useRef(false);
   useEffect(() => {
-    if (tracked.current || !data?.job) return;
+    if (tracked.current || !data) return;
     tracked.current = true;
-    const tier = (data.job.fields as { Tier?: string[] })?.Tier?.[0];
-    track("tracking_link_opened", { tier: tier ?? "unknown" });
+    track("tracking_link_opened", { status: data.status ?? "unknown" });
   }, [data]);
 
   return (
