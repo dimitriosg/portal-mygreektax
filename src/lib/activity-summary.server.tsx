@@ -107,6 +107,12 @@ function describeRow(ev: any): ActivitySummaryRow {
     case "partner_invite_accepted":
       description = `Accepted partner invitation`;
       break;
+    case "partner_disabled":
+      description = `Disabled partner ${ev.subject_label ?? md.target_email ?? ""}`;
+      break;
+    case "partner_enabled":
+      description = `Re-enabled partner ${ev.subject_label ?? md.target_email ?? ""}`;
+      break;
     case "job_created":
       description = `Created job ${md.jobCode ?? ev.subject_label ?? ""} (${md.status ?? "—"})`;
       break;
