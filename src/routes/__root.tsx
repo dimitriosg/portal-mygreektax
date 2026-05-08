@@ -114,7 +114,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       // (*.lovable.app, localhost) it installs a no-op `window.plausible`
       // shim so calls from `@/lib/analytics` never throw.
       {
-        children: `(function(){try{var h=window.location.hostname;if(h==="portal.mygreektax.eu"){var s=document.createElement("script");s.defer=true;s.setAttribute("data-domain","portal.mygreektax.eu");s.src="https://plausible.io/js/script.tagged-events.outbound-links.file-downloads.js";document.head.appendChild(s);window.plausible=window.plausible||function(){(window.plausible.q=window.plausible.q||[]).push(arguments)};}else{window.plausible=window.plausible||function(){};}}catch(e){}})();`,
+        children: `(function(){try{if(window.location.hostname==="portal.mygreektax.eu"){window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)};plausible.init=plausible.init||function(i){plausible.o=i||{}};var s=document.createElement("script");s.async=true;s.src="https://plausible.io/js/pa-jHCy-4-ii1HrtB2pU_pbx.js";document.head.appendChild(s);plausible.init();}else{window.plausible=window.plausible||function(){};}}catch(e){}})();`,
       },
     ],
   }),
