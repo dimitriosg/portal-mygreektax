@@ -175,7 +175,7 @@ export const setPartnerDisabled = createServerFn({ method: "POST" })
       .maybeSingle();
     if (pErr || !profile) throw new Error("Partner not found.");
 
-    const patch: Record<string, unknown> = data.disabled
+    const patch = data.disabled
       ? { disabled_at: new Date().toISOString(), disabled_by: context.userId }
       : { disabled_at: null, disabled_by: null };
     const { error: upErr } = await supabaseAdmin
