@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { linkPartnerProfile, claimFirstAdmin, getMyContext } from "@/lib/auth.functions";
+import { track } from "@/lib/analytics";
 
 type Ctx = {
   user: User | null;
@@ -42,6 +43,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const ctx = await getMyContext();
       setIsRealAdmin(ctx.isAdmin);
       setIsPartner(ctx.isPartner);
+      try {
+        track("partner_login", {
+          role: ctx.isAdmin ? "admin" : ctx.isPartner ? "partner" : "user",
+        });
+      } catch {
+        // ignore
+      }
     } catch {
       setIsRealAdmin(false);
       setIsPartner(false);
