@@ -1,5 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
+import { getRequestHeader } from "@tanstack/react-start/server";
 import { z } from "zod";
+import { UAParser } from "ua-parser-js";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
@@ -455,6 +457,57 @@ export const getClientTracking = createServerFn({ method: "GET" })
     const job = (await airtableGet(`${TABLES.jobs}/${row.airtable_job_id}`)) as AirtableRecord<JobFields>;
     const client = (await airtableGet(`${TABLES.clients}/${row.airtable_client_id}`)) as AirtableRecord<ClientFields>;
     const status = job.fields.Status ?? "Pending";
+
+    // --- Capture open analytics (best-effort, never breaks the page) ---
+    try {
+      const ip =
+        getRequestHeader("cf-connecting-ip") ??
+        getRequestHeader("x-forwarded-for")?.split(",")[0]?.trim() ??
+        null;
+      const country = getRequestHeader("cf-ipcountry") ?? null;
+      const city = getRequestHeader("cf-ipcity") ?? null;
+      const userAgent = getRequestHeader("user-agent") ?? null;
+      const referrer = getRequestHeader("referer") ?? null;
+      let device: string | null = null;
+      let browser: string | null = null;
+      let os: string | null = null;
+      if (userAgent) {
+        const ua = new UAParser(userAgent).getResult();
+        device = ua.device.type ?? "desktop";
+        browser = [ua.browser.name, ua.browser.version].filter(Boolean).join(" ") || null;
+        os = [ua.os.name, ua.os.version].filter(Boolean).join(" ") || null;
+      }
+
+      await supabaseAdmin.from("tracking_link_opens").insert({
+        token: data.token,
+        ip,
+        country,
+        city,
+        user_agent: userAgent,
+        device,
+        browser,
+        os,
+        referrer,
+        airtable_job_id: row.airtable_job_id,
+        client_email: row.client_email,
+      });
+
+      const now = new Date().toISOString();
+      await supabaseAdmin
+        .from("client_tokens")
+        .update({
+          open_count: (row.open_count ?? 0) + 1,
+          last_opened_at: now,
+          first_opened_at: row.first_opened_at ?? now,
+          last_ip: ip,
+          last_country: country,
+          last_user_agent: userAgent,
+        })
+        .eq("token", data.token);
+    } catch (e) {
+      console.error("[getClientTracking] open analytics failed", e);
+    }
+
     await logActivityEvent({
       eventType: "tracking_link_opened",
       actorEmail: row.client_email ?? null,
@@ -472,4 +525,158 @@ export const getClientTracking = createServerFn({ method: "GET" })
       dateSent: job.fields["Date Sent"] ?? null,
       notes: job.fields.Notes ?? "",
     };
+  });
+
+// ============================================================
+// Tracking-link analytics (admin only)
+// ============================================================
+
+export type TrackingLinkSummary = {
+  token: string;
+  airtable_job_id: string;
+  airtable_client_id: string;
+  client_email: string;
+  created_at: string;
+  expires_at: string;
+  open_count: number;
+  first_opened_at: string | null;
+  last_opened_at: string | null;
+  last_country: string | null;
+  last_ip: string | null;
+  last_user_agent: string | null;
+  jobCode: string | null;
+  clientName: string | null;
+  status: string | null;
+};
+
+export type TrackingOpenRow = {
+  id: string;
+  opened_at: string;
+  ip: string | null;
+  country: string | null;
+  city: string | null;
+  user_agent: string | null;
+  device: string | null;
+  browser: string | null;
+  os: string | null;
+  referrer: string | null;
+};
+
+export const getJobTrackingStats = createServerFn({ method: "GET" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d: { jobId: string }) =>
+    z.object({ jobId: z.string().min(1).max(50) }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { isAdmin } = await getRoleAndPartner(context.userId);
+    if (!isAdmin) throw new Error("Forbidden");
+
+    const { data: tokens } = await supabaseAdmin
+      .from("client_tokens")
+      .select("*")
+      .eq("airtable_job_id", data.jobId)
+      .order("created_at", { ascending: false })
+      .limit(1);
+    const token = tokens?.[0];
+    if (!token) return { token: null, opens: [] as TrackingOpenRow[] };
+
+    const { data: opens } = await supabaseAdmin
+      .from("tracking_link_opens")
+      .select("id, opened_at, ip, country, city, user_agent, device, browser, os, referrer")
+      .eq("token", token.token)
+      .order("opened_at", { ascending: false })
+      .limit(20);
+
+    return {
+      token: {
+        token: token.token,
+        created_at: token.created_at,
+        expires_at: token.expires_at,
+        client_email: token.client_email,
+        open_count: token.open_count ?? 0,
+        first_opened_at: token.first_opened_at,
+        last_opened_at: token.last_opened_at,
+        last_country: token.last_country,
+        last_ip: token.last_ip,
+        last_user_agent: token.last_user_agent,
+      },
+      opens: (opens ?? []) as TrackingOpenRow[],
+    };
+  });
+
+export const listTrackingLinks = createServerFn({ method: "GET" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .handler(async ({ context }): Promise<{ links: TrackingLinkSummary[] }> => {
+    const { isAdmin } = await getRoleAndPartner(context.userId);
+    if (!isAdmin) throw new Error("Forbidden");
+
+    const { data: rows, error } = await supabaseAdmin
+      .from("client_tokens")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(500);
+    if (error) throw new Error(error.message);
+
+    // Enrich with airtable job + client info (best-effort, parallel).
+    const enriched = await Promise.all(
+      (rows ?? []).map(async (r) => {
+        let jobCode: string | null = null;
+        let clientName: string | null = null;
+        let status: string | null = null;
+        try {
+          const job = (await airtableGet(
+            `${TABLES.jobs}/${r.airtable_job_id}`,
+          )) as AirtableRecord<JobFields>;
+          jobCode = job.fields["Job Code"] ?? null;
+          status = job.fields.Status ?? null;
+        } catch {
+          /* deleted job */
+        }
+        try {
+          const client = (await airtableGet(
+            `${TABLES.clients}/${r.airtable_client_id}`,
+          )) as AirtableRecord<ClientFields>;
+          clientName = client.fields["Full Name"] ?? null;
+        } catch {
+          /* deleted client */
+        }
+        return {
+          token: r.token,
+          airtable_job_id: r.airtable_job_id,
+          airtable_client_id: r.airtable_client_id,
+          client_email: r.client_email,
+          created_at: r.created_at,
+          expires_at: r.expires_at,
+          open_count: r.open_count ?? 0,
+          first_opened_at: r.first_opened_at,
+          last_opened_at: r.last_opened_at,
+          last_country: r.last_country,
+          last_ip: r.last_ip,
+          last_user_agent: r.last_user_agent,
+          jobCode,
+          clientName,
+          status,
+        } satisfies TrackingLinkSummary;
+      }),
+    );
+
+    return { links: enriched };
+  });
+
+export const getTrackingLinkOpens = createServerFn({ method: "GET" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d: { token: string }) =>
+    z.object({ token: z.string().min(10).max(200) }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { isAdmin } = await getRoleAndPartner(context.userId);
+    if (!isAdmin) throw new Error("Forbidden");
+    const { data: opens, error } = await supabaseAdmin
+      .from("tracking_link_opens")
+      .select("id, opened_at, ip, country, city, user_agent, device, browser, os, referrer")
+      .eq("token", data.token)
+      .order("opened_at", { ascending: false })
+      .limit(200);
+    if (error) throw new Error(error.message);
+    return { opens: (opens ?? []) as TrackingOpenRow[] };
   });
