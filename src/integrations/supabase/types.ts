@@ -279,6 +279,8 @@ export type Database = {
         Row: {
           airtable_accountant_id: string
           created_at: string
+          disabled_at: string | null
+          disabled_by: string | null
           email: string
           full_name: string | null
           user_id: string
@@ -286,6 +288,8 @@ export type Database = {
         Insert: {
           airtable_accountant_id: string
           created_at?: string
+          disabled_at?: string | null
+          disabled_by?: string | null
           email: string
           full_name?: string | null
           user_id: string
@@ -293,6 +297,8 @@ export type Database = {
         Update: {
           airtable_accountant_id?: string
           created_at?: string
+          disabled_at?: string | null
+          disabled_by?: string | null
           email?: string
           full_name?: string | null
           user_id?: string
@@ -353,6 +359,13 @@ export type Database = {
       enqueue_email: {
         Args: { payload: Json; queue_name: string }
         Returns: number
+      }
+      get_partner_last_seen: {
+        Args: { _user_ids: string[] }
+        Returns: {
+          last_seen_at: string
+          user_id: string
+        }[]
       }
       has_role: {
         Args: {
