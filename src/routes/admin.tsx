@@ -430,6 +430,8 @@ function AdminPage() {
           </table>
         </div>
       </div>
+
+      <PartnersSection accountants={accountants} />
     </div>
   );
 }
