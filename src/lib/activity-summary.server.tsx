@@ -77,6 +77,8 @@ export function computeRange(period: SummaryPeriod, now: Date = new Date()) {
 const TYPE_TITLES: Record<string, string> = {
   partner_login: "Partner logins",
   partner_invite_accepted: "Partner invitations accepted",
+  partner_disabled: "Partners disabled",
+  partner_enabled: "Partners re-enabled",
   job_created: "Jobs created",
   job_status_changed: "Job status changes",
   tracking_link_created: "Tracking links created (admin)",
@@ -104,6 +106,12 @@ function describeRow(ev: any): ActivitySummaryRow {
       break;
     case "partner_invite_accepted":
       description = `Accepted partner invitation`;
+      break;
+    case "partner_disabled":
+      description = `Disabled partner ${ev.subject_label ?? md.target_email ?? ""}`;
+      break;
+    case "partner_enabled":
+      description = `Re-enabled partner ${ev.subject_label ?? md.target_email ?? ""}`;
       break;
     case "job_created":
       description = `Created job ${md.jobCode ?? ev.subject_label ?? ""} (${md.status ?? "—"})`;
@@ -141,6 +149,8 @@ export async function buildSummary(period: SummaryPeriod) {
   const order = [
     "partner_login",
     "partner_invite_accepted",
+    "partner_disabled",
+    "partner_enabled",
     "job_created",
     "job_status_changed",
     "tracking_link_created",

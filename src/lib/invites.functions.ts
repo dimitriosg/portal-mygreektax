@@ -131,13 +131,84 @@ export const listPartnerProfilesAdmin = createServerFn({ method: "GET" })
     await assertAdmin(context.userId);
     const { data, error } = await supabaseAdmin
       .from("partner_profiles")
-      .select("user_id, email, full_name, airtable_accountant_id, created_at")
+      .select("user_id, email, full_name, airtable_accountant_id, created_at, disabled_at")
       .order("created_at", { ascending: false });
     if (error) {
       console.error("[listPartnerProfilesAdmin] error:", error);
       throw new Error("Could not load partners.");
     }
-    return { partners: data ?? [] };
+    const partners = data ?? [];
+    const ids = partners.map((p) => p.user_id);
+    const lastSeen = new Map<string, string>();
+    if (ids.length) {
+      const { data: events } = await supabaseAdmin
+        .from("activity_events" as any)
+        .select("actor_user_id, occurred_at")
+        .eq("event_type", "partner_login")
+        .in("actor_user_id", ids)
+        .order("occurred_at", { ascending: false });
+      for (const ev of (events ?? []) as any[]) {
+        if (ev.actor_user_id && !lastSeen.has(ev.actor_user_id)) {
+          lastSeen.set(ev.actor_user_id, ev.occurred_at);
+        }
+      }
+    }
+    return {
+      partners: partners.map((p) => ({
+        ...p,
+        last_seen_at: lastSeen.get(p.user_id) ?? null,
+      })),
+    };
+  });
+
+export const setPartnerDisabled = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d) =>
+    z.object({ userId: z.string().uuid(), disabled: z.boolean() }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context.userId);
+    const { data: profile, error: pErr } = await supabaseAdmin
+      .from("partner_profiles")
+      .select("user_id, email, full_name")
+      .eq("user_id", data.userId)
+      .maybeSingle();
+    if (pErr || !profile) throw new Error("Partner not found.");
+
+    const patch = data.disabled
+      ? { disabled_at: new Date().toISOString(), disabled_by: context.userId }
+      : { disabled_at: null, disabled_by: null };
+    const { error: upErr } = await supabaseAdmin
+      .from("partner_profiles")
+      .update(patch)
+      .eq("user_id", data.userId);
+    if (upErr) {
+      console.error("[setPartnerDisabled] update:", upErr);
+      throw new Error("Could not update partner status.");
+    }
+
+    if (data.disabled) {
+      try {
+        await supabaseAdmin.auth.admin.signOut(data.userId, "global");
+      } catch (e) {
+        console.error("[setPartnerDisabled] signOut:", e);
+      }
+    }
+
+    try {
+      const { logActivityEvent } = await import("./activity.server");
+      await logActivityEvent({
+        eventType: (data.disabled ? "partner_disabled" : "partner_enabled") as any,
+        actorUserId: context.userId,
+        actorEmail: (context.claims.email as string | undefined) ?? null,
+        subjectLabel: profile.full_name ?? profile.email,
+        metadata: { target_user_id: data.userId, target_email: profile.email },
+      });
+    } catch (e) {
+      console.error("[setPartnerDisabled] log:", e);
+    }
+
+    return { ok: true };
   });
 
 // Public — no auth middleware

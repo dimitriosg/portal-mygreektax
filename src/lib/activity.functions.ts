@@ -18,13 +18,22 @@ export const recordPartnerLogin = createServerFn({ method: "POST" })
       supabaseAdmin.from("user_roles").select("role").eq("user_id", userId),
       supabaseAdmin
         .from("partner_profiles")
-        .select("full_name")
+        .select("full_name, disabled_at")
         .eq("user_id", userId)
         .maybeSingle(),
     ]);
     const isAdmin = !!roles?.some((r) => r.role === "admin");
     const isPartner = !!roles?.some((r) => r.role === "partner");
     const role = isAdmin ? "admin" : isPartner ? "partner" : "user";
+
+    if (isPartner && !isAdmin && partner?.disabled_at) {
+      try {
+        await supabaseAdmin.auth.admin.signOut(userId, "global");
+      } catch (e) {
+        console.error("[recordPartnerLogin] disabled signOut failed", e);
+      }
+      return { ok: false, disabled: true } as const;
+    }
 
     await logActivityEvent({
       eventType: "partner_login",
@@ -33,5 +42,5 @@ export const recordPartnerLogin = createServerFn({ method: "POST" })
       actorName: partner?.full_name ?? email,
       metadata: { role },
     });
-    return { ok: true };
+    return { ok: true, disabled: false } as const;
   });

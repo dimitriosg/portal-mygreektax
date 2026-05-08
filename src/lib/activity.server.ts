@@ -3,6 +3,8 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 export type ActivityEventType =
   | "partner_invite_accepted"
   | "partner_login"
+  | "partner_disabled"
+  | "partner_enabled"
   | "job_created"
   | "job_status_changed"
   | "tracking_link_created"
