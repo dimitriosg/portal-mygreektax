@@ -14,6 +14,17 @@ import {
   type AccountantFields,
 } from "./airtable.server";
 import { JOB_STATUSES, STATUS_PROGRESS } from "./airtable-shared";
+import { logActivityEvent } from "./activity.server";
+
+async function getActorIdentity(userId: string): Promise<{ email: string | null; name: string | null }> {
+  const [{ data: authUser }, { data: partner }] = await Promise.all([
+    supabaseAdmin.auth.admin.getUserById(userId),
+    supabaseAdmin.from("partner_profiles").select("full_name, email").eq("user_id", userId).maybeSingle(),
+  ]);
+  const email = authUser?.user?.email ?? partner?.email ?? null;
+  const name = partner?.full_name ?? email ?? null;
+  return { email, name };
+}
 
 async function getRoleAndPartner(userId: string) {
   const [{ data: roles }, { data: partner }] = await Promise.all([
