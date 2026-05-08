@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { getJob, updateJob, createClientToken, listJobEvents, getJobTrackingStats, extendClientToken, getClientTokenHistory } from "@/lib/jobs.functions";
+import { getJob, updateJob, createClientToken, listJobEvents, getJobTrackingStats, extendClientToken, getClientTokenHistory, listJobChangeRequests, requestJobChange, cancelChangeRequest, decideChangeRequest } from "@/lib/jobs.functions";
 import { JOB_STATUSES } from "@/lib/airtable-shared";
 import { useAuth } from "@/lib/auth-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,6 +30,10 @@ function JobDetail() {
   const fetchTrackingStats = useServerFn(getJobTrackingStats);
   const extendFn = useServerFn(extendClientToken);
   const fetchTokenHistory = useServerFn(getClientTokenHistory);
+  const listRequestsFn = useServerFn(listJobChangeRequests);
+  const requestChangeFn = useServerFn(requestJobChange);
+  const cancelRequestFn = useServerFn(cancelChangeRequest);
+  const decideRequestFn = useServerFn(decideChangeRequest);
   const qc = useQueryClient();
 
   const { data, isLoading, error } = useQuery({
@@ -52,6 +56,40 @@ function JobDetail() {
     queryKey: ["token-history", tokenForHistory],
     queryFn: () => fetchTokenHistory({ data: { token: tokenForHistory! } }),
     enabled: !!tokenForHistory,
+  });
+  const requestsQ = useQuery({
+    queryKey: ["job-change-requests", jobId],
+    queryFn: () => listRequestsFn({ data: { jobId } }),
+    enabled: !!user,
+  });
+
+  const [reqField, setReqField] = useState<"sla_deadline" | "status" | "notes">("sla_deadline");
+  const [reqValue, setReqValue] = useState("");
+  const [reqReason, setReqReason] = useState("");
+
+  const submitRequest = useMutation({
+    mutationFn: () => requestChangeFn({ data: { jobId, field: reqField, requestedValue: reqValue, reason: reqReason || undefined } }),
+    onSuccess: () => {
+      toast.success("Change request submitted for admin approval");
+      setReqValue(""); setReqReason("");
+      qc.invalidateQueries({ queryKey: ["job-change-requests", jobId] });
+    },
+    onError: (e) => toast.error((e as Error).message),
+  });
+  const cancelRequest = useMutation({
+    mutationFn: (id: string) => cancelRequestFn({ data: { id } }),
+    onSuccess: () => { toast.success("Request cancelled"); qc.invalidateQueries({ queryKey: ["job-change-requests", jobId] }); },
+    onError: (e) => toast.error((e as Error).message),
+  });
+  const decideRequest = useMutation({
+    mutationFn: (vars: { id: string; decision: "approved" | "rejected" }) => decideRequestFn({ data: vars }),
+    onSuccess: () => {
+      toast.success("Decision recorded");
+      qc.invalidateQueries({ queryKey: ["job-change-requests", jobId] });
+      qc.invalidateQueries({ queryKey: ["job", jobId] });
+      qc.invalidateQueries({ queryKey: ["job-events", jobId] });
+    },
+    onError: (e) => toast.error((e as Error).message),
   });
 
   const extendMut = useMutation({
