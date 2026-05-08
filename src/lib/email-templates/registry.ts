@@ -1,4 +1,5 @@
 import type { ComponentType } from 'react'
+import { template as partnerInvite } from "./partner-invite";
 
 export interface TemplateEntry {
   component: ComponentType<any>
@@ -20,5 +21,3 @@ export interface TemplateEntry {
 export const TEMPLATES: Record<string, TemplateEntry> = {
   "partner-invite": partnerInvite,
 }
-
-import { template as partnerInvite } from "./partner-invite";
