@@ -317,6 +317,19 @@ export const createJob = createServerFn({ method: "POST" })
     if (data.dateSent) fields["Date Sent"] = data.dateSent;
     if (data.notes) fields["Notes"] = data.notes;
     const record = await airtablePost(TABLES.jobs, fields);
+    const actor = await getActorIdentity(context.userId);
+    await logActivityEvent({
+      eventType: "job_created",
+      actorUserId: context.userId,
+      actorEmail: actor.email,
+      actorName: actor.name,
+      subjectLabel: nextCode,
+      metadata: {
+        jobCode: nextCode,
+        status: data.status ?? "To Assign",
+        assigned: data.accountantId ? "yes" : "no",
+      },
+    });
     return { ok: true, jobId: record.id };
   });
 
