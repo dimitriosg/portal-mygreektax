@@ -77,6 +77,8 @@ export function computeRange(period: SummaryPeriod, now: Date = new Date()) {
 const TYPE_TITLES: Record<string, string> = {
   partner_login: "Partner logins",
   partner_invite_accepted: "Partner invitations accepted",
+  partner_disabled: "Partners disabled",
+  partner_enabled: "Partners re-enabled",
   job_created: "Jobs created",
   job_status_changed: "Job status changes",
   tracking_link_created: "Tracking links created (admin)",
@@ -141,6 +143,8 @@ export async function buildSummary(period: SummaryPeriod) {
   const order = [
     "partner_login",
     "partner_invite_accepted",
+    "partner_disabled",
+    "partner_enabled",
     "job_created",
     "job_status_changed",
     "tracking_link_created",
