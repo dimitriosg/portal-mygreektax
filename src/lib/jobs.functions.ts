@@ -174,6 +174,20 @@ export const updateJob = createServerFn({ method: "POST" })
     if (events.length > 0) {
       await supabaseAdmin.from("job_events").insert(events);
     }
+    if (data.status && data.status !== previousStatus) {
+      await logActivityEvent({
+        eventType: "job_status_changed",
+        actorUserId: userId,
+        actorEmail: actorEmail,
+        actorName: actorName,
+        subjectLabel: job.fields["Job Code"] ?? data.jobId,
+        metadata: {
+          from: previousStatus,
+          to: data.status,
+          jobCode: job.fields["Job Code"] ?? null,
+        },
+      });
+    }
     return { ok: true };
   });
 
