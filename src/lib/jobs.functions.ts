@@ -429,6 +429,15 @@ export const createClientToken = createServerFn({ method: "POST" })
       console.error("[createClientToken] DB error:", error);
       throw new Error("Could not create tracking link. Please try again.");
     }
+    const actor = await getActorIdentity(context.userId);
+    await logActivityEvent({
+      eventType: "tracking_link_created",
+      actorUserId: context.userId,
+      actorEmail: actor.email,
+      actorName: actor.name,
+      subjectLabel: job.fields["Job Code"] ?? data.jobId,
+      metadata: { jobCode: job.fields["Job Code"] ?? null, recipient: email },
+    });
     return { token, email };
   });
 
@@ -446,6 +455,13 @@ export const getClientTracking = createServerFn({ method: "GET" })
     const job = (await airtableGet(`${TABLES.jobs}/${row.airtable_job_id}`)) as AirtableRecord<JobFields>;
     const client = (await airtableGet(`${TABLES.clients}/${row.airtable_client_id}`)) as AirtableRecord<ClientFields>;
     const status = job.fields.Status ?? "Pending";
+    await logActivityEvent({
+      eventType: "tracking_link_opened",
+      actorEmail: row.client_email ?? null,
+      actorName: client.fields["Full Name"] ?? null,
+      subjectLabel: job.fields["Job Code"] ?? row.airtable_job_id,
+      metadata: { jobCode: job.fields["Job Code"] ?? null, status },
+    });
     return {
       clientName: client.fields["Full Name"] ?? "Client",
       jobCode: job.fields["Job Code"] ?? "",
