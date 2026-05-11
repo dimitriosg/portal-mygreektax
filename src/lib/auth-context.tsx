@@ -92,6 +92,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(s);
 
       if (event === "SIGNED_IN" && s) {
+        setSessionReady(true);
         (async () => {
           try {
             await claimFirstAdmin();
@@ -102,6 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
         })();
       } else if (event === "TOKEN_REFRESHED" && s) {
+        setSessionReady(true);
         refresh().catch(() => {});
       } else if (!s) {
         setIsRealAdmin(false);
