@@ -39,6 +39,44 @@ import { track } from "@/lib/analytics";
 
 export const Route = createFileRoute("/admin")({ component: AdminPage });
 
+// Column widths for the 8-column table skeleton (tailwind w-* classes)
+const SKELETON_COL_WIDTHS = ["w-16", "w-24", "w-28", "w-12", "w-20", "w-16", "w-20", "w-24"];
+
+function AdminTableSkeleton() {
+  return (
+    <>
+      <style>{`
+        @keyframes admin-shimmer {
+          0% { background-position: -200% 0; }
+          100% { background-position: 200% 0; }
+        }
+        .admin-skeleton-bar {
+          display: inline-block;
+          height: 0.75rem;
+          border-radius: 0.25rem;
+          background: linear-gradient(
+            90deg,
+            hsl(var(--muted)) 25%,
+            hsl(var(--muted-foreground) / 0.15) 50%,
+            hsl(var(--muted)) 75%
+          );
+          background-size: 200% 100%;
+          animation: admin-shimmer 1.5s ease-in-out infinite;
+        }
+      `}</style>
+      {Array.from({ length: 5 }).map((_, rowIdx) => (
+        <tr key={rowIdx} className="border-t border-border">
+          {SKELETON_COL_WIDTHS.map((w, colIdx) => (
+            <td key={colIdx} className="px-3 py-3">
+              <span className={`admin-skeleton-bar ${w}`} />
+            </td>
+          ))}
+        </tr>
+      ))}
+    </>
+  );
+}
+
 function AdminPage() {
   const { user, loading, isAdmin, isRealAdmin } = useAuth();
   const navigate = useNavigate();
@@ -408,50 +446,54 @@ function AdminPage() {
               </tr>
             </thead>
             <tbody>
-              {filteredJobs.map((job) => {
-                const currentAcc = job.fields["Assigned Accountant"]?.[0] ?? "";
-                const clientId = job.fields.Client?.[0] ?? "";
-                const clientName = jobsQ.data?.clientNames?.[clientId];
-                return (
-                  <tr key={job.id} className="border-t border-border">
-                    <td className="px-3 py-2">
-                      <Link to="/jobs/$jobId" params={{ jobId: job.id }} className="font-medium hover:underline">
-                        {job.fields["Job Code"]}
-                      </Link>
-                    </td>
-                    <td className="px-3 py-2">
-                      <div>{clientName ?? "—"}</div>
-                      <div className="text-xs text-muted-foreground">{job.fields["Client Code"]?.[0] ?? ""}</div>
-                    </td>
-                    <td className="px-3 py-2 text-muted-foreground">{job.fields["Service Name"]?.[0] ?? "—"}</td>
-                    <td className="px-3 py-2"><TierBadge tier={job.fields.Tier?.[0]} /></td>
-                    <td className="px-3 py-2"><StatusBadge status={job.fields.Status} /></td>
-                    <td className="px-3 py-2 text-muted-foreground">{formatDate(job.fields["SLA Deadline"])}</td>
-                    <td className="px-3 py-2">
-                      <select
-                        value={currentAcc}
-                        onChange={(e) => assign.mutate({ jobId: job.id, accountantId: e.target.value })}
-                        className="rounded border border-input bg-background px-2 py-1 text-xs"
-                      >
-                        <option value="">— Unassigned —</option>
-                        {accountants.map((a) => (
-                          <option key={a.id} value={a.id}>{a.fields.Name ?? a.id}</option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="px-3 py-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => makeLink.mutate({ jobId: job.id })}
-                        disabled={makeLink.isPending}
-                      >
-                        Copy tracking link
-                      </Button>
-                    </td>
-                  </tr>
-                );
-              })}
+              {jobsQ.isLoading ? (
+                <AdminTableSkeleton />
+              ) : (
+                filteredJobs.map((job) => {
+                  const currentAcc = job.fields["Assigned Accountant"]?.[0] ?? "";
+                  const clientId = job.fields.Client?.[0] ?? "";
+                  const clientName = jobsQ.data?.clientNames?.[clientId];
+                  return (
+                    <tr key={job.id} className="border-t border-border">
+                      <td className="px-3 py-2">
+                        <Link to="/jobs/$jobId" params={{ jobId: job.id }} className="font-medium hover:underline">
+                          {job.fields["Job Code"]}
+                        </Link>
+                      </td>
+                      <td className="px-3 py-2">
+                        <div>{clientName ?? "—"}</div>
+                        <div className="text-xs text-muted-foreground">{job.fields["Client Code"]?.[0] ?? ""}</div>
+                      </td>
+                      <td className="px-3 py-2 text-muted-foreground">{job.fields["Service Name"]?.[0] ?? "—"}</td>
+                      <td className="px-3 py-2"><TierBadge tier={job.fields.Tier?.[0]} /></td>
+                      <td className="px-3 py-2"><StatusBadge status={job.fields.Status} /></td>
+                      <td className="px-3 py-2 text-muted-foreground">{formatDate(job.fields["SLA Deadline"])}</td>
+                      <td className="px-3 py-2">
+                        <select
+                          value={currentAcc}
+                          onChange={(e) => assign.mutate({ jobId: job.id, accountantId: e.target.value })}
+                          className="rounded border border-input bg-background px-2 py-1 text-xs"
+                        >
+                          <option value="">— Unassigned —</option>
+                          {accountants.map((a) => (
+                            <option key={a.id} value={a.id}>{a.fields.Name ?? a.id}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="px-3 py-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => makeLink.mutate({ jobId: job.id })}
+                          disabled={makeLink.isPending}
+                        >
+                          Copy tracking link
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>
