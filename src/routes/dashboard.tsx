@@ -261,7 +261,33 @@ function Dashboard() {
         </div>
       )}
 
-      {isLoading && <p className="mt-8 text-sm text-muted-foreground">Loading…</p>}
+      {isLoading && (
+        <div className="mt-6 grid gap-3">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div
+              key={i}
+              className="rounded-xl border bg-card text-card-foreground shadow"
+            >
+              <div className="flex flex-col space-y-1.5 p-6 pb-2">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="h-4 w-2/5 animate-shimmer rounded bg-muted" />
+                  <div className="flex items-center gap-2">
+                    <div className="h-5 w-16 animate-shimmer rounded-full bg-muted/50" />
+                    <div className="h-5 w-20 animate-shimmer rounded-full bg-muted/50" />
+                  </div>
+                </div>
+              </div>
+              <div className="p-6 pt-0">
+                <div className="flex flex-wrap gap-x-6 gap-y-1">
+                  <div className="h-3 w-32 animate-shimmer rounded bg-muted/50" />
+                  <div className="h-3 w-24 animate-shimmer rounded bg-muted/50" />
+                  <div className="h-3 w-28 animate-shimmer rounded bg-muted/50" />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
       {error && <p className="mt-8 text-sm text-destructive">{(error as Error).message}</p>}
       {!isLoading && !isAdmin && !isPartner && (
         <Card className="mt-8">
