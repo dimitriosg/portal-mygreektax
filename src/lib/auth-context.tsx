@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { linkPartnerProfile, claimFirstAdmin, getMyContext } from "@/lib/auth.functions";
@@ -10,9 +10,9 @@ type Ctx = {
   user: User | null;
   session: Session | null;
   loading: boolean;
-  /** True only after getSession() has resolved on mount.
-   *  Use this (alongside `user`) to guard TanStack Query `enabled` flags
-   *  so server functions are never called before the token is valid. */
+  /** True only when the current signed-in session has fully completed bootstrap.
+   *  Use this alongside `user` to guard protected queries so server functions
+   *  never run during Supabase session recovery/bootstrap. */
   sessionReady: boolean;
   isAdmin: boolean;
   isRealAdmin: boolean;
@@ -50,7 +50,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setImpersonatingName(sessionStorage.getItem(IMP_NAME_KEY));
   }, []);
 
-  const refresh = async () => {
+  const refresh = useCallback(async () => {
     try {
       const ctx = await getMyContext();
       setIsRealAdmin(ctx.isAdmin);
@@ -65,10 +65,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             });
             recordPartnerLogin()
               .then((res) => {
-                if (res && (res as any).disabled) {
-                  toast.error(
-                    "Your access has been disabled. Please contact your administrator.",
-                  );
+                if (res && typeof res === "object" && "disabled" in res && res.disabled === true) {
+                  toast.error("Your access has been disabled. Please contact your administrator.");
                   supabase.auth.signOut();
                 }
               })
@@ -84,7 +82,50 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsRealAdmin(false);
       setIsPartner(false);
     }
-  };
+  }, []);
+
+  const bootstrapAuthenticatedSession = useCallback(
+    async (nextSession: Session, { runPostLoginSetup }: { runPostLoginSetup: boolean }) => {
+      setSessionReady(false);
+      console.info("[auth] bootstrap:start", {
+        userId: nextSession.user.id,
+        runPostLoginSetup,
+      });
+
+      try {
+        let token = nextSession.access_token;
+
+        for (let attempt = 0; !token && attempt < MAX_TOKEN_POLL_ATTEMPTS; attempt += 1) {
+          await new Promise((resolve) => setTimeout(resolve, TOKEN_POLL_DELAY_MS));
+          const { data } = await supabase.auth.getSession();
+          token = data.session?.access_token;
+        }
+
+        if (!token) {
+          console.error("[auth] bootstrap failed: no access token available");
+          return;
+        }
+
+        if (runPostLoginSetup) {
+          await claimFirstAdmin();
+          await linkPartnerProfile();
+        }
+
+        await refresh();
+        setSessionReady(true);
+        console.info("[auth] bootstrap:complete", {
+          userId: nextSession.user.id,
+        });
+      } catch (e) {
+        console.error("[auth] bootstrap failed", e);
+        setIsRealAdmin(false);
+        setIsPartner(false);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [refresh],
+  );
 
   useEffect(() => {
     // Subscribe to auth state changes.
@@ -94,35 +135,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(s);
 
       if (event === "SIGNED_IN" && s) {
-        (async () => {
-          let token = s.access_token;
-
-          for (let attempt = 0; !token && attempt < MAX_TOKEN_POLL_ATTEMPTS; attempt += 1) {
-            await new Promise((resolve) => setTimeout(resolve, TOKEN_POLL_DELAY_MS));
-            const { data } = await supabase.auth.getSession();
-            token = data.session?.access_token;
-          }
-
-          if (!token) {
-            console.error("auth bootstrap skipped: no access token after SIGNED_IN");
-            return;
-          }
-
-          setSessionReady(true);
-          try {
-            await claimFirstAdmin();
-            await linkPartnerProfile();
-            await refresh();
-          } catch (e) {
-            console.error("auth bootstrap failed", e);
-          }
-        })();
+        void bootstrapAuthenticatedSession(s, { runPostLoginSetup: true });
       } else if (event === "TOKEN_REFRESHED" && s) {
         setSessionReady(true);
-        refresh().catch(() => {});
+        refresh().catch((error) => {
+          console.error("[auth] refresh after TOKEN_REFRESHED failed", error);
+        });
       } else if (!s) {
         setIsRealAdmin(false);
         setIsPartner(false);
+        setLoading(false);
         setSessionReady(false);
         if (typeof window !== "undefined") {
           sessionStorage.removeItem(IMP_ID_KEY);
@@ -135,15 +157,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // On mount, getSession() is the authoritative source of truth.
     // Only after this resolves is the token guaranteed to be valid.
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      if (data.session) refresh();
-      setLoading(false);
-      setSessionReady(true); // ← this is the only safe moment to enable queries
-    });
+    void supabase.auth
+      .getSession()
+      .then(async ({ data }) => {
+        setSession(data.session);
+        if (data.session) {
+          await bootstrapAuthenticatedSession(data.session, { runPostLoginSetup: false });
+          return;
+        }
+        setLoading(false);
+        setSessionReady(data.session !== null);
+      })
+      .catch((error) => {
+        console.error("[auth] getSession failed", error);
+        setSession(null);
+        setIsRealAdmin(false);
+        setIsPartner(false);
+        setLoading(false);
+        setSessionReady(false);
+      });
 
     return () => sub.subscription.unsubscribe();
-  }, []);
+  }, [bootstrapAuthenticatedSession, refresh]);
 
   const signOut = async () => {
     if (typeof window !== "undefined") {

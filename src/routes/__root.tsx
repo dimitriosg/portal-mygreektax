@@ -4,17 +4,19 @@ import {
   Link,
   createRootRouteWithContext,
   useRouter,
+  useNavigate,
   useRouterState,
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Sun, Moon } from "lucide-react";
 
 import appCss from "../styles.css?url";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
+import { getErrorMessage, isAuthSessionError } from "@/lib/auth-errors";
 import { listJobs } from "@/lib/jobs.functions";
 
 function isPastDueDate(value: string | undefined) {
@@ -52,9 +54,17 @@ function NotFoundComponent() {
   );
 }
 
-function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
-  console.error(error);
+function ErrorComponent({ error, reset }: { error: unknown; reset: () => void }) {
   const router = useRouter();
+  const errorDetails =
+    error instanceof Error ? (error.stack ?? error.message) : getErrorMessage(error);
+  console.error("[root-route-error]", {
+    name: error instanceof Error ? error.name : typeof error,
+    message: getErrorMessage(error),
+    stack: error instanceof Error ? error.stack : undefined,
+    cause: error instanceof Error ? error.cause : undefined,
+    pathname: router.state.location.pathname,
+  });
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -65,6 +75,10 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
         <p className="mt-2 text-sm text-muted-foreground">
           Something went wrong on our end. You can try refreshing or head back home.
         </p>
+        <details className="mt-4 rounded-md border border-border bg-muted/30 p-3 text-left text-xs text-muted-foreground">
+          <summary className="cursor-pointer font-medium text-foreground">Error details</summary>
+          <pre className="mt-2 whitespace-pre-wrap break-words">{errorDetails}</pre>
+        </details>
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           <button
             onClick={() => {
@@ -183,12 +197,15 @@ function AppShell() {
     isRealAdmin,
     signOut,
     loading,
+    sessionReady,
     impersonatingId,
     impersonatingName,
     stopImpersonation,
   } = useAuth();
+  const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const fetchJobs = useServerFn(listJobs);
+  const lastProcessedOverdueJobsErrorRef = useRef<unknown>(null);
   const [isDark, setIsDark] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
     return window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -202,8 +219,29 @@ function AppShell() {
   const overdueJobsQuery = useQuery({
     queryKey: ["jobs", user?.id, ""],
     queryFn: () => fetchJobs({ data: {} }),
-    enabled: !!user && !isAdmin,
+    enabled: !!user && !isAdmin && sessionReady,
+    throwOnError: false,
   });
+  useEffect(() => {
+    if (!overdueJobsQuery.error) {
+      lastProcessedOverdueJobsErrorRef.current = null;
+      return;
+    }
+    if (lastProcessedOverdueJobsErrorRef.current === overdueJobsQuery.error) return;
+    lastProcessedOverdueJobsErrorRef.current = overdueJobsQuery.error;
+
+    console.error("[app-shell] overdue jobs query error", {
+      message: getErrorMessage(overdueJobsQuery.error),
+      error: overdueJobsQuery.error,
+      userId: user?.id ?? null,
+      sessionReady,
+      pathname,
+    });
+
+    if (isAuthSessionError(overdueJobsQuery.error)) {
+      navigate({ to: "/login", replace: true });
+    }
+  }, [navigate, overdueJobsQuery.error, pathname, sessionReady, user?.id]);
   const overdueJobsCount = useMemo(
     () =>
       overdueJobsQuery.data?.jobs.filter(

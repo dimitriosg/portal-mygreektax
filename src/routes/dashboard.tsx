@@ -1,7 +1,7 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   listJobs,
@@ -11,6 +11,7 @@ import {
   clearJobOrder,
 } from "@/lib/jobs.functions";
 import { useAuth } from "@/lib/auth-context";
+import { getErrorMessage, isAuthSessionError } from "@/lib/auth-errors";
 import { formatDate } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -33,7 +34,43 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { GripVertical, ChevronDown } from "lucide-react";
 
-export const Route = createFileRoute("/dashboard")({ component: Dashboard });
+export const Route = createFileRoute("/dashboard")({
+  component: Dashboard,
+  errorComponent: DashboardErrorComponent,
+});
+
+function DashboardErrorComponent({ error, reset }: { error: unknown; reset: () => void }) {
+  const navigate = useNavigate();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const errorDetails =
+    error instanceof Error ? (error.stack ?? error.message) : getErrorMessage(error);
+
+  console.error("[dashboard-route-error]", {
+    message: getErrorMessage(error),
+    stack: error instanceof Error ? error.stack : undefined,
+    cause: error instanceof Error ? error.cause : undefined,
+    pathname,
+  });
+
+  return (
+    <div className="mx-auto max-w-3xl px-4 py-8">
+      <h1 className="text-xl font-semibold tracking-tight">Dashboard didn&apos;t load</h1>
+      <p className="mt-2 text-sm text-muted-foreground">
+        A post-login route error occurred. You can retry or return to sign in.
+      </p>
+      <details className="mt-4 rounded-md border border-border bg-muted/30 p-3 text-left text-xs text-muted-foreground">
+        <summary className="cursor-pointer font-medium text-foreground">Error details</summary>
+        <pre className="mt-2 whitespace-pre-wrap break-words">{errorDetails}</pre>
+      </details>
+      <div className="mt-6 flex flex-wrap gap-2">
+        <Button onClick={reset}>Try again</Button>
+        <Button variant="outline" onClick={() => navigate({ to: "/login", replace: true })}>
+          Go to sign in
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 function Dashboard() {
   const {
@@ -49,11 +86,19 @@ function Dashboard() {
     stopImpersonation,
   } = useAuth();
   const navigate = useNavigate();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const lastProcessedAuthErrorRef = useRef<unknown>(null);
+  const lastProcessedQueryErrorRef = useRef<unknown>(null);
   const [filter, setFilter] = useState<string>("all");
   const [sortBy, setSortBy] = useState<string>("manual");
   useEffect(() => {
-    if (!loading && !user) navigate({ to: "/login" });
-  }, [loading, user, navigate]);
+    if (loading) return;
+    if (!user) {
+      navigate({ to: "/login", replace: true });
+      return;
+    }
+    if (!sessionReady) return;
+  }, [loading, sessionReady, user, navigate]);
 
   const fetchJobs = useServerFn(listJobs);
   const fetchAccountants = useServerFn(listAccountants);
@@ -71,25 +116,89 @@ function Dashboard() {
     queryKey: ["jobs", user?.id, asPartner],
     queryFn: () => fetchJobs({ data: asPartner ? { asAccountantId: asPartner } : {} }),
     enabled: !!user && sessionReady,
+    throwOnError: false,
   });
   const accQ = useQuery({
     queryKey: ["accountants"],
     queryFn: () => fetchAccountants(),
     enabled: !!isRealAdmin && sessionReady,
+    throwOnError: false,
   });
   const orderQ = useQuery({
     queryKey: ["job-order", user?.id, scopeKey],
     queryFn: () => fetchOrder({ data: { scopeKey } }),
     enabled: !!user && sessionReady,
+    throwOnError: false,
   });
   const isLoadingJobs = isLoading || !sessionReady;
 
-  const savedOrder = orderQ.data?.orderedJobIds ?? [];
+  useEffect(() => {
+    console.info("[dashboard] auth gate", {
+      userId: user?.id ?? null,
+      loading,
+      sessionReady,
+      isAdmin,
+      isRealAdmin,
+      isPartner,
+      impersonatingId,
+    });
+  }, [impersonatingId, isAdmin, isPartner, isRealAdmin, loading, sessionReady, user?.id]);
+
+  useEffect(() => {
+    const queryErrors = [error, accQ.error, orderQ.error];
+    const authError = queryErrors.find((err) => err != null && isAuthSessionError(err));
+    if (!authError) {
+      lastProcessedAuthErrorRef.current = null;
+      return;
+    }
+    if (lastProcessedAuthErrorRef.current === authError) return;
+    lastProcessedAuthErrorRef.current = authError;
+
+    if (authError) {
+      console.error("[dashboard] auth error", {
+        message: getErrorMessage(authError),
+        error: authError,
+        pathname,
+        userId: user?.id ?? null,
+        sessionReady,
+      });
+      navigate({ to: "/login", replace: true });
+    }
+  }, [accQ.error, error, navigate, orderQ.error, pathname, sessionReady, user?.id]);
+
+  useEffect(() => {
+    const queryErrors = [error, accQ.error, orderQ.error];
+    const routeError = queryErrors.find(Boolean);
+    if (!routeError) {
+      lastProcessedQueryErrorRef.current = null;
+      return;
+    }
+    if (lastProcessedQueryErrorRef.current === routeError) return;
+    lastProcessedQueryErrorRef.current = routeError;
+
+    console.error("[dashboard] query error", {
+      jobs: error ? getErrorMessage(error) : null,
+      accountants: accQ.error ? getErrorMessage(accQ.error) : null,
+      order: orderQ.error ? getErrorMessage(orderQ.error) : null,
+      pathname,
+      userId: user?.id ?? null,
+      sessionReady,
+    });
+  }, [accQ.error, error, orderQ.error, pathname, sessionReady, user?.id]);
+
+  const savedOrder = Array.isArray(orderQ.data?.orderedJobIds) ? orderQ.data.orderedJobIds : [];
   const jobs = data?.jobs ?? [];
 
   // Local manual ordering (initialised from saved order; new jobs appended)
   const [manualOrder, setManualOrder] = useState<string[]>([]);
   const [dirty, setDirty] = useState(false);
+  const handleMutationError = (error: unknown) => {
+    if (isAuthSessionError(error)) {
+      navigate({ to: "/login", replace: true });
+      return;
+    }
+    toast.error(getErrorMessage(error));
+  };
 
   useEffect(() => {
     if (!data) return;
@@ -106,7 +215,7 @@ function Dashboard() {
   }, [data, orderQ.data]);
 
   const newJobIds = useMemo(() => {
-    if (savedOrder.length === 0) return [] as string[];
+    if (!Array.isArray(savedOrder) || savedOrder.length === 0) return [] as string[];
     return jobs.map((j) => j.id).filter((id) => !savedOrder.includes(id));
   }, [jobs, savedOrder]);
 
@@ -117,7 +226,7 @@ function Dashboard() {
       setDirty(false);
       queryClient.invalidateQueries({ queryKey: ["job-order", user?.id, scopeKey] });
     },
-    onError: (e: Error) => toast.error(e.message),
+    onError: handleMutationError,
   });
   const clearMut = useMutation({
     mutationFn: () => resetOrder({ data: { scopeKey } }),
@@ -125,7 +234,7 @@ function Dashboard() {
       toast.success("Custom order cleared");
       queryClient.invalidateQueries({ queryKey: ["job-order", user?.id, scopeKey] });
     },
-    onError: (e: Error) => toast.error(e.message),
+    onError: handleMutationError,
   });
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
@@ -136,8 +245,7 @@ function Dashboard() {
       return manualOrder.map((id) => map.get(id)).filter(Boolean) as typeof jobs;
     }
     const arr = [...jobs];
-    const cmp = (a: string | undefined, b: string | undefined) =>
-      (a ?? "").localeCompare(b ?? "");
+    const cmp = (a: string | undefined, b: string | undefined) => (a ?? "").localeCompare(b ?? "");
     if (sortBy === "code") arr.sort((a, b) => cmp(a.fields["Job Code"], b.fields["Job Code"]));
     else if (sortBy === "status") arr.sort((a, b) => cmp(a.fields.Status, b.fields.Status));
     else if (sortBy === "tier") arr.sort((a, b) => cmp(a.fields.Tier?.[0], b.fields.Tier?.[0]));
@@ -188,61 +296,65 @@ function Dashboard() {
               : impersonatingId
                 ? `Impersonating partner: ${impersonatingName ?? impersonatingId}`
                 : isPartner
-                ? "Showing jobs assigned to you"
-                : "No partner profile linked yet"}
+                  ? "Showing jobs assigned to you"
+                  : "No partner profile linked yet"}
           </p>
         </div>
         <div className="flex flex-col sm:flex-row gap-2">
-        {isRealAdmin && (
+          {isRealAdmin && (
+            <div className="relative">
+              <select
+                value={asPartner}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  if (!id) {
+                    stopImpersonation();
+                  } else {
+                    const name = accQ.data?.accountants.find((a) => a.id === id)?.fields.Name ?? id;
+                    startImpersonation(id, name);
+                  }
+                }}
+                className="appearance-none pr-8 rounded-md border border-input bg-background px-3 py-2 text-sm"
+              >
+                <option value="">All partners (admin)</option>
+                {accQ.data?.accountants.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    View as: {a.fields.Name ?? a.id}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground h-4 w-4" />
+            </div>
+          )}
           <div className="relative">
-          <select
-            value={asPartner}
-            onChange={(e) => {
-              const id = e.target.value;
-              if (!id) {
-                stopImpersonation();
-              } else {
-                const name = accQ.data?.accountants.find((a) => a.id === id)?.fields.Name ?? id;
-                startImpersonation(id, name);
-              }
-            }}
-            className="appearance-none pr-8 rounded-md border border-input bg-background px-3 py-2 text-sm"
-          >
-            <option value="">All partners (admin)</option>
-            {accQ.data?.accountants.map((a) => (
-              <option key={a.id} value={a.id}>View as: {a.fields.Name ?? a.id}</option>
-            ))}
-          </select>
-          <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground h-4 w-4" />
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="appearance-none pr-8 rounded-md border border-input bg-background px-3 py-2 text-sm"
+            >
+              <option value="manual">Manual order (drag & drop)</option>
+              <option value="code">Sort by Job Code</option>
+              <option value="status">Sort by Status</option>
+              <option value="tier">Sort by Tier</option>
+              <option value="sla">Sort by SLA</option>
+            </select>
+            <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground h-4 w-4" />
           </div>
-        )}
-        <div className="relative">
-        <select
-          value={sortBy}
-          onChange={(e) => setSortBy(e.target.value)}
-          className="appearance-none pr-8 rounded-md border border-input bg-background px-3 py-2 text-sm"
-        >
-          <option value="manual">Manual order (drag & drop)</option>
-          <option value="code">Sort by Job Code</option>
-          <option value="status">Sort by Status</option>
-          <option value="tier">Sort by Tier</option>
-          <option value="sla">Sort by SLA</option>
-        </select>
-        <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground h-4 w-4" />
-        </div>
-        <div className="relative">
-        <select
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          className="appearance-none pr-8 rounded-md border border-input bg-background px-3 py-2 text-sm"
-        >
-          <option value="all">All statuses</option>
-          {JOB_STATUSES.map((s) => (
-            <option key={s} value={s}>{s}</option>
-          ))}
-        </select>
-        <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground h-4 w-4" />
-        </div>
+          <div className="relative">
+            <select
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              className="appearance-none pr-8 rounded-md border border-input bg-background px-3 py-2 text-sm"
+            >
+              <option value="all">All statuses</option>
+              {JOB_STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground h-4 w-4" />
+          </div>
         </div>
       </div>
 
@@ -250,7 +362,8 @@ function Dashboard() {
         <div className="mt-4 rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">
           You're viewing your saved custom order. {newJobIds.length} new job
           {newJobIds.length === 1 ? " has" : "s have"} been added since and{" "}
-          {newJobIds.length === 1 ? "is" : "are"} placed at the bottom. Drag and save to include {newJobIds.length === 1 ? "it" : "them"} in your order.
+          {newJobIds.length === 1 ? "is" : "are"} placed at the bottom. Drag and save to include{" "}
+          {newJobIds.length === 1 ? "it" : "them"} in your order.
         </div>
       )}
       {sortBy === "manual" && (dirty || savedOrder.length > 0) && (
@@ -275,10 +388,7 @@ function Dashboard() {
       {isLoadingJobs && (
         <div className="mt-6 grid gap-3">
           {Array.from({ length: 4 }).map((_, i) => (
-            <div
-              key={i}
-              className="rounded-xl border bg-card text-card-foreground shadow"
-            >
+            <div key={i} className="rounded-xl border bg-card text-card-foreground shadow">
               <div className="flex flex-col space-y-1.5 p-6 pb-2">
                 <div className="flex items-center justify-between gap-3">
                   <div className="h-4 w-2/5 animate-shimmer rounded bg-muted" />
@@ -303,16 +413,23 @@ function Dashboard() {
       {!isLoadingJobs && !isAdmin && !isPartner && (
         <Card className="mt-8">
           <CardContent className="py-6 text-sm text-muted-foreground">
-            Your account is not yet linked to an Accountant in Airtable. Make sure your
-            login email matches the Email field on your Accountant record, then sign out and sign back in.
+            Your account is not yet linked to an Accountant in Airtable. Make sure your login email
+            matches the Email field on your Accountant record, then sign out and sign back in.
           </CardContent>
         </Card>
       )}
 
       <div className="mt-6">
         {sortBy === "manual" ? (
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-            <SortableContext items={filtered.map((j) => j.id)} strategy={verticalListSortingStrategy}>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext
+              items={filtered.map((j) => j.id)}
+              strategy={verticalListSortingStrategy}
+            >
               <div className="grid gap-3">
                 {filtered.map((job) => (
                   <SortableJobRow

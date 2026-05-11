@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import {
   createPartnerInvite,
   listPartnerInvites,
@@ -32,6 +33,7 @@ import { MoreHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import { formatDate } from "@/lib/utils";
 import { track } from "@/lib/analytics";
+import { getErrorMessage, isAuthSessionError } from "@/lib/auth-errors";
 
 type AirtableAcc = { id: string; fields: { Name?: string } };
 
@@ -61,8 +63,15 @@ function partnerStatus(p: { disabled_at: string | null; last_seen_at: string | n
   return days <= INACTIVE_DAYS ? ("active" as const) : ("inactive" as const);
 }
 
-export function PartnersSection({ accountants }: { accountants: AirtableAcc[] }) {
+export function PartnersSection({
+  accountants,
+  enabled = true,
+}: {
+  accountants: AirtableAcc[];
+  enabled?: boolean;
+}) {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const fetchInvites = useServerFn(listPartnerInvites);
   const fetchPartners = useServerFn(listPartnerProfilesAdmin);
   const createFn = useServerFn(createPartnerInvite);
@@ -70,14 +79,34 @@ export function PartnersSection({ accountants }: { accountants: AirtableAcc[] })
   const sendEmailFn = useServerFn(sendPartnerInviteEmail);
   const toggleDisabledFn = useServerFn(setPartnerDisabled);
 
-  const invitesQ = useQuery({ queryKey: ["partner-invites"], queryFn: () => fetchInvites() });
-  const partnersQ = useQuery({ queryKey: ["partners"], queryFn: () => fetchPartners() });
+  const invitesQ = useQuery({
+    queryKey: ["partner-invites"],
+    queryFn: () => fetchInvites(),
+    enabled,
+  });
+  const partnersQ = useQuery({
+    queryKey: ["partners"],
+    queryFn: () => fetchPartners(),
+    enabled,
+  });
 
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ firstName: "", lastName: "", email: "", airtableAccountantId: "" });
-  const [issued, setIssued] = useState<
-    { url: string; email: string; firstName: string } | null
-  >(null);
+  const [form, setForm] = useState({
+    firstName: "",
+    lastName: "",
+    email: "",
+    airtableAccountantId: "",
+  });
+  const [issued, setIssued] = useState<{ url: string; email: string; firstName: string } | null>(
+    null,
+  );
+  const handleMutationError = (error: unknown) => {
+    if (isAuthSessionError(error)) {
+      navigate({ to: "/login", replace: true });
+      return;
+    }
+    toast.error(getErrorMessage(error));
+  };
 
   const createMut = useMutation({
     mutationFn: (vars: typeof form) =>
@@ -96,7 +125,7 @@ export function PartnersSection({ accountants }: { accountants: AirtableAcc[] })
       setForm({ firstName: "", lastName: "", email: "", airtableAccountantId: "" });
       qc.invalidateQueries({ queryKey: ["partner-invites"] });
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: handleMutationError,
   });
 
   const sendMut = useMutation({
@@ -107,7 +136,7 @@ export function PartnersSection({ accountants }: { accountants: AirtableAcc[] })
       track("partner_invite_sent");
       setIssued(null);
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: handleMutationError,
   });
 
   const revokeMut = useMutation({
@@ -116,22 +145,21 @@ export function PartnersSection({ accountants }: { accountants: AirtableAcc[] })
       toast.success("Invite revoked");
       qc.invalidateQueries({ queryKey: ["partner-invites"] });
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: handleMutationError,
   });
 
-  const [confirm, setConfirm] = useState<
-    { userId: string; name: string; disable: boolean } | null
-  >(null);
+  const [confirm, setConfirm] = useState<{ userId: string; name: string; disable: boolean } | null>(
+    null,
+  );
 
   const toggleMut = useMutation({
-    mutationFn: (vars: { userId: string; disabled: boolean }) =>
-      toggleDisabledFn({ data: vars }),
+    mutationFn: (vars: { userId: string; disabled: boolean }) => toggleDisabledFn({ data: vars }),
     onSuccess: (_d, vars) => {
       toast.success(vars.disabled ? "Partner access disabled" : "Partner access enabled");
       setConfirm(null);
       qc.invalidateQueries({ queryKey: ["partners"] });
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: handleMutationError,
   });
 
   const partners = partnersQ.data?.partners ?? [];
@@ -208,9 +236,7 @@ export function PartnersSection({ accountants }: { accountants: AirtableAcc[] })
                 Cancel
               </Button>
               <Button
-                disabled={
-                  !form.firstName || !form.lastName || !form.email || createMut.isPending
-                }
+                disabled={!form.firstName || !form.lastName || !form.email || createMut.isPending}
                 onClick={() => createMut.mutate(form)}
               >
                 {createMut.isPending ? "Creating…" : "Create invite"}
@@ -228,8 +254,9 @@ export function PartnersSection({ accountants }: { accountants: AirtableAcc[] })
           </DialogHeader>
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              Share this link with <span className="font-medium text-foreground">{issued?.email}</span>.
-              For security, the link is shown only once — copy it now.
+              Share this link with{" "}
+              <span className="font-medium text-foreground">{issued?.email}</span>. For security,
+              the link is shown only once — copy it now.
             </p>
             <div className="rounded-md border border-border bg-muted/40 p-3 text-xs break-all font-mono">
               {issued?.url}
@@ -266,7 +293,11 @@ export function PartnersSection({ accountants }: { accountants: AirtableAcc[] })
             <div className="text-sm font-medium">Pending invitations ({pending.length})</div>
             <div className="text-xs text-muted-foreground">Partners who haven't accepted yet.</div>
           </div>
-          {pending.length === 0 ? (
+          {invitesQ.error ? (
+            <div className="px-4 py-6 text-sm text-destructive">
+              Could not load invites: {getErrorMessage(invitesQ.error)}
+            </div>
+          ) : pending.length === 0 ? (
             <div className="px-4 py-6 text-sm text-muted-foreground">No pending invites.</div>
           ) : (
             <div className="overflow-x-auto">
@@ -286,7 +317,9 @@ export function PartnersSection({ accountants }: { accountants: AirtableAcc[] })
                         {i.first_name} {i.last_name}
                       </td>
                       <td className="px-3 py-2 text-muted-foreground">{i.email}</td>
-                      <td className="px-3 py-2 text-muted-foreground">{formatDate(i.expires_at)}</td>
+                      <td className="px-3 py-2 text-muted-foreground">
+                        {formatDate(i.expires_at)}
+                      </td>
                       <td className="px-3 py-2 text-right">
                         <Button
                           size="sm"
@@ -315,7 +348,11 @@ export function PartnersSection({ accountants }: { accountants: AirtableAcc[] })
               Partners with an account. "Inactive" = no login in the last {INACTIVE_DAYS} days.
             </div>
           </div>
-          {partners.length === 0 ? (
+          {partnersQ.error ? (
+            <div className="px-4 py-6 text-sm text-destructive">
+              Could not load partners: {getErrorMessage(partnersQ.error)}
+            </div>
+          ) : partners.length === 0 ? (
             <div className="px-4 py-6 text-sm text-muted-foreground">No partners yet.</div>
           ) : (
             <div className="overflow-x-auto">
@@ -357,7 +394,9 @@ export function PartnersSection({ accountants }: { accountants: AirtableAcc[] })
                         <td className="px-3 py-2 text-muted-foreground">
                           {relativeTime(p.last_seen_at)}
                         </td>
-                        <td className="px-3 py-2 text-muted-foreground">{formatDate(p.created_at)}</td>
+                        <td className="px-3 py-2 text-muted-foreground">
+                          {formatDate(p.created_at)}
+                        </td>
                         <td className="px-3 py-2 text-right">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
@@ -400,13 +439,13 @@ export function PartnersSection({ accountants }: { accountants: AirtableAcc[] })
           <p className="text-sm text-muted-foreground">
             {confirm?.disable ? (
               <>
-                <span className="font-medium text-foreground">{confirm?.name}</span> will be
-                signed out immediately and won't be able to sign back in.
+                <span className="font-medium text-foreground">{confirm?.name}</span> will be signed
+                out immediately and won't be able to sign back in.
               </>
             ) : (
               <>
-                <span className="font-medium text-foreground">{confirm?.name}</span> will be
-                able to sign in again with their existing credentials.
+                <span className="font-medium text-foreground">{confirm?.name}</span> will be able to
+                sign in again with their existing credentials.
               </>
             )}
           </p>
@@ -418,8 +457,7 @@ export function PartnersSection({ accountants }: { accountants: AirtableAcc[] })
               variant={confirm?.disable ? "destructive" : "default"}
               disabled={toggleMut.isPending}
               onClick={() =>
-                confirm &&
-                toggleMut.mutate({ userId: confirm.userId, disabled: confirm.disable })
+                confirm && toggleMut.mutate({ userId: confirm.userId, disabled: confirm.disable })
               }
             >
               {toggleMut.isPending
