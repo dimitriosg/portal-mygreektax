@@ -11,7 +11,7 @@ import {
   clearJobOrder,
 } from "@/lib/jobs.functions";
 import { useAuth } from "@/lib/auth-context";
-import { isAuthSessionError } from "@/lib/auth-errors";
+import { getErrorMessage, isAuthSessionError } from "@/lib/auth-errors";
 import { formatDate } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -87,7 +87,23 @@ function Dashboard() {
   const isLoadingJobs = isLoading || !sessionReady;
 
   useEffect(() => {
+    console.info("[dashboard] auth gate", {
+      userId: user?.id ?? null,
+      loading,
+      sessionReady,
+      isAdmin,
+      isRealAdmin,
+      isPartner,
+      impersonatingId,
+    });
+  }, [impersonatingId, isAdmin, isPartner, isRealAdmin, loading, sessionReady, user?.id]);
+
+  useEffect(() => {
     if (error && isAuthSessionError(error)) {
+      console.error("[dashboard] auth error", {
+        message: getErrorMessage(error),
+        error,
+      });
       navigate({ to: "/login", replace: true });
     }
   }, [error, navigate]);

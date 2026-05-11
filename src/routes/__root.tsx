@@ -53,13 +53,15 @@ function NotFoundComponent() {
   );
 }
 
-function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
+function ErrorComponent({ error, reset }: { error: unknown; reset: () => void }) {
   const router = useRouter();
+  const errorDetails =
+    error instanceof Error ? (error.stack ?? error.message) : getErrorMessage(error);
   console.error("[root-route-error]", {
-    name: error.name,
+    name: error instanceof Error ? error.name : typeof error,
     message: getErrorMessage(error),
-    stack: error.stack,
-    cause: error.cause,
+    stack: error instanceof Error ? error.stack : undefined,
+    cause: error instanceof Error ? error.cause : undefined,
     pathname: router.state.location.pathname,
   });
 
@@ -72,6 +74,10 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
         <p className="mt-2 text-sm text-muted-foreground">
           Something went wrong on our end. You can try refreshing or head back home.
         </p>
+        <details className="mt-4 rounded-md border border-border bg-muted/30 p-3 text-left text-xs text-muted-foreground">
+          <summary className="cursor-pointer font-medium text-foreground">Error details</summary>
+          <pre className="mt-2 whitespace-pre-wrap break-words">{errorDetails}</pre>
+        </details>
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           <button
             onClick={() => {
