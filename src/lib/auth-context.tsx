@@ -10,9 +10,9 @@ type Ctx = {
   user: User | null;
   session: Session | null;
   loading: boolean;
-  /** True only after getSession() has resolved on mount.
-   *  Use this (alongside `user`) to guard TanStack Query `enabled` flags
-   *  so server functions are never called before the token is valid. */
+  /** True only after auth has settled for the current state (signed in or signed out).
+   *  Use this alongside `user` to guard protected queries so server functions
+   *  never run during Supabase session recovery/bootstrap. */
   sessionReady: boolean;
   isAdmin: boolean;
   isRealAdmin: boolean;
@@ -138,7 +138,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         void bootstrapAuthenticatedSession(s, { runPostLoginSetup: true });
       } else if (event === "TOKEN_REFRESHED" && s) {
         setSessionReady(true);
-        refresh().catch(() => {});
+        refresh().catch((error) => {
+          console.error("[auth] refresh after TOKEN_REFRESHED failed", error);
+        });
       } else if (!s) {
         setIsRealAdmin(false);
         setIsPartner(false);

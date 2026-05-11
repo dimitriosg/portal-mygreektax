@@ -35,7 +35,6 @@ function LoginPage() {
       console.info("[login] sign-in accepted, waiting for auth bootstrap");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Something went wrong");
-      setLoading(false);
       return;
     } finally {
       if (!signInAccepted) {
