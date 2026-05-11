@@ -205,7 +205,7 @@ function AppShell() {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const fetchJobs = useServerFn(listJobs);
-  const handledOverdueJobsErrorRef = useRef<unknown>(null);
+  const lastProcessedOverdueJobsErrorRef = useRef<unknown>(null);
   const [isDark, setIsDark] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
     return window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -224,11 +224,11 @@ function AppShell() {
   });
   useEffect(() => {
     if (!overdueJobsQuery.error) {
-      handledOverdueJobsErrorRef.current = null;
+      lastProcessedOverdueJobsErrorRef.current = null;
       return;
     }
-    if (handledOverdueJobsErrorRef.current === overdueJobsQuery.error) return;
-    handledOverdueJobsErrorRef.current = overdueJobsQuery.error;
+    if (lastProcessedOverdueJobsErrorRef.current === overdueJobsQuery.error) return;
+    lastProcessedOverdueJobsErrorRef.current = overdueJobsQuery.error;
 
     console.error("[app-shell] overdue jobs query error", {
       message: getErrorMessage(overdueJobsQuery.error),

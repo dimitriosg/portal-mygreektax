@@ -87,8 +87,8 @@ function Dashboard() {
   } = useAuth();
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const handledAuthErrorRef = useRef<unknown>(null);
-  const handledQueryErrorRef = useRef<unknown>(null);
+  const lastProcessedAuthErrorRef = useRef<unknown>(null);
+  const lastProcessedQueryErrorRef = useRef<unknown>(null);
   const [filter, setFilter] = useState<string>("all");
   const [sortBy, setSortBy] = useState<string>("manual");
   useEffect(() => {
@@ -141,15 +141,14 @@ function Dashboard() {
   }, [impersonatingId, isAdmin, isPartner, isRealAdmin, loading, sessionReady, user?.id]);
 
   useEffect(() => {
-    const authError = [error, accQ.error, orderQ.error].find(
-      (err) => err != null && isAuthSessionError(err),
-    );
+    const queryErrors = [error, accQ.error, orderQ.error];
+    const authError = queryErrors.find((err) => err != null && isAuthSessionError(err));
     if (!authError) {
-      handledAuthErrorRef.current = null;
+      lastProcessedAuthErrorRef.current = null;
       return;
     }
-    if (handledAuthErrorRef.current === authError) return;
-    handledAuthErrorRef.current = authError;
+    if (lastProcessedAuthErrorRef.current === authError) return;
+    lastProcessedAuthErrorRef.current = authError;
 
     if (authError) {
       console.error("[dashboard] auth error", {
@@ -164,13 +163,14 @@ function Dashboard() {
   }, [accQ.error, error, navigate, orderQ.error, pathname, sessionReady, user?.id]);
 
   useEffect(() => {
-    const routeError = [error, accQ.error, orderQ.error].find(Boolean);
+    const queryErrors = [error, accQ.error, orderQ.error];
+    const routeError = queryErrors.find(Boolean);
     if (!routeError) {
-      handledQueryErrorRef.current = null;
+      lastProcessedQueryErrorRef.current = null;
       return;
     }
-    if (handledQueryErrorRef.current === routeError) return;
-    handledQueryErrorRef.current = routeError;
+    if (lastProcessedQueryErrorRef.current === routeError) return;
+    lastProcessedQueryErrorRef.current = routeError;
 
     console.error("[dashboard] query error", {
       jobs: error ? getErrorMessage(error) : null,
