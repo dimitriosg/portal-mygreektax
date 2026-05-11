@@ -8,6 +8,8 @@ import {
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import { Sun, Moon } from "lucide-react";
 
 import appCss from "../styles.css?url";
 import { Toaster } from "@/components/ui/sonner";
@@ -159,6 +161,15 @@ function RootComponent() {
 function AppShell() {
   const { user, isAdmin, isRealAdmin, signOut, loading, impersonatingId, impersonatingName, stopImpersonation } = useAuth();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const [isDark, setIsDark] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.matchMedia("(prefers-color-scheme: dark)").matches;
+  });
+  useEffect(() => {
+    const root = document.documentElement;
+    if (isDark) root.classList.add("dark");
+    else root.classList.remove("dark");
+  }, [isDark]);
   const isPublicClientPage = pathname.startsWith("/track/");
   if (isPublicClientPage) {
     return (
@@ -210,6 +221,13 @@ function AppShell() {
             ) : (
               <Link to="/login" activeProps={{ className: "font-semibold" }}>Sign in</Link>
             )}
+            <button
+              onClick={() => setIsDark((v) => !v)}
+              aria-label="Toggle dark mode"
+              className="text-muted-foreground hover:text-foreground"
+            >
+              {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            </button>
           </nav>
         </div>
       </header>
