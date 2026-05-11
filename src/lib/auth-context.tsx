@@ -26,16 +26,6 @@ const AuthCtx = createContext<Ctx | undefined>(undefined);
 const IMP_ID_KEY = "mgt:impersonateId";
 const IMP_NAME_KEY = "mgt:impersonateName";
 
-/** Poll getSession() until an access_token is available (max ~3s) */
-async function waitForSession(maxAttempts = 15, intervalMs = 200): Promise<boolean> {
-  for (let i = 0; i < maxAttempts; i++) {
-    const { data } = await supabase.auth.getSession();
-    if (data.session?.access_token) return true;
-    await new Promise((r) => setTimeout(r, intervalMs));
-  }
-  return false;
-}
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
@@ -87,18 +77,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
+    // 1. Subscribe to auth state changes.
+    //    Only run the full bootstrap (claimFirstAdmin, linkPartnerProfile)
+    //    on an actual SIGNED_IN event — NOT during the initial session
+    //    recovery (_initialize / INITIAL_SESSION), where no token is ready yet.
+    const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
       setSession(s);
-      if (s) {
-        // Wait until getSession() confirms the token is persisted before
-        // calling server functions — avoids 401s from a missing Auth header.
+
+      if (event === "SIGNED_IN" && s) {
+        // Session is fully established at this point — safe to call server fns.
         (async () => {
           try {
-            const ready = await waitForSession();
-            if (!ready) {
-              console.warn("[auth] Session not available after polling — skipping bootstrap");
-              return;
-            }
             await claimFirstAdmin();
             await linkPartnerProfile();
             await refresh();
@@ -106,7 +95,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             console.error("auth bootstrap failed", e);
           }
         })();
-      } else {
+      } else if (event === "TOKEN_REFRESHED" && s) {
+        // Token was silently refreshed — re-fetch roles in case they changed.
+        refresh().catch(() => {});
+      } else if (!s) {
         setIsRealAdmin(false);
         setIsPartner(false);
         if (typeof window !== "undefined") {
@@ -117,11 +109,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setImpersonatingName(null);
       }
     });
+
+    // 2. On initial mount, getSession() to restore an existing session.
+    //    If a session exists, call refresh() directly — the token IS available here.
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
       if (data.session) refresh();
       setLoading(false);
     });
+
     return () => sub.subscription.unsubscribe();
   }, []);
 
