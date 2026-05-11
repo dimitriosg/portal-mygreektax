@@ -144,8 +144,7 @@ function Dashboard() {
       return manualOrder.map((id) => map.get(id)).filter(Boolean) as typeof jobs;
     }
     const arr = [...jobs];
-    const cmp = (a: string | undefined, b: string | undefined) =>
-      (a ?? "").localeCompare(b ?? "");
+    const cmp = (a: string | undefined, b: string | undefined) => (a ?? "").localeCompare(b ?? "");
     if (sortBy === "code") arr.sort((a, b) => cmp(a.fields["Job Code"], b.fields["Job Code"]));
     else if (sortBy === "status") arr.sort((a, b) => cmp(a.fields.Status, b.fields.Status));
     else if (sortBy === "tier") arr.sort((a, b) => cmp(a.fields.Tier?.[0], b.fields.Tier?.[0]));
@@ -196,61 +195,65 @@ function Dashboard() {
               : impersonatingId
                 ? `Impersonating partner: ${impersonatingName ?? impersonatingId}`
                 : isPartner
-                ? "Showing jobs assigned to you"
-                : "No partner profile linked yet"}
+                  ? "Showing jobs assigned to you"
+                  : "No partner profile linked yet"}
           </p>
         </div>
         <div className="flex flex-col sm:flex-row gap-2">
-        {isRealAdmin && (
+          {isRealAdmin && (
+            <div className="relative">
+              <select
+                value={asPartner}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  if (!id) {
+                    stopImpersonation();
+                  } else {
+                    const name = accQ.data?.accountants.find((a) => a.id === id)?.fields.Name ?? id;
+                    startImpersonation(id, name);
+                  }
+                }}
+                className="appearance-none pr-8 rounded-md border border-input bg-background px-3 py-2 text-sm"
+              >
+                <option value="">All partners (admin)</option>
+                {accQ.data?.accountants.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    View as: {a.fields.Name ?? a.id}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground h-4 w-4" />
+            </div>
+          )}
           <div className="relative">
-          <select
-            value={asPartner}
-            onChange={(e) => {
-              const id = e.target.value;
-              if (!id) {
-                stopImpersonation();
-              } else {
-                const name = accQ.data?.accountants.find((a) => a.id === id)?.fields.Name ?? id;
-                startImpersonation(id, name);
-              }
-            }}
-            className="appearance-none pr-8 rounded-md border border-input bg-background px-3 py-2 text-sm"
-          >
-            <option value="">All partners (admin)</option>
-            {accQ.data?.accountants.map((a) => (
-              <option key={a.id} value={a.id}>View as: {a.fields.Name ?? a.id}</option>
-            ))}
-          </select>
-          <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground h-4 w-4" />
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="appearance-none pr-8 rounded-md border border-input bg-background px-3 py-2 text-sm"
+            >
+              <option value="manual">Manual order (drag & drop)</option>
+              <option value="code">Sort by Job Code</option>
+              <option value="status">Sort by Status</option>
+              <option value="tier">Sort by Tier</option>
+              <option value="sla">Sort by SLA</option>
+            </select>
+            <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground h-4 w-4" />
           </div>
-        )}
-        <div className="relative">
-        <select
-          value={sortBy}
-          onChange={(e) => setSortBy(e.target.value)}
-          className="appearance-none pr-8 rounded-md border border-input bg-background px-3 py-2 text-sm"
-        >
-          <option value="manual">Manual order (drag & drop)</option>
-          <option value="code">Sort by Job Code</option>
-          <option value="status">Sort by Status</option>
-          <option value="tier">Sort by Tier</option>
-          <option value="sla">Sort by SLA</option>
-        </select>
-        <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground h-4 w-4" />
-        </div>
-        <div className="relative">
-        <select
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          className="appearance-none pr-8 rounded-md border border-input bg-background px-3 py-2 text-sm"
-        >
-          <option value="all">All statuses</option>
-          {JOB_STATUSES.map((s) => (
-            <option key={s} value={s}>{s}</option>
-          ))}
-        </select>
-        <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground h-4 w-4" />
-        </div>
+          <div className="relative">
+            <select
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              className="appearance-none pr-8 rounded-md border border-input bg-background px-3 py-2 text-sm"
+            >
+              <option value="all">All statuses</option>
+              {JOB_STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground h-4 w-4" />
+          </div>
         </div>
       </div>
 
@@ -258,7 +261,8 @@ function Dashboard() {
         <div className="mt-4 rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">
           You're viewing your saved custom order. {newJobIds.length} new job
           {newJobIds.length === 1 ? " has" : "s have"} been added since and{" "}
-          {newJobIds.length === 1 ? "is" : "are"} placed at the bottom. Drag and save to include {newJobIds.length === 1 ? "it" : "them"} in your order.
+          {newJobIds.length === 1 ? "is" : "are"} placed at the bottom. Drag and save to include{" "}
+          {newJobIds.length === 1 ? "it" : "them"} in your order.
         </div>
       )}
       {sortBy === "manual" && (dirty || savedOrder.length > 0) && (
@@ -283,10 +287,7 @@ function Dashboard() {
       {isLoadingJobs && (
         <div className="mt-6 grid gap-3">
           {Array.from({ length: 4 }).map((_, i) => (
-            <div
-              key={i}
-              className="rounded-xl border bg-card text-card-foreground shadow"
-            >
+            <div key={i} className="rounded-xl border bg-card text-card-foreground shadow">
               <div className="flex flex-col space-y-1.5 p-6 pb-2">
                 <div className="flex items-center justify-between gap-3">
                   <div className="h-4 w-2/5 animate-shimmer rounded bg-muted" />
@@ -311,16 +312,23 @@ function Dashboard() {
       {!isLoadingJobs && !isAdmin && !isPartner && (
         <Card className="mt-8">
           <CardContent className="py-6 text-sm text-muted-foreground">
-            Your account is not yet linked to an Accountant in Airtable. Make sure your
-            login email matches the Email field on your Accountant record, then sign out and sign back in.
+            Your account is not yet linked to an Accountant in Airtable. Make sure your login email
+            matches the Email field on your Accountant record, then sign out and sign back in.
           </CardContent>
         </Card>
       )}
 
       <div className="mt-6">
         {sortBy === "manual" ? (
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-            <SortableContext items={filtered.map((j) => j.id)} strategy={verticalListSortingStrategy}>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext
+              items={filtered.map((j) => j.id)}
+              strategy={verticalListSortingStrategy}
+            >
               <div className="grid gap-3">
                 {filtered.map((job) => (
                   <SortableJobRow

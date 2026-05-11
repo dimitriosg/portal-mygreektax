@@ -89,10 +89,15 @@ export function PartnersSection({
   });
 
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ firstName: "", lastName: "", email: "", airtableAccountantId: "" });
-  const [issued, setIssued] = useState<
-    { url: string; email: string; firstName: string } | null
-  >(null);
+  const [form, setForm] = useState({
+    firstName: "",
+    lastName: "",
+    email: "",
+    airtableAccountantId: "",
+  });
+  const [issued, setIssued] = useState<{ url: string; email: string; firstName: string } | null>(
+    null,
+  );
 
   const createMut = useMutation({
     mutationFn: (vars: typeof form) =>
@@ -134,13 +139,12 @@ export function PartnersSection({
     onError: (e) => toast.error((e as Error).message),
   });
 
-  const [confirm, setConfirm] = useState<
-    { userId: string; name: string; disable: boolean } | null
-  >(null);
+  const [confirm, setConfirm] = useState<{ userId: string; name: string; disable: boolean } | null>(
+    null,
+  );
 
   const toggleMut = useMutation({
-    mutationFn: (vars: { userId: string; disabled: boolean }) =>
-      toggleDisabledFn({ data: vars }),
+    mutationFn: (vars: { userId: string; disabled: boolean }) => toggleDisabledFn({ data: vars }),
     onSuccess: (_d, vars) => {
       toast.success(vars.disabled ? "Partner access disabled" : "Partner access enabled");
       setConfirm(null);
@@ -223,9 +227,7 @@ export function PartnersSection({
                 Cancel
               </Button>
               <Button
-                disabled={
-                  !form.firstName || !form.lastName || !form.email || createMut.isPending
-                }
+                disabled={!form.firstName || !form.lastName || !form.email || createMut.isPending}
                 onClick={() => createMut.mutate(form)}
               >
                 {createMut.isPending ? "Creating…" : "Create invite"}
@@ -243,8 +245,9 @@ export function PartnersSection({
           </DialogHeader>
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              Share this link with <span className="font-medium text-foreground">{issued?.email}</span>.
-              For security, the link is shown only once — copy it now.
+              Share this link with{" "}
+              <span className="font-medium text-foreground">{issued?.email}</span>. For security,
+              the link is shown only once — copy it now.
             </p>
             <div className="rounded-md border border-border bg-muted/40 p-3 text-xs break-all font-mono">
               {issued?.url}
@@ -305,7 +308,9 @@ export function PartnersSection({
                         {i.first_name} {i.last_name}
                       </td>
                       <td className="px-3 py-2 text-muted-foreground">{i.email}</td>
-                      <td className="px-3 py-2 text-muted-foreground">{formatDate(i.expires_at)}</td>
+                      <td className="px-3 py-2 text-muted-foreground">
+                        {formatDate(i.expires_at)}
+                      </td>
                       <td className="px-3 py-2 text-right">
                         <Button
                           size="sm"
@@ -380,7 +385,9 @@ export function PartnersSection({
                         <td className="px-3 py-2 text-muted-foreground">
                           {relativeTime(p.last_seen_at)}
                         </td>
-                        <td className="px-3 py-2 text-muted-foreground">{formatDate(p.created_at)}</td>
+                        <td className="px-3 py-2 text-muted-foreground">
+                          {formatDate(p.created_at)}
+                        </td>
                         <td className="px-3 py-2 text-right">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
@@ -423,13 +430,13 @@ export function PartnersSection({
           <p className="text-sm text-muted-foreground">
             {confirm?.disable ? (
               <>
-                <span className="font-medium text-foreground">{confirm?.name}</span> will be
-                signed out immediately and won't be able to sign back in.
+                <span className="font-medium text-foreground">{confirm?.name}</span> will be signed
+                out immediately and won't be able to sign back in.
               </>
             ) : (
               <>
-                <span className="font-medium text-foreground">{confirm?.name}</span> will be
-                able to sign in again with their existing credentials.
+                <span className="font-medium text-foreground">{confirm?.name}</span> will be able to
+                sign in again with their existing credentials.
               </>
             )}
           </p>
@@ -441,8 +448,7 @@ export function PartnersSection({
               variant={confirm?.disable ? "destructive" : "default"}
               disabled={toggleMut.isPending}
               onClick={() =>
-                confirm &&
-                toggleMut.mutate({ userId: confirm.userId, disabled: confirm.disable })
+                confirm && toggleMut.mutate({ userId: confirm.userId, disabled: confirm.disable })
               }
             >
               {toggleMut.isPending

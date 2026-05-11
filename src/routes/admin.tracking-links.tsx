@@ -114,7 +114,9 @@ function TrackingLinksPage() {
   }, [linksQ.data]);
 
   if (loading || !sessionReady) {
-    return <div className="mx-auto max-w-6xl px-4 py-6 text-sm text-muted-foreground">Loading…</div>;
+    return (
+      <div className="mx-auto max-w-6xl px-4 py-6 text-sm text-muted-foreground">Loading…</div>
+    );
   }
   if (!isAdmin) return null;
 
@@ -122,10 +124,7 @@ function TrackingLinksPage() {
     <div className="mx-auto max-w-6xl px-4 py-6 sm:py-8 space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <Link
-            to="/admin"
-            className="text-sm text-muted-foreground hover:text-foreground"
-          >
+          <Link to="/admin" className="text-sm text-muted-foreground hover:text-foreground">
             ← Back to admin
           </Link>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight">Tracking links</h1>
@@ -180,7 +179,11 @@ function TrackingLinksPage() {
           </thead>
           <tbody>
             {linksQ.isLoading && (
-              <tr><td colSpan={9} className="px-3 py-6 text-center text-muted-foreground">Loading…</td></tr>
+              <tr>
+                <td colSpan={9} className="px-3 py-6 text-center text-muted-foreground">
+                  Loading…
+                </td>
+              </tr>
             )}
             {linksQ.error && (
               <tr>
@@ -190,7 +193,11 @@ function TrackingLinksPage() {
               </tr>
             )}
             {!linksQ.isLoading && filtered.length === 0 && (
-              <tr><td colSpan={9} className="px-3 py-6 text-center text-muted-foreground">No tracking links yet.</td></tr>
+              <tr>
+                <td colSpan={9} className="px-3 py-6 text-center text-muted-foreground">
+                  No tracking links yet.
+                </td>
+              </tr>
             )}
             {filtered.map((l) => {
               const trackUrl = `${typeof window !== "undefined" ? window.location.origin : ""}/track/${l.token}`;
@@ -210,11 +217,17 @@ function TrackingLinksPage() {
                     <div className="text-xs text-muted-foreground">{l.client_email}</div>
                   </td>
                   <td className="px-3 py-2">
-                    {l.status ? <StatusBadge status={l.status} /> : <span className="text-muted-foreground">—</span>}
+                    {l.status ? (
+                      <StatusBadge status={l.status} />
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
                   </td>
                   <td className="px-3 py-2 text-muted-foreground">{formatDate(l.created_at)}</td>
                   <td className="px-3 py-2 text-muted-foreground">{formatDate(l.expires_at)}</td>
-                  <td className="px-3 py-2 text-right font-semibold tabular-nums">{l.open_count}</td>
+                  <td className="px-3 py-2 text-right font-semibold tabular-nums">
+                    {l.open_count}
+                  </td>
                   <td className="px-3 py-2 text-muted-foreground">
                     {l.last_opened_at ? formatDateTime(l.last_opened_at) : "—"}
                   </td>
@@ -230,11 +243,7 @@ function TrackingLinksPage() {
                     >
                       Copy
                     </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setOpenToken(l.token)}
-                    >
+                    <Button size="sm" variant="outline" onClick={() => setOpenToken(l.token)}>
                       Details
                     </Button>
                   </td>
@@ -267,7 +276,9 @@ function TrackingLinksPage() {
                 </select>
                 <Button
                   size="sm"
-                  onClick={() => openToken && extendMut.mutate({ token: openToken, days: extendDays })}
+                  onClick={() =>
+                    openToken && extendMut.mutate({ token: openToken, days: extendDays })
+                  }
                   disabled={extendMut.isPending}
                 >
                   {extendMut.isPending ? "Extending…" : "Extend"}
@@ -286,13 +297,18 @@ function TrackingLinksPage() {
                   {historyQ.data.events.map((ev) => (
                     <li key={ev.id} className="border-l-2 border-border pl-3">
                       <div className="flex flex-wrap items-baseline justify-between gap-2 text-muted-foreground">
-                        <span className="font-medium text-foreground">{ev.actor_name ?? ev.actor_email ?? "Admin"}</span>
+                        <span className="font-medium text-foreground">
+                          {ev.actor_name ?? ev.actor_email ?? "Admin"}
+                        </span>
                         <span>{formatDateTime(ev.occurred_at)}</span>
                       </div>
                       {ev.event_type === "extended" ? (
                         <p className="mt-1">
-                          Extended by <span className="font-medium">{ev.metadata.days_added} days</span>
-                          {ev.metadata.new_expires_at && <> · new expiry {formatDate(ev.metadata.new_expires_at)}</>}
+                          Extended by{" "}
+                          <span className="font-medium">{ev.metadata.days_added} days</span>
+                          {ev.metadata.new_expires_at && (
+                            <> · new expiry {formatDate(ev.metadata.new_expires_at)}</>
+                          )}
                         </p>
                       ) : (
                         <p className="mt-1">{ev.event_type}</p>
@@ -305,44 +321,49 @@ function TrackingLinksPage() {
 
             <section className="space-y-2">
               <h3 className="text-sm font-semibold">Open log</h3>
-            {opensQ.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
-            {opensQ.data && opensQ.data.opens.length === 0 && (
-              <p className="text-sm text-muted-foreground">No opens recorded.</p>
-            )}
-            {opensQ.data && opensQ.data.opens.length > 0 && (
-              <div className="overflow-x-auto rounded-md border border-border">
-                <table className="w-full text-xs">
-                  <thead className="bg-muted/50 text-left">
-                    <tr>
-                      <th className="px-2 py-1.5">When</th>
-                      <th className="px-2 py-1.5">Country</th>
-                      <th className="px-2 py-1.5">City</th>
-                      <th className="px-2 py-1.5">Device</th>
-                      <th className="px-2 py-1.5">Browser</th>
-                      <th className="px-2 py-1.5">OS</th>
-                      <th className="px-2 py-1.5">IP</th>
-                      <th className="px-2 py-1.5">Referrer</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {opensQ.data.opens.map((o) => (
-                      <tr key={o.id} className="border-t border-border align-top">
-                        <td className="px-2 py-1.5 whitespace-nowrap">{formatDateTime(o.opened_at)}</td>
-                        <td className="px-2 py-1.5">{o.country ?? "—"}</td>
-                        <td className="px-2 py-1.5">{o.city ?? "—"}</td>
-                        <td className="px-2 py-1.5">{o.device ?? "—"}</td>
-                        <td className="px-2 py-1.5">{o.browser ?? "—"}</td>
-                        <td className="px-2 py-1.5">{o.os ?? "—"}</td>
-                        <td className="px-2 py-1.5 font-mono text-[11px]">{o.ip ?? "—"}</td>
-                        <td className="px-2 py-1.5 max-w-[160px] truncate" title={o.referrer ?? ""}>
-                          {o.referrer ?? "—"}
-                        </td>
+              {opensQ.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
+              {opensQ.data && opensQ.data.opens.length === 0 && (
+                <p className="text-sm text-muted-foreground">No opens recorded.</p>
+              )}
+              {opensQ.data && opensQ.data.opens.length > 0 && (
+                <div className="overflow-x-auto rounded-md border border-border">
+                  <table className="w-full text-xs">
+                    <thead className="bg-muted/50 text-left">
+                      <tr>
+                        <th className="px-2 py-1.5">When</th>
+                        <th className="px-2 py-1.5">Country</th>
+                        <th className="px-2 py-1.5">City</th>
+                        <th className="px-2 py-1.5">Device</th>
+                        <th className="px-2 py-1.5">Browser</th>
+                        <th className="px-2 py-1.5">OS</th>
+                        <th className="px-2 py-1.5">IP</th>
+                        <th className="px-2 py-1.5">Referrer</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                    </thead>
+                    <tbody>
+                      {opensQ.data.opens.map((o) => (
+                        <tr key={o.id} className="border-t border-border align-top">
+                          <td className="px-2 py-1.5 whitespace-nowrap">
+                            {formatDateTime(o.opened_at)}
+                          </td>
+                          <td className="px-2 py-1.5">{o.country ?? "—"}</td>
+                          <td className="px-2 py-1.5">{o.city ?? "—"}</td>
+                          <td className="px-2 py-1.5">{o.device ?? "—"}</td>
+                          <td className="px-2 py-1.5">{o.browser ?? "—"}</td>
+                          <td className="px-2 py-1.5">{o.os ?? "—"}</td>
+                          <td className="px-2 py-1.5 font-mono text-[11px]">{o.ip ?? "—"}</td>
+                          <td
+                            className="px-2 py-1.5 max-w-[160px] truncate"
+                            title={o.referrer ?? ""}
+                          >
+                            {o.referrer ?? "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </section>
           </div>
         </SheetContent>

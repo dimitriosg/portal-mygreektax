@@ -34,9 +34,7 @@ export function AdminAnalytics({ enabled = true }: { enabled?: boolean }) {
     <section className="space-y-3">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-lg font-semibold">Analytics</h2>
-        <p className="text-xs text-muted-foreground">
-          Powered by Plausible · last 30 days
-        </p>
+        <p className="text-xs text-muted-foreground">Powered by Plausible · last 30 days</p>
       </div>
 
       {q.isLoading && (
@@ -57,9 +55,7 @@ export function AdminAnalytics({ enabled = true }: { enabled?: boolean }) {
 
       {q.data && q.data.error && (
         <Card>
-          <CardContent className="py-6 text-sm text-muted-foreground">
-            {q.data.error}
-          </CardContent>
+          <CardContent className="py-6 text-sm text-muted-foreground">{q.data.error}</CardContent>
         </Card>
       )}
 
@@ -79,7 +75,10 @@ export function AdminAnalytics({ enabled = true }: { enabled?: boolean }) {
               </div>
               <div className="h-48 w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={q.data.timeseries} margin={{ top: 5, right: 8, left: 0, bottom: 0 }}>
+                  <AreaChart
+                    data={q.data.timeseries}
+                    margin={{ top: 5, right: 8, left: 0, bottom: 0 }}
+                  >
                     <defs>
                       <linearGradient id="visitorsFill" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity={0.4} />
@@ -93,7 +92,11 @@ export function AdminAnalytics({ enabled = true }: { enabled?: boolean }) {
                       tickFormatter={(d: string) => d.slice(5)}
                       stroke="hsl(var(--muted-foreground))"
                     />
-                    <YAxis tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" allowDecimals={false} />
+                    <YAxis
+                      tick={{ fontSize: 11 }}
+                      stroke="hsl(var(--muted-foreground))"
+                      allowDecimals={false}
+                    />
                     <Tooltip
                       contentStyle={{
                         background: "hsl(var(--background))",
@@ -118,7 +121,10 @@ export function AdminAnalytics({ enabled = true }: { enabled?: boolean }) {
           <div className="grid gap-3 md:grid-cols-2">
             <BreakdownTable
               title="Top pages (last 7d)"
-              rows={(q.data.topPages ?? []).map((p) => ({ label: p.page || "/", value: p.visitors }))}
+              rows={(q.data.topPages ?? []).map((p) => ({
+                label: p.page || "/",
+                value: p.visitors,
+              }))}
               empty="No page views yet."
             />
             <BreakdownTable
@@ -164,7 +170,9 @@ function BreakdownTable({
             {rows.map((r) => (
               <li key={r.label} className="flex items-center justify-between gap-3">
                 <span className="truncate text-foreground">{r.label}</span>
-                <span className="tabular-nums text-muted-foreground">{r.value.toLocaleString()}</span>
+                <span className="tabular-nums text-muted-foreground">
+                  {r.value.toLocaleString()}
+                </span>
               </li>
             ))}
           </ul>
