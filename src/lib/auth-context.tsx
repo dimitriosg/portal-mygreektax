@@ -10,8 +10,8 @@ type Ctx = {
   user: User | null;
   session: Session | null;
   loading: boolean;
-  isAdmin: boolean;          // effective admin (false while impersonating)
-  isRealAdmin: boolean;      // signed-in user actually has admin role
+  isAdmin: boolean;
+  isRealAdmin: boolean;
   isPartner: boolean;
   impersonatingId: string | null;
   impersonatingName: string | null;
@@ -25,6 +25,16 @@ const AuthCtx = createContext<Ctx | undefined>(undefined);
 
 const IMP_ID_KEY = "mgt:impersonateId";
 const IMP_NAME_KEY = "mgt:impersonateName";
+
+/** Poll getSession() until an access_token is available (max ~3s) */
+async function waitForSession(maxAttempts = 15, intervalMs = 200): Promise<boolean> {
+  for (let i = 0; i < maxAttempts; i++) {
+    const { data } = await supabase.auth.getSession();
+    if (data.session?.access_token) return true;
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  return false;
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
@@ -53,7 +63,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             track("partner_login", {
               role: ctx.isAdmin ? "admin" : ctx.isPartner ? "partner" : "user",
             });
-            // Server-side log so it shows up in admin daily/weekly summary emails.
             recordPartnerLogin()
               .then((res) => {
                 if (res && (res as any).disabled) {
@@ -81,16 +90,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
       setSession(s);
       if (s) {
-        // bootstrap on every sign-in: try to claim admin (no-op if any exists), then link partner profile
-        setTimeout(async () => {
+        // Wait until getSession() confirms the token is persisted before
+        // calling server functions — avoids 401s from a missing Auth header.
+        (async () => {
           try {
+            const ready = await waitForSession();
+            if (!ready) {
+              console.warn("[auth] Session not available after polling — skipping bootstrap");
+              return;
+            }
             await claimFirstAdmin();
             await linkPartnerProfile();
             await refresh();
           } catch (e) {
             console.error("auth bootstrap failed", e);
           }
-        }, 0);
+        })();
       } else {
         setIsRealAdmin(false);
         setIsPartner(false);
