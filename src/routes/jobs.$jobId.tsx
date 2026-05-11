@@ -33,8 +33,12 @@ function JobDetail() {
   const { user, loading, sessionReady, isAdmin } = useAuth();
   const navigate = useNavigate();
   useEffect(() => {
-    if (loading || !sessionReady) return;
-    if (!user) navigate({ to: "/login", replace: true });
+    if (loading) return;
+    if (!user) {
+      navigate({ to: "/login", replace: true });
+      return;
+    }
+    if (!sessionReady) return;
   }, [loading, sessionReady, user, navigate]);
 
   const fetchJob = useServerFn(getJob);
@@ -89,6 +93,13 @@ function JobDetail() {
   const [reqField, setReqField] = useState<"sla_deadline" | "status" | "notes">("sla_deadline");
   const [reqValue, setReqValue] = useState("");
   const [reqReason, setReqReason] = useState("");
+  const handleMutationError = (error: unknown) => {
+    if (isAuthSessionError(error)) {
+      navigate({ to: "/login", replace: true });
+      return;
+    }
+    toast.error(getErrorMessage(error));
+  };
 
   const submitRequest = useMutation({
     mutationFn: () =>
@@ -101,7 +112,7 @@ function JobDetail() {
       setReqReason("");
       qc.invalidateQueries({ queryKey: ["job-change-requests", jobId] });
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: handleMutationError,
   });
   const cancelRequest = useMutation({
     mutationFn: (id: string) => cancelRequestFn({ data: { id } }),
@@ -109,7 +120,7 @@ function JobDetail() {
       toast.success("Request cancelled");
       qc.invalidateQueries({ queryKey: ["job-change-requests", jobId] });
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: handleMutationError,
   });
   const decideRequest = useMutation({
     mutationFn: (vars: { id: string; decision: "approved" | "rejected" }) =>
@@ -120,7 +131,7 @@ function JobDetail() {
       qc.invalidateQueries({ queryKey: ["job", jobId] });
       qc.invalidateQueries({ queryKey: ["job-events", jobId] });
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: handleMutationError,
   });
 
   const extendMut = useMutation({
@@ -130,7 +141,7 @@ function JobDetail() {
       qc.invalidateQueries({ queryKey: ["job-tracking", jobId] });
       qc.invalidateQueries({ queryKey: ["token-history", tokenForHistory] });
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: handleMutationError,
   });
 
   const [status, setStatus] = useState<string>("");
@@ -155,7 +166,7 @@ function JobDetail() {
       qc.invalidateQueries({ queryKey: ["jobs"] });
       qc.invalidateQueries({ queryKey: ["job-events", jobId] });
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: handleMutationError,
   });
 
   const sendLink = useMutation({
@@ -167,14 +178,14 @@ function JobDetail() {
       toast.success(`Tracking link copied for ${email}`);
       qc.invalidateQueries({ queryKey: ["job-tracking", jobId] });
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: handleMutationError,
   });
 
   const [showOpens, setShowOpens] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [extendDays, setExtendDays] = useState<number>(90);
 
-  if (loading || !sessionReady) {
+  if (loading || (!!user && !sessionReady)) {
     return (
       <div className="mx-auto max-w-3xl px-4 py-8 text-sm text-muted-foreground">Loading...</div>
     );

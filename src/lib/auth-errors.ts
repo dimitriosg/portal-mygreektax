@@ -1,3 +1,5 @@
+import { AuthSessionError } from "@/integrations/supabase/auth-client-middleware";
+
 export function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (error instanceof Response) {
@@ -9,12 +11,7 @@ export function getErrorMessage(error: unknown): string {
 
 export function isAuthSessionError(error: unknown): boolean {
   if (!error) return false;
+  if (error instanceof AuthSessionError) return true;
   if (error instanceof Response) return error.status === 401;
-
-  const message = getErrorMessage(error).toLowerCase();
-  return (
-    message.includes("no active session") ||
-    message.includes("unauthorized") ||
-    message.includes("401")
-  );
+  return typeof error === "object" && "code" in error && error.code === "NO_ACTIVE_SESSION";
 }

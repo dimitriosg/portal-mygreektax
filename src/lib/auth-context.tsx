@@ -10,7 +10,7 @@ type Ctx = {
   user: User | null;
   session: Session | null;
   loading: boolean;
-  /** True only after auth has settled for the current state (signed in or signed out).
+  /** True only when the current signed-in session has fully completed bootstrap.
    *  Use this alongside `user` to guard protected queries so server functions
    *  never run during Supabase session recovery/bootstrap. */
   sessionReady: boolean;
@@ -112,6 +112,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         await refresh();
+        setSessionReady(true);
         console.info("[auth] bootstrap:complete", {
           userId: nextSession.user.id,
         });
@@ -121,7 +122,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setIsPartner(false);
       } finally {
         setLoading(false);
-        setSessionReady(true);
       }
     },
     [refresh],
@@ -145,7 +145,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setIsRealAdmin(false);
         setIsPartner(false);
         setLoading(false);
-        setSessionReady(true);
+        setSessionReady(false);
         if (typeof window !== "undefined") {
           sessionStorage.removeItem(IMP_ID_KEY);
           sessionStorage.removeItem(IMP_NAME_KEY);
@@ -166,7 +166,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
         }
         setLoading(false);
-        setSessionReady(true);
+        setSessionReady(data.session !== null);
       })
       .catch((error) => {
         console.error("[auth] getSession failed", error);
@@ -174,7 +174,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setIsRealAdmin(false);
         setIsPartner(false);
         setLoading(false);
-        setSessionReady(true);
+        setSessionReady(false);
       });
 
     return () => sub.subscription.unsubscribe();

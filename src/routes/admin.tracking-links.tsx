@@ -29,9 +29,13 @@ function TrackingLinksPage() {
   const { user, loading, sessionReady, isAdmin } = useAuth();
   const navigate = useNavigate();
   useEffect(() => {
-    if (loading || !sessionReady) return;
-    if (!user) navigate({ to: "/login", replace: true });
-    else if (!isAdmin) navigate({ to: "/dashboard", replace: true });
+    if (loading) return;
+    if (!user) {
+      navigate({ to: "/login", replace: true });
+      return;
+    }
+    if (!sessionReady) return;
+    if (!isAdmin) navigate({ to: "/dashboard", replace: true });
   }, [loading, sessionReady, user, isAdmin, navigate]);
 
   const fetchLinks = useServerFn(listTrackingLinks);
@@ -78,7 +82,13 @@ function TrackingLinksPage() {
       qc.invalidateQueries({ queryKey: ["tracking-links"] });
       qc.invalidateQueries({ queryKey: ["token-history", openToken] });
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => {
+      if (isAuthSessionError(e)) {
+        navigate({ to: "/login", replace: true });
+        return;
+      }
+      toast.error(getErrorMessage(e));
+    },
   });
 
   const filtered = useMemo(() => {
@@ -113,7 +123,7 @@ function TrackingLinksPage() {
     };
   }, [linksQ.data]);
 
-  if (loading || !sessionReady) {
+  if (loading || (!!user && !sessionReady)) {
     return (
       <div className="mx-auto max-w-6xl px-4 py-6 text-sm text-muted-foreground">Loading...</div>
     );

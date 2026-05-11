@@ -82,9 +82,13 @@ function AdminPage() {
   const { user, loading, sessionReady, isAdmin, isRealAdmin } = useAuth();
   const navigate = useNavigate();
   useEffect(() => {
-    if (loading || !sessionReady) return;
-    if (!user) navigate({ to: "/login", replace: true });
-    else if (!isAdmin) navigate({ to: "/dashboard", replace: true });
+    if (loading) return;
+    if (!user) {
+      navigate({ to: "/login", replace: true });
+      return;
+    }
+    if (!sessionReady) return;
+    if (!isAdmin) navigate({ to: "/dashboard", replace: true });
   }, [loading, sessionReady, user, isAdmin, navigate]);
 
   const fetchJobs = useServerFn(listJobs);
@@ -125,6 +129,13 @@ function AdminPage() {
       navigate({ to: "/login", replace: true });
     }
   }, [accQ.error, clientsQ.error, jobsQ.error, navigate, servicesQ.error]);
+  const handleMutationError = (error: unknown) => {
+    if (isAuthSessionError(error)) {
+      navigate({ to: "/login", replace: true });
+      return;
+    }
+    toast.error(getErrorMessage(error));
+  };
 
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({
@@ -159,7 +170,7 @@ function AdminPage() {
         notes: "",
       });
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: handleMutationError,
   });
 
   const assign = useMutation({
@@ -168,7 +179,7 @@ function AdminPage() {
       toast.success("Partner assigned");
       qc.invalidateQueries({ queryKey: ["jobs"] });
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: handleMutationError,
   });
 
   const makeLink = useMutation({
@@ -183,7 +194,7 @@ function AdminPage() {
         toast.success(`Tracking link created for ${email}`, { description: url });
       }
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: handleMutationError,
   });
 
   const [filter, setFilter] = useState("");
@@ -192,7 +203,7 @@ function AdminPage() {
   const [partnerFilter, setPartnerFilter] = useState<string>("");
   const [slaRange, setSlaRange] = useState<DateRange | undefined>(undefined);
 
-  if (loading || !sessionReady) {
+  if (loading || (!!user && !sessionReady)) {
     return (
       <div className="mx-auto max-w-6xl px-4 py-6 text-sm text-muted-foreground">Loading...</div>
     );

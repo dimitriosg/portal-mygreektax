@@ -92,8 +92,12 @@ function Dashboard() {
   const [filter, setFilter] = useState<string>("all");
   const [sortBy, setSortBy] = useState<string>("manual");
   useEffect(() => {
-    if (loading || !sessionReady) return;
-    if (!user) navigate({ to: "/login", replace: true });
+    if (loading) return;
+    if (!user) {
+      navigate({ to: "/login", replace: true });
+      return;
+    }
+    if (!sessionReady) return;
   }, [loading, sessionReady, user, navigate]);
 
   const fetchJobs = useServerFn(listJobs);
@@ -188,6 +192,13 @@ function Dashboard() {
   // Local manual ordering (initialised from saved order; new jobs appended)
   const [manualOrder, setManualOrder] = useState<string[]>([]);
   const [dirty, setDirty] = useState(false);
+  const handleMutationError = (error: unknown) => {
+    if (isAuthSessionError(error)) {
+      navigate({ to: "/login", replace: true });
+      return;
+    }
+    toast.error(getErrorMessage(error));
+  };
 
   useEffect(() => {
     if (!data) return;
@@ -215,7 +226,7 @@ function Dashboard() {
       setDirty(false);
       queryClient.invalidateQueries({ queryKey: ["job-order", user?.id, scopeKey] });
     },
-    onError: (e: Error) => toast.error(e.message),
+    onError: handleMutationError,
   });
   const clearMut = useMutation({
     mutationFn: () => resetOrder({ data: { scopeKey } }),
@@ -223,7 +234,7 @@ function Dashboard() {
       toast.success("Custom order cleared");
       queryClient.invalidateQueries({ queryKey: ["job-order", user?.id, scopeKey] });
     },
-    onError: (e: Error) => toast.error(e.message),
+    onError: handleMutationError,
   });
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));

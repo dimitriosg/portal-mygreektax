@@ -16,9 +16,13 @@ function Page() {
   const { user, loading, sessionReady, isAdmin } = useAuth();
   const navigate = useNavigate();
   useEffect(() => {
-    if (loading || !sessionReady) return;
-    if (!user) navigate({ to: "/login", replace: true });
-    else if (!isAdmin) navigate({ to: "/dashboard", replace: true });
+    if (loading) return;
+    if (!user) {
+      navigate({ to: "/login", replace: true });
+      return;
+    }
+    if (!sessionReady) return;
+    if (!isAdmin) navigate({ to: "/dashboard", replace: true });
   }, [loading, sessionReady, user, isAdmin, navigate]);
 
   const listFn = useServerFn(listChangeRequests);
@@ -47,10 +51,16 @@ function Page() {
       toast.success("Decision recorded");
       qc.invalidateQueries({ queryKey: ["change-requests"] });
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: (e) => {
+      if (isAuthSessionError(e)) {
+        navigate({ to: "/login", replace: true });
+        return;
+      }
+      toast.error(getErrorMessage(e));
+    },
   });
 
-  if (loading || !sessionReady) {
+  if (loading || (!!user && !sessionReady)) {
     return (
       <div className="mx-auto max-w-5xl px-4 py-6 text-sm text-muted-foreground">Loading...</div>
     );

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import {
   createPartnerInvite,
   listPartnerInvites,
@@ -32,7 +33,7 @@ import { MoreHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import { formatDate } from "@/lib/utils";
 import { track } from "@/lib/analytics";
-import { getErrorMessage } from "@/lib/auth-errors";
+import { getErrorMessage, isAuthSessionError } from "@/lib/auth-errors";
 
 type AirtableAcc = { id: string; fields: { Name?: string } };
 
@@ -70,6 +71,7 @@ export function PartnersSection({
   enabled?: boolean;
 }) {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const fetchInvites = useServerFn(listPartnerInvites);
   const fetchPartners = useServerFn(listPartnerProfilesAdmin);
   const createFn = useServerFn(createPartnerInvite);
@@ -98,6 +100,13 @@ export function PartnersSection({
   const [issued, setIssued] = useState<{ url: string; email: string; firstName: string } | null>(
     null,
   );
+  const handleMutationError = (error: unknown) => {
+    if (isAuthSessionError(error)) {
+      navigate({ to: "/login", replace: true });
+      return;
+    }
+    toast.error(getErrorMessage(error));
+  };
 
   const createMut = useMutation({
     mutationFn: (vars: typeof form) =>
@@ -116,7 +125,7 @@ export function PartnersSection({
       setForm({ firstName: "", lastName: "", email: "", airtableAccountantId: "" });
       qc.invalidateQueries({ queryKey: ["partner-invites"] });
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: handleMutationError,
   });
 
   const sendMut = useMutation({
@@ -127,7 +136,7 @@ export function PartnersSection({
       track("partner_invite_sent");
       setIssued(null);
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: handleMutationError,
   });
 
   const revokeMut = useMutation({
@@ -136,7 +145,7 @@ export function PartnersSection({
       toast.success("Invite revoked");
       qc.invalidateQueries({ queryKey: ["partner-invites"] });
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: handleMutationError,
   });
 
   const [confirm, setConfirm] = useState<{ userId: string; name: string; disable: boolean } | null>(
@@ -150,7 +159,7 @@ export function PartnersSection({
       setConfirm(null);
       qc.invalidateQueries({ queryKey: ["partners"] });
     },
-    onError: (e) => toast.error((e as Error).message),
+    onError: handleMutationError,
   });
 
   const partners = partnersQ.data?.partners ?? [];
