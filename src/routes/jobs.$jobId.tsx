@@ -176,7 +176,7 @@ function JobDetail() {
 
   if (loading || !sessionReady) {
     return (
-      <div className="mx-auto max-w-3xl px-4 py-8 text-sm text-muted-foreground">Loading…</div>
+      <div className="mx-auto max-w-3xl px-4 py-8 text-sm text-muted-foreground">Loading...</div>
     );
   }
   if (!user) return null;
