@@ -198,7 +198,7 @@ function AppShell() {
       )}
       <header className="border-b border-border">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-3">
-          <Link to="/" className="font-semibold tracking-tight">My Greek Tax</Link>
+          <Link to="/" className="font-serif text-lg font-semibold tracking-tight" style={{color: 'var(--brand)'}}>My Greek Tax</Link>
           <nav className="flex flex-wrap items-center gap-3 sm:gap-4 text-sm">
             {!loading && user ? (
               <>
