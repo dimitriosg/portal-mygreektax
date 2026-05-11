@@ -82,6 +82,7 @@ function Dashboard() {
     queryFn: () => fetchOrder({ data: { scopeKey } }),
     enabled: !!user && sessionReady,
   });
+  const isLoadingJobs = isLoading || !sessionReady;
 
   const savedOrder = orderQ.data?.orderedJobIds ?? [];
   const jobs = data?.jobs ?? [];
@@ -157,7 +158,6 @@ function Dashboard() {
     if (oldIndex < 0 || newIndex < 0) return;
     const newFilteredOrder = arrayMove(ids, oldIndex, newIndex);
     const filteredSet = new Set(ids);
-    const remaining = manualOrder.filter((id) => !filteredSet.has(id));
     const result: string[] = [];
     let inserted = false;
     for (const id of manualOrder) {
@@ -171,7 +171,6 @@ function Dashboard() {
       }
     }
     if (!inserted) result.push(...newFilteredOrder);
-    void remaining;
     setManualOrder(result);
     setDirty(true);
   };
@@ -273,7 +272,7 @@ function Dashboard() {
         </div>
       )}
 
-      {isLoading && (
+      {isLoadingJobs && (
         <div className="mt-6 grid gap-3">
           {Array.from({ length: 4 }).map((_, i) => (
             <div
@@ -301,7 +300,7 @@ function Dashboard() {
         </div>
       )}
       {error && <p className="mt-8 text-sm text-destructive">{(error as Error).message}</p>}
-      {!isLoading && !isAdmin && !isPartner && (
+      {!isLoadingJobs && !isAdmin && !isPartner && (
         <Card className="mt-8">
           <CardContent className="py-6 text-sm text-muted-foreground">
             Your account is not yet linked to an Accountant in Airtable. Make sure your
@@ -341,7 +340,7 @@ function Dashboard() {
             ))}
           </div>
         )}
-        {!isLoading && filtered.length === 0 && (isAdmin || isPartner) && (
+        {!isLoadingJobs && filtered.length === 0 && (isAdmin || isPartner) && (
           <p className="text-sm text-muted-foreground">No jobs match this filter.</p>
         )}
       </div>

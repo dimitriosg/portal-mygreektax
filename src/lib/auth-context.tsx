@@ -92,8 +92,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(s);
 
       if (event === "SIGNED_IN" && s) {
-        setSessionReady(true);
         (async () => {
+          let token = s.access_token;
+
+          for (let attempt = 0; !token && attempt < 8; attempt += 1) {
+            await new Promise((resolve) => setTimeout(resolve, 200));
+            const { data } = await supabase.auth.getSession();
+            token = data.session?.access_token;
+          }
+
+          if (!token) {
+            console.error("auth bootstrap skipped: no access token after SIGNED_IN");
+            return;
+          }
+
+          setSessionReady(true);
           try {
             await claimFirstAdmin();
             await linkPartnerProfile();
