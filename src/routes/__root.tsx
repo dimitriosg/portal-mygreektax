@@ -9,7 +9,7 @@ import {
   Scripts,
 } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Sun, Moon } from "lucide-react";
 
 import appCss from "../styles.css?url";
@@ -204,10 +204,13 @@ function AppShell() {
     queryFn: () => fetchJobs({ data: {} }),
     enabled: !!user && !isAdmin,
   });
-  const overdueJobsCount =
-    overdueJobsQuery.data?.jobs.filter(
-      (job) => job.fields.Status !== "Completed" && isPastDueDate(job.fields["SLA Deadline"]),
-    ).length ?? 0;
+  const overdueJobsCount = useMemo(
+    () =>
+      overdueJobsQuery.data?.jobs.filter(
+        (job) => job.fields.Status !== "Completed" && isPastDueDate(job.fields["SLA Deadline"]),
+      ).length ?? 0,
+    [overdueJobsQuery.data],
+  );
   if (isPublicClientPage) {
     return (
       <div className="min-h-screen bg-background text-foreground">
