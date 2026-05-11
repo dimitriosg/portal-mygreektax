@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
@@ -34,7 +34,43 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { GripVertical, ChevronDown } from "lucide-react";
 
-export const Route = createFileRoute("/dashboard")({ component: Dashboard });
+export const Route = createFileRoute("/dashboard")({
+  component: Dashboard,
+  errorComponent: DashboardErrorComponent,
+});
+
+function DashboardErrorComponent({ error, reset }: { error: unknown; reset: () => void }) {
+  const navigate = useNavigate();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const errorDetails =
+    error instanceof Error ? (error.stack ?? error.message) : getErrorMessage(error);
+
+  console.error("[dashboard-route-error]", {
+    message: getErrorMessage(error),
+    stack: error instanceof Error ? error.stack : undefined,
+    cause: error instanceof Error ? error.cause : undefined,
+    pathname,
+  });
+
+  return (
+    <div className="mx-auto max-w-3xl px-4 py-8">
+      <h1 className="text-xl font-semibold tracking-tight">Dashboard didn&apos;t load</h1>
+      <p className="mt-2 text-sm text-muted-foreground">
+        A post-login route error occurred. You can retry or return to sign in.
+      </p>
+      <details className="mt-4 rounded-md border border-border bg-muted/30 p-3 text-left text-xs text-muted-foreground">
+        <summary className="cursor-pointer font-medium text-foreground">Error details</summary>
+        <pre className="mt-2 whitespace-pre-wrap break-words">{errorDetails}</pre>
+      </details>
+      <div className="mt-6 flex flex-wrap gap-2">
+        <Button onClick={reset}>Try again</Button>
+        <Button variant="outline" onClick={() => navigate({ to: "/login", replace: true })}>
+          Go to sign in
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 function Dashboard() {
   const {
@@ -50,6 +86,7 @@ function Dashboard() {
     stopImpersonation,
   } = useAuth();
   const navigate = useNavigate();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
   const [filter, setFilter] = useState<string>("all");
   const [sortBy, setSortBy] = useState<string>("manual");
   useEffect(() => {
@@ -73,16 +110,19 @@ function Dashboard() {
     queryKey: ["jobs", user?.id, asPartner],
     queryFn: () => fetchJobs({ data: asPartner ? { asAccountantId: asPartner } : {} }),
     enabled: !!user && sessionReady,
+    throwOnError: false,
   });
   const accQ = useQuery({
     queryKey: ["accountants"],
     queryFn: () => fetchAccountants(),
     enabled: !!isRealAdmin && sessionReady,
+    throwOnError: false,
   });
   const orderQ = useQuery({
     queryKey: ["job-order", user?.id, scopeKey],
     queryFn: () => fetchOrder({ data: { scopeKey } }),
     enabled: !!user && sessionReady,
+    throwOnError: false,
   });
   const isLoadingJobs = isLoading || !sessionReady;
 
@@ -99,14 +139,32 @@ function Dashboard() {
   }, [impersonatingId, isAdmin, isPartner, isRealAdmin, loading, sessionReady, user?.id]);
 
   useEffect(() => {
-    if (error && isAuthSessionError(error)) {
+    const authError = [error, accQ.error, orderQ.error].find(isAuthSessionError);
+    if (authError) {
       console.error("[dashboard] auth error", {
-        message: getErrorMessage(error),
-        error,
+        message: getErrorMessage(authError),
+        error: authError,
+        pathname,
+        userId: user?.id ?? null,
+        sessionReady,
       });
       navigate({ to: "/login", replace: true });
     }
-  }, [error, navigate]);
+  }, [accQ.error, error, navigate, orderQ.error, pathname, sessionReady, user?.id]);
+
+  useEffect(() => {
+    const routeError = [error, accQ.error, orderQ.error].find(Boolean);
+    if (!routeError) return;
+
+    console.error("[dashboard] query error", {
+      jobs: error ? getErrorMessage(error) : null,
+      accountants: accQ.error ? getErrorMessage(accQ.error) : null,
+      order: orderQ.error ? getErrorMessage(orderQ.error) : null,
+      pathname,
+      userId: user?.id ?? null,
+      sessionReady,
+    });
+  }, [accQ.error, error, orderQ.error, pathname, sessionReady, user?.id]);
 
   const savedOrder = orderQ.data?.orderedJobIds ?? [];
   const jobs = data?.jobs ?? [];

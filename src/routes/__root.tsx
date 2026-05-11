@@ -4,6 +4,7 @@ import {
   Link,
   createRootRouteWithContext,
   useRouter,
+  useNavigate,
   useRouterState,
   HeadContent,
   Scripts,
@@ -15,7 +16,7 @@ import { Sun, Moon } from "lucide-react";
 import appCss from "../styles.css?url";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
-import { getErrorMessage } from "@/lib/auth-errors";
+import { getErrorMessage, isAuthSessionError } from "@/lib/auth-errors";
 import { listJobs } from "@/lib/jobs.functions";
 
 function isPastDueDate(value: string | undefined) {
@@ -201,6 +202,7 @@ function AppShell() {
     impersonatingName,
     stopImpersonation,
   } = useAuth();
+  const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const fetchJobs = useServerFn(listJobs);
   const [isDark, setIsDark] = useState<boolean>(() => {
@@ -217,7 +219,23 @@ function AppShell() {
     queryKey: ["jobs", user?.id, ""],
     queryFn: () => fetchJobs({ data: {} }),
     enabled: !!user && !isAdmin && sessionReady,
+    throwOnError: false,
   });
+  useEffect(() => {
+    if (!overdueJobsQuery.error) return;
+
+    console.error("[app-shell] overdue jobs query error", {
+      message: getErrorMessage(overdueJobsQuery.error),
+      error: overdueJobsQuery.error,
+      userId: user?.id ?? null,
+      sessionReady,
+      pathname,
+    });
+
+    if (isAuthSessionError(overdueJobsQuery.error)) {
+      navigate({ to: "/login", replace: true });
+    }
+  }, [navigate, overdueJobsQuery.error, pathname, sessionReady, user?.id]);
   const overdueJobsCount = useMemo(
     () =>
       overdueJobsQuery.data?.jobs.filter(
