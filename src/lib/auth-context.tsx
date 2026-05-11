@@ -29,6 +29,8 @@ const AuthCtx = createContext<Ctx | undefined>(undefined);
 
 const IMP_ID_KEY = "mgt:impersonateId";
 const IMP_NAME_KEY = "mgt:impersonateName";
+const MAX_TOKEN_POLL_ATTEMPTS = 8;
+const TOKEN_POLL_DELAY_MS = 200;
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
@@ -95,8 +97,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         (async () => {
           let token = s.access_token;
 
-          for (let attempt = 0; !token && attempt < 8; attempt += 1) {
-            await new Promise((resolve) => setTimeout(resolve, 200));
+          for (let attempt = 0; !token && attempt < MAX_TOKEN_POLL_ATTEMPTS; attempt += 1) {
+            await new Promise((resolve) => setTimeout(resolve, TOKEN_POLL_DELAY_MS));
             const { data } = await supabase.auth.getSession();
             token = data.session?.access_token;
           }
