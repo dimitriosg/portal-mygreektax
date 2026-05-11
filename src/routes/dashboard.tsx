@@ -186,7 +186,7 @@ function Dashboard() {
     });
   }, [accQ.error, error, orderQ.error, pathname, sessionReady, user?.id]);
 
-  const savedOrder = orderQ.data?.orderedJobIds ?? [];
+  const savedOrder = Array.isArray(orderQ.data?.orderedJobIds) ? orderQ.data.orderedJobIds : [];
   const jobs = data?.jobs ?? [];
 
   // Local manual ordering (initialised from saved order; new jobs appended)
@@ -215,7 +215,7 @@ function Dashboard() {
   }, [data, orderQ.data]);
 
   const newJobIds = useMemo(() => {
-    if (savedOrder.length === 0) return [] as string[];
+    if (!Array.isArray(savedOrder) || savedOrder.length === 0) return [] as string[];
     return jobs.map((j) => j.id).filter((id) => !savedOrder.includes(id));
   }, [jobs, savedOrder]);
 
