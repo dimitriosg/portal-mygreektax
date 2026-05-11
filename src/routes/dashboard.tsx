@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   listJobs,
@@ -87,6 +87,8 @@ function Dashboard() {
   } = useAuth();
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const handledAuthErrorRef = useRef<unknown>(null);
+  const handledQueryErrorRef = useRef<unknown>(null);
   const [filter, setFilter] = useState<string>("all");
   const [sortBy, setSortBy] = useState<string>("manual");
   useEffect(() => {
@@ -139,7 +141,16 @@ function Dashboard() {
   }, [impersonatingId, isAdmin, isPartner, isRealAdmin, loading, sessionReady, user?.id]);
 
   useEffect(() => {
-    const authError = [error, accQ.error, orderQ.error].find(isAuthSessionError);
+    const authError = [error, accQ.error, orderQ.error].find(
+      (err) => err != null && isAuthSessionError(err),
+    );
+    if (!authError) {
+      handledAuthErrorRef.current = null;
+      return;
+    }
+    if (handledAuthErrorRef.current === authError) return;
+    handledAuthErrorRef.current = authError;
+
     if (authError) {
       console.error("[dashboard] auth error", {
         message: getErrorMessage(authError),
@@ -154,7 +165,12 @@ function Dashboard() {
 
   useEffect(() => {
     const routeError = [error, accQ.error, orderQ.error].find(Boolean);
-    if (!routeError) return;
+    if (!routeError) {
+      handledQueryErrorRef.current = null;
+      return;
+    }
+    if (handledQueryErrorRef.current === routeError) return;
+    handledQueryErrorRef.current = routeError;
 
     console.error("[dashboard] query error", {
       jobs: error ? getErrorMessage(error) : null,

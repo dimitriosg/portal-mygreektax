@@ -10,7 +10,7 @@ import {
   Scripts,
 } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Sun, Moon } from "lucide-react";
 
 import appCss from "../styles.css?url";
@@ -205,6 +205,7 @@ function AppShell() {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const fetchJobs = useServerFn(listJobs);
+  const handledOverdueJobsErrorRef = useRef<unknown>(null);
   const [isDark, setIsDark] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
     return window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -222,7 +223,12 @@ function AppShell() {
     throwOnError: false,
   });
   useEffect(() => {
-    if (!overdueJobsQuery.error) return;
+    if (!overdueJobsQuery.error) {
+      handledOverdueJobsErrorRef.current = null;
+      return;
+    }
+    if (handledOverdueJobsErrorRef.current === overdueJobsQuery.error) return;
+    handledOverdueJobsErrorRef.current = overdueJobsQuery.error;
 
     console.error("[app-shell] overdue jobs query error", {
       message: getErrorMessage(overdueJobsQuery.error),
