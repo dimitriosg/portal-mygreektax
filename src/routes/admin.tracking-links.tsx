@@ -9,6 +9,7 @@ import {
   getClientTokenHistory,
 } from "@/lib/jobs.functions";
 import { useAuth } from "@/lib/auth-context";
+import { getErrorMessage, isAuthSessionError } from "@/lib/auth-errors";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,13 +26,13 @@ export const Route = createFileRoute("/admin/tracking-links")({
 type SortKey = "last_opened" | "opens" | "created";
 
 function TrackingLinksPage() {
-  const { user, loading, isAdmin } = useAuth();
+  const { user, loading, sessionReady, isAdmin } = useAuth();
   const navigate = useNavigate();
   useEffect(() => {
-    if (loading) return;
-    if (!user) navigate({ to: "/login" });
-    else if (!isAdmin) navigate({ to: "/dashboard" });
-  }, [loading, user, isAdmin, navigate]);
+    if (loading || !sessionReady) return;
+    if (!user) navigate({ to: "/login", replace: true });
+    else if (!isAdmin) navigate({ to: "/dashboard", replace: true });
+  }, [loading, sessionReady, user, isAdmin, navigate]);
 
   const fetchLinks = useServerFn(listTrackingLinks);
   const fetchOpens = useServerFn(getTrackingLinkOpens);
@@ -42,7 +43,7 @@ function TrackingLinksPage() {
   const linksQ = useQuery({
     queryKey: ["tracking-links"],
     queryFn: () => fetchLinks(),
-    enabled: !!isAdmin,
+    enabled: !!isAdmin && sessionReady,
   });
 
   const [search, setSearch] = useState("");
@@ -53,14 +54,21 @@ function TrackingLinksPage() {
   const opensQ = useQuery({
     queryKey: ["tracking-link-opens", openToken],
     queryFn: () => fetchOpens({ data: { token: openToken! } }),
-    enabled: !!openToken,
+    enabled: !!openToken && !!isAdmin && sessionReady,
   });
 
   const historyQ = useQuery({
     queryKey: ["token-history", openToken],
     queryFn: () => fetchHistory({ data: { token: openToken! } }),
-    enabled: !!openToken,
+    enabled: !!openToken && !!isAdmin && sessionReady,
   });
+
+  useEffect(() => {
+    const authError = [linksQ.error, opensQ.error, historyQ.error].find(isAuthSessionError);
+    if (authError) {
+      navigate({ to: "/login", replace: true });
+    }
+  }, [historyQ.error, linksQ.error, navigate, opensQ.error]);
 
   const extendMut = useMutation({
     mutationFn: ({ token, days }: { token: string; days: number }) =>
@@ -105,6 +113,9 @@ function TrackingLinksPage() {
     };
   }, [linksQ.data]);
 
+  if (loading || !sessionReady) {
+    return <div className="mx-auto max-w-6xl px-4 py-6 text-sm text-muted-foreground">Loading…</div>;
+  }
   if (!isAdmin) return null;
 
   return (
@@ -170,6 +181,13 @@ function TrackingLinksPage() {
           <tbody>
             {linksQ.isLoading && (
               <tr><td colSpan={9} className="px-3 py-6 text-center text-muted-foreground">Loading…</td></tr>
+            )}
+            {linksQ.error && (
+              <tr>
+                <td colSpan={9} className="px-3 py-6 text-center text-destructive">
+                  Could not load tracking links: {getErrorMessage(linksQ.error)}
+                </td>
+              </tr>
             )}
             {!linksQ.isLoading && filtered.length === 0 && (
               <tr><td colSpan={9} className="px-3 py-6 text-center text-muted-foreground">No tracking links yet.</td></tr>

@@ -11,6 +11,7 @@ import {
   clearJobOrder,
 } from "@/lib/jobs.functions";
 import { useAuth } from "@/lib/auth-context";
+import { isAuthSessionError } from "@/lib/auth-errors";
 import { formatDate } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -52,8 +53,9 @@ function Dashboard() {
   const [filter, setFilter] = useState<string>("all");
   const [sortBy, setSortBy] = useState<string>("manual");
   useEffect(() => {
-    if (!loading && !user) navigate({ to: "/login" });
-  }, [loading, user, navigate]);
+    if (loading || !sessionReady) return;
+    if (!user) navigate({ to: "/login", replace: true });
+  }, [loading, sessionReady, user, navigate]);
 
   const fetchJobs = useServerFn(listJobs);
   const fetchAccountants = useServerFn(listAccountants);
@@ -83,6 +85,12 @@ function Dashboard() {
     enabled: !!user && sessionReady,
   });
   const isLoadingJobs = isLoading || !sessionReady;
+
+  useEffect(() => {
+    if (error && isAuthSessionError(error)) {
+      navigate({ to: "/login", replace: true });
+    }
+  }, [error, navigate]);
 
   const savedOrder = orderQ.data?.orderedJobIds ?? [];
   const jobs = data?.jobs ?? [];

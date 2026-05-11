@@ -32,6 +32,7 @@ import { MoreHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import { formatDate } from "@/lib/utils";
 import { track } from "@/lib/analytics";
+import { getErrorMessage } from "@/lib/auth-errors";
 
 type AirtableAcc = { id: string; fields: { Name?: string } };
 
@@ -61,7 +62,13 @@ function partnerStatus(p: { disabled_at: string | null; last_seen_at: string | n
   return days <= INACTIVE_DAYS ? ("active" as const) : ("inactive" as const);
 }
 
-export function PartnersSection({ accountants }: { accountants: AirtableAcc[] }) {
+export function PartnersSection({
+  accountants,
+  enabled = true,
+}: {
+  accountants: AirtableAcc[];
+  enabled?: boolean;
+}) {
   const qc = useQueryClient();
   const fetchInvites = useServerFn(listPartnerInvites);
   const fetchPartners = useServerFn(listPartnerProfilesAdmin);
@@ -70,8 +77,16 @@ export function PartnersSection({ accountants }: { accountants: AirtableAcc[] })
   const sendEmailFn = useServerFn(sendPartnerInviteEmail);
   const toggleDisabledFn = useServerFn(setPartnerDisabled);
 
-  const invitesQ = useQuery({ queryKey: ["partner-invites"], queryFn: () => fetchInvites() });
-  const partnersQ = useQuery({ queryKey: ["partners"], queryFn: () => fetchPartners() });
+  const invitesQ = useQuery({
+    queryKey: ["partner-invites"],
+    queryFn: () => fetchInvites(),
+    enabled,
+  });
+  const partnersQ = useQuery({
+    queryKey: ["partners"],
+    queryFn: () => fetchPartners(),
+    enabled,
+  });
 
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ firstName: "", lastName: "", email: "", airtableAccountantId: "" });
@@ -266,7 +281,11 @@ export function PartnersSection({ accountants }: { accountants: AirtableAcc[] })
             <div className="text-sm font-medium">Pending invitations ({pending.length})</div>
             <div className="text-xs text-muted-foreground">Partners who haven't accepted yet.</div>
           </div>
-          {pending.length === 0 ? (
+          {invitesQ.error ? (
+            <div className="px-4 py-6 text-sm text-destructive">
+              Could not load invites: {getErrorMessage(invitesQ.error)}
+            </div>
+          ) : pending.length === 0 ? (
             <div className="px-4 py-6 text-sm text-muted-foreground">No pending invites.</div>
           ) : (
             <div className="overflow-x-auto">
@@ -315,7 +334,11 @@ export function PartnersSection({ accountants }: { accountants: AirtableAcc[] })
               Partners with an account. "Inactive" = no login in the last {INACTIVE_DAYS} days.
             </div>
           </div>
-          {partners.length === 0 ? (
+          {partnersQ.error ? (
+            <div className="px-4 py-6 text-sm text-destructive">
+              Could not load partners: {getErrorMessage(partnersQ.error)}
+            </div>
+          ) : partners.length === 0 ? (
             <div className="px-4 py-6 text-sm text-muted-foreground">No partners yet.</div>
           ) : (
             <div className="overflow-x-auto">

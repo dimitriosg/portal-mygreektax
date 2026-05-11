@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { listChangeRequests, decideChangeRequest } from "@/lib/jobs.functions";
 import { useAuth } from "@/lib/auth-context";
+import { getErrorMessage, isAuthSessionError } from "@/lib/auth-errors";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -12,13 +13,13 @@ import { formatDateTime } from "@/lib/utils";
 export const Route = createFileRoute("/admin/change-requests")({ component: Page });
 
 function Page() {
-  const { user, loading, isAdmin } = useAuth();
+  const { user, loading, sessionReady, isAdmin } = useAuth();
   const navigate = useNavigate();
   useEffect(() => {
-    if (loading) return;
-    if (!user) navigate({ to: "/login" });
-    else if (!isAdmin) navigate({ to: "/dashboard" });
-  }, [loading, user, isAdmin, navigate]);
+    if (loading || !sessionReady) return;
+    if (!user) navigate({ to: "/login", replace: true });
+    else if (!isAdmin) navigate({ to: "/dashboard", replace: true });
+  }, [loading, sessionReady, user, isAdmin, navigate]);
 
   const listFn = useServerFn(listChangeRequests);
   const decideFn = useServerFn(decideChangeRequest);
@@ -28,8 +29,14 @@ function Page() {
   const q = useQuery({
     queryKey: ["change-requests", status],
     queryFn: () => listFn({ data: { status } }),
-    enabled: !!isAdmin,
+    enabled: !!isAdmin && sessionReady,
   });
+
+  useEffect(() => {
+    if (q.error && isAuthSessionError(q.error)) {
+      navigate({ to: "/login", replace: true });
+    }
+  }, [q.error, navigate]);
 
   const decide = useMutation({
     mutationFn: (vars: { id: string; decision: "approved" | "rejected" }) => decideFn({ data: vars }),
@@ -37,6 +44,9 @@ function Page() {
     onError: (e) => toast.error((e as Error).message),
   });
 
+  if (loading || !sessionReady) {
+    return <div className="mx-auto max-w-5xl px-4 py-6 text-sm text-muted-foreground">Loading…</div>;
+  }
   if (!isAdmin) return null;
   const requests = q.data?.requests ?? [];
 
@@ -61,6 +71,11 @@ function Page() {
       <Card>
         <CardHeader><CardTitle className="text-base">{requests.length} request(s)</CardTitle></CardHeader>
         <CardContent>
+          {q.error && (
+            <p className="mb-4 text-sm text-destructive">
+              Could not load change requests: {getErrorMessage(q.error)}
+            </p>
+          )}
           {q.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
           {!q.isLoading && requests.length === 0 && <p className="text-sm text-muted-foreground">No requests.</p>}
           <div className="overflow-x-auto">

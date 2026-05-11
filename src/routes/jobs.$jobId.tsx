@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { getJob, updateJob, createClientToken, listJobEvents, getJobTrackingStats, extendClientToken, getClientTokenHistory, listJobChangeRequests, requestJobChange, cancelChangeRequest, decideChangeRequest } from "@/lib/jobs.functions";
 import { JOB_STATUSES } from "@/lib/airtable-shared";
 import { useAuth } from "@/lib/auth-context";
+import { getErrorMessage, isAuthSessionError } from "@/lib/auth-errors";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -17,11 +18,12 @@ export const Route = createFileRoute("/jobs/$jobId")({ component: JobDetail });
 
 function JobDetail() {
   const { jobId } = Route.useParams();
-  const { user, loading, isAdmin } = useAuth();
+  const { user, loading, sessionReady, isAdmin } = useAuth();
   const navigate = useNavigate();
   useEffect(() => {
-    if (!loading && !user) navigate({ to: "/login" });
-  }, [loading, user, navigate]);
+    if (loading || !sessionReady) return;
+    if (!user) navigate({ to: "/login", replace: true });
+  }, [loading, sessionReady, user, navigate]);
 
   const fetchJob = useServerFn(getJob);
   const updateFn = useServerFn(updateJob);
@@ -39,29 +41,38 @@ function JobDetail() {
   const { data, isLoading, error } = useQuery({
     queryKey: ["job", jobId],
     queryFn: () => fetchJob({ data: { jobId } }),
-    enabled: !!user,
+    enabled: !!user && sessionReady,
   });
   const eventsQ = useQuery({
     queryKey: ["job-events", jobId],
     queryFn: () => fetchEvents({ data: { jobId } }),
-    enabled: !!user,
+    enabled: !!user && sessionReady,
   });
   const trackingQ = useQuery({
     queryKey: ["job-tracking", jobId],
     queryFn: () => fetchTrackingStats({ data: { jobId } }),
-    enabled: !!user && !!isAdmin,
+    enabled: !!user && !!isAdmin && sessionReady,
   });
   const tokenForHistory = trackingQ.data?.token?.token;
   const historyQ = useQuery({
     queryKey: ["token-history", tokenForHistory],
     queryFn: () => fetchTokenHistory({ data: { token: tokenForHistory! } }),
-    enabled: !!tokenForHistory,
+    enabled: !!tokenForHistory && !!isAdmin && sessionReady,
   });
   const requestsQ = useQuery({
     queryKey: ["job-change-requests", jobId],
     queryFn: () => listRequestsFn({ data: { jobId } }),
-    enabled: !!user,
+    enabled: !!user && sessionReady,
   });
+
+  useEffect(() => {
+    const authError = [error, eventsQ.error, trackingQ.error, historyQ.error, requestsQ.error].find(
+      isAuthSessionError,
+    );
+    if (authError) {
+      navigate({ to: "/login", replace: true });
+    }
+  }, [error, eventsQ.error, historyQ.error, navigate, requestsQ.error, trackingQ.error]);
 
   const [reqField, setReqField] = useState<"sla_deadline" | "status" | "notes">("sla_deadline");
   const [reqValue, setReqValue] = useState("");
@@ -144,6 +155,9 @@ function JobDetail() {
   const [showHistory, setShowHistory] = useState(false);
   const [extendDays, setExtendDays] = useState<number>(90);
 
+  if (loading || !sessionReady) {
+    return <div className="mx-auto max-w-3xl px-4 py-8 text-sm text-muted-foreground">Loading…</div>;
+  }
   if (!user) return null;
   if (isLoading) return (
     <div className="mx-auto max-w-3xl px-4 py-8 space-y-6">
@@ -163,7 +177,13 @@ function JobDetail() {
       <div className="h-32 w-full animate-shimmer rounded bg-muted/50" />
     </div>
   );
-  if (error) return <p className="mx-auto max-w-3xl px-4 py-8 text-sm text-destructive">{(error as Error).message}</p>;
+  if (error) {
+    return (
+      <p className="mx-auto max-w-3xl px-4 py-8 text-sm text-destructive">
+        {getErrorMessage(error)}
+      </p>
+    );
+  }
   if (!data) return null;
 
   const j = data.job.fields;

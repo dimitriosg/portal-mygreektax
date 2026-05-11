@@ -10,6 +10,7 @@ import {
   CartesianGrid,
 } from "recharts";
 import { getPlausibleStats } from "@/lib/analytics.functions";
+import { getErrorMessage } from "@/lib/auth-errors";
 import { Card, CardContent } from "@/components/ui/card";
 
 function fmtDuration(seconds: number): string {
@@ -19,11 +20,12 @@ function fmtDuration(seconds: number): string {
   return m > 0 ? `${m}m ${s}s` : `${s}s`;
 }
 
-export function AdminAnalytics() {
+export function AdminAnalytics({ enabled = true }: { enabled?: boolean }) {
   const fetchStats = useServerFn(getPlausibleStats);
   const q = useQuery({
     queryKey: ["admin", "plausible-stats"],
     queryFn: () => fetchStats(),
+    enabled,
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
@@ -48,7 +50,7 @@ export function AdminAnalytics() {
       {q.error && (
         <Card>
           <CardContent className="py-6 text-sm text-destructive">
-            Could not load analytics: {(q.error as Error).message}
+            Could not load analytics: {getErrorMessage(q.error)}
           </CardContent>
         </Card>
       )}

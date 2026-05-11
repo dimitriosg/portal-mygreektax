@@ -15,6 +15,7 @@ import { Sun, Moon } from "lucide-react";
 import appCss from "../styles.css?url";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
+import { getErrorMessage } from "@/lib/auth-errors";
 import { listJobs } from "@/lib/jobs.functions";
 
 function isPastDueDate(value: string | undefined) {
@@ -53,8 +54,14 @@ function NotFoundComponent() {
 }
 
 function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
-  console.error(error);
   const router = useRouter();
+  console.error("[root-route-error]", {
+    name: error.name,
+    message: getErrorMessage(error),
+    stack: error.stack,
+    cause: error.cause,
+    pathname: router.state.location.pathname,
+  });
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -183,6 +190,7 @@ function AppShell() {
     isRealAdmin,
     signOut,
     loading,
+    sessionReady,
     impersonatingId,
     impersonatingName,
     stopImpersonation,
@@ -202,7 +210,7 @@ function AppShell() {
   const overdueJobsQuery = useQuery({
     queryKey: ["jobs", user?.id, ""],
     queryFn: () => fetchJobs({ data: {} }),
-    enabled: !!user && !isAdmin,
+    enabled: !!user && !isAdmin && sessionReady,
   });
   const overdueJobsCount = useMemo(
     () =>

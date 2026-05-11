@@ -12,6 +12,7 @@ import {
   createJob,
 } from "@/lib/jobs.functions";
 import { useAuth } from "@/lib/auth-context";
+import { getErrorMessage, isAuthSessionError } from "@/lib/auth-errors";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge, TierBadge } from "@/lib/badges";
 import { Button } from "@/components/ui/button";
@@ -78,13 +79,13 @@ function AdminTableSkeleton() {
 }
 
 function AdminPage() {
-  const { user, loading, isAdmin, isRealAdmin } = useAuth();
+  const { user, loading, sessionReady, isAdmin, isRealAdmin } = useAuth();
   const navigate = useNavigate();
   useEffect(() => {
-    if (loading) return;
-    if (!user) navigate({ to: "/login" });
-    else if (!isAdmin) navigate({ to: "/dashboard" });
-  }, [loading, user, isAdmin, navigate]);
+    if (loading || !sessionReady) return;
+    if (!user) navigate({ to: "/login", replace: true });
+    else if (!isAdmin) navigate({ to: "/dashboard", replace: true });
+  }, [loading, sessionReady, user, isAdmin, navigate]);
 
   const fetchJobs = useServerFn(listJobs);
   const fetchAccountants = useServerFn(listAccountants);
@@ -95,10 +96,35 @@ function AdminPage() {
   const createJobFn = useServerFn(createJob);
   const qc = useQueryClient();
 
-  const jobsQ = useQuery({ queryKey: ["jobs", "admin"], queryFn: () => fetchJobs(), enabled: !!isAdmin });
-  const accQ = useQuery({ queryKey: ["accountants"], queryFn: () => fetchAccountants(), enabled: !!isAdmin });
-  const clientsQ = useQuery({ queryKey: ["clients"], queryFn: () => fetchClients(), enabled: !!isAdmin });
-  const servicesQ = useQuery({ queryKey: ["services"], queryFn: () => fetchServices(), enabled: !!isAdmin });
+  const jobsQ = useQuery({
+    queryKey: ["jobs", "admin"],
+    queryFn: () => fetchJobs(),
+    enabled: !!isAdmin && sessionReady,
+  });
+  const accQ = useQuery({
+    queryKey: ["accountants"],
+    queryFn: () => fetchAccountants(),
+    enabled: !!isAdmin && sessionReady,
+  });
+  const clientsQ = useQuery({
+    queryKey: ["clients"],
+    queryFn: () => fetchClients(),
+    enabled: !!isAdmin && sessionReady,
+  });
+  const servicesQ = useQuery({
+    queryKey: ["services"],
+    queryFn: () => fetchServices(),
+    enabled: !!isAdmin && sessionReady,
+  });
+
+  useEffect(() => {
+    const authError = [jobsQ.error, accQ.error, clientsQ.error, servicesQ.error].find(
+      isAuthSessionError,
+    );
+    if (authError) {
+      navigate({ to: "/login", replace: true });
+    }
+  }, [accQ.error, clientsQ.error, jobsQ.error, navigate, servicesQ.error]);
 
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({
@@ -158,6 +184,9 @@ function AdminPage() {
   const [partnerFilter, setPartnerFilter] = useState<string>("");
   const [slaRange, setSlaRange] = useState<DateRange | undefined>(undefined);
 
+  if (loading || !sessionReady) {
+    return <div className="mx-auto max-w-6xl px-4 py-6 text-sm text-muted-foreground">Loading…</div>;
+  }
   if (!isAdmin) return null;
 
   const jobs = jobsQ.data?.jobs ?? [];
@@ -359,6 +388,14 @@ function AdminPage() {
         <Stat label="Completed" value={counts["Completed"] ?? 0} />
       </div>
 
+      {[jobsQ.error, accQ.error, clientsQ.error, servicesQ.error].some(Boolean) && (
+        <Card>
+          <CardContent className="py-4 text-sm text-destructive">
+            {getErrorMessage(jobsQ.error ?? accQ.error ?? clientsQ.error ?? servicesQ.error)}
+          </CardContent>
+        </Card>
+      )}
+
       <div>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-lg font-semibold">All jobs</h2>
@@ -499,9 +536,9 @@ function AdminPage() {
         </div>
       </div>
 
-      <PartnersSection accountants={accountants} />
+      <PartnersSection accountants={accountants} enabled={sessionReady && isRealAdmin} />
 
-      <AdminAnalytics />
+      <AdminAnalytics enabled={sessionReady && isRealAdmin} />
     </div>
   );
 }
