@@ -20,13 +20,13 @@ import { listJobs } from "@/lib/jobs.functions";
 function isPastDueDate(value: string | undefined) {
   if (!value) return false;
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  const dueDate = match
+  const parsedDate = match
     ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
     : new Date(value);
-  if (isNaN(dueDate.getTime())) return false;
+  if (isNaN(parsedDate.getTime())) return false;
+  const dueDate = new Date(parsedDate.getFullYear(), parsedDate.getMonth(), parsedDate.getDate());
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  dueDate.setHours(0, 0, 0, 0);
   return dueDate < today;
 }
 
