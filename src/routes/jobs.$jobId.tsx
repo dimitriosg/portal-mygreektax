@@ -145,7 +145,24 @@ function JobDetail() {
   const [extendDays, setExtendDays] = useState<number>(90);
 
   if (!user) return null;
-  if (isLoading) return <p className="mx-auto max-w-3xl px-4 py-8 text-sm text-muted-foreground">Loading…</p>;
+  if (isLoading) return (
+    <div className="mx-auto max-w-3xl px-4 py-8 space-y-6">
+      <div className="h-8 w-1/2 animate-shimmer rounded bg-muted" />
+      <div className="space-y-3">
+        <div className="flex gap-3">
+          <div className="h-4 w-32 animate-shimmer rounded bg-muted/50" />
+          <div className="h-4 w-40 animate-shimmer rounded bg-muted/50" />
+          <div className="h-4 w-24 animate-shimmer rounded bg-muted/50" />
+        </div>
+        <div className="flex gap-3">
+          <div className="h-4 w-28 animate-shimmer rounded bg-muted/50" />
+          <div className="h-4 w-36 animate-shimmer rounded bg-muted/50" />
+          <div className="h-4 w-20 animate-shimmer rounded bg-muted/50" />
+        </div>
+      </div>
+      <div className="h-32 w-full animate-shimmer rounded bg-muted/50" />
+    </div>
+  );
   if (error) return <p className="mx-auto max-w-3xl px-4 py-8 text-sm text-destructive">{(error as Error).message}</p>;
   if (!data) return null;
 
