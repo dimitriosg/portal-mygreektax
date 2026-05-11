@@ -1,4 +1,4 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import {
   Outlet,
   Link,
@@ -8,12 +8,27 @@ import {
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useState } from "react";
 import { Sun, Moon } from "lucide-react";
 
 import appCss from "../styles.css?url";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
+import { listJobs } from "@/lib/jobs.functions";
+
+function isPastDueDate(value: string | undefined) {
+  if (!value) return false;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  const dueDate = match
+    ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+    : new Date(value);
+  if (isNaN(dueDate.getTime())) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  dueDate.setHours(0, 0, 0, 0);
+  return dueDate < today;
+}
 
 function NotFoundComponent() {
   return (
@@ -85,7 +100,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:title", content: "My Greek Tax — Partner Portal" },
-      { name: "twitter:description", content: "Manage tax service jobs and track client progress." },
+      {
+        name: "twitter:description",
+        content: "Manage tax service jobs and track client progress.",
+      },
       { property: "og:image", content: "/og-image.png" },
       { name: "twitter:image", content: "/og-image.png" },
     ],
@@ -159,8 +177,18 @@ function RootComponent() {
 }
 
 function AppShell() {
-  const { user, isAdmin, isRealAdmin, signOut, loading, impersonatingId, impersonatingName, stopImpersonation } = useAuth();
+  const {
+    user,
+    isAdmin,
+    isRealAdmin,
+    signOut,
+    loading,
+    impersonatingId,
+    impersonatingName,
+    stopImpersonation,
+  } = useAuth();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const fetchJobs = useServerFn(listJobs);
   const [isDark, setIsDark] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
     return window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -171,6 +199,15 @@ function AppShell() {
     else root.classList.remove("dark");
   }, [isDark]);
   const isPublicClientPage = pathname.startsWith("/track/");
+  const overdueJobsQuery = useQuery({
+    queryKey: ["jobs", user?.id, ""],
+    queryFn: () => fetchJobs({ data: {} }),
+    enabled: !!user && !isAdmin,
+  });
+  const overdueJobsCount =
+    overdueJobsQuery.data?.jobs.filter(
+      (job) => job.fields.Status !== "Completed" && isPastDueDate(job.fields["SLA Deadline"]),
+    ).length ?? 0;
   if (isPublicClientPage) {
     return (
       <div className="min-h-screen bg-background text-foreground">
@@ -184,8 +221,8 @@ function AppShell() {
         <div className="bg-amber-100 text-amber-900 border-b border-amber-300 text-sm">
           <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-2">
             <span>
-              Impersonating partner: <strong>{impersonatingName ?? impersonatingId}</strong>
-              {" "}— you have partner-only permissions.
+              Impersonating partner: <strong>{impersonatingName ?? impersonatingId}</strong> — you
+              have partner-only permissions.
             </span>
             <button
               onClick={stopImpersonation}
@@ -198,13 +235,30 @@ function AppShell() {
       )}
       <header className="border-b border-border">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-3">
-          <Link to="/" className="font-serif text-lg font-semibold tracking-tight" style={{color: 'var(--brand)'}}>My Greek Tax</Link>
+          <Link
+            to="/"
+            className="font-serif text-lg font-semibold tracking-tight"
+            style={{ color: "var(--brand)" }}
+          >
+            My Greek Tax
+          </Link>
           <nav className="flex flex-wrap items-center gap-3 sm:gap-4 text-sm">
             {!loading && user ? (
               <>
-                <Link to="/dashboard" activeProps={{ className: "font-semibold" }}>Dashboard</Link>
+                <Link to="/dashboard" activeProps={{ className: "font-semibold" }}>
+                  <span className="inline-flex items-center gap-2">
+                    <span>Dashboard</span>
+                    {!isAdmin && overdueJobsCount > 0 && (
+                      <span className="rounded-full bg-destructive text-white text-xs h-5 w-5 flex items-center justify-center">
+                        {overdueJobsCount}
+                      </span>
+                    )}
+                  </span>
+                </Link>
                 {isAdmin && (
-                  <Link to="/admin" activeProps={{ className: "font-semibold" }}>Admin</Link>
+                  <Link to="/admin" activeProps={{ className: "font-semibold" }}>
+                    Admin
+                  </Link>
                 )}
                 {isRealAdmin && impersonatingId && (
                   <button
@@ -219,7 +273,9 @@ function AppShell() {
                 </button>
               </>
             ) : (
-              <Link to="/login" activeProps={{ className: "font-semibold" }}>Sign in</Link>
+              <Link to="/login" activeProps={{ className: "font-semibold" }}>
+                Sign in
+              </Link>
             )}
             <button
               onClick={() => setIsDark((v) => !v)}
@@ -231,7 +287,9 @@ function AppShell() {
           </nav>
         </div>
       </header>
-      <main className="flex-1"><Outlet /></main>
+      <main className="flex-1">
+        <Outlet />
+      </main>
     </div>
   );
 }
