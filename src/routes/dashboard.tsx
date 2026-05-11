@@ -39,6 +39,7 @@ function Dashboard() {
   const {
     user,
     loading,
+    sessionReady,
     isAdmin,
     isRealAdmin,
     isPartner,
@@ -62,21 +63,26 @@ function Dashboard() {
   const queryClient = useQueryClient();
   const asPartner = impersonatingId ?? "";
   const scopeKey = asPartner ? `partner:${asPartner}` : isAdmin ? "admin" : "self";
+
+  // `sessionReady` ensures we never fire server functions during Supabase's
+  // internal _initialize/_recoverAndRefresh cycle, where the token is not yet
+  // valid even though `user` is non-null.
   const { data, isLoading, error } = useQuery({
     queryKey: ["jobs", user?.id, asPartner],
     queryFn: () => fetchJobs({ data: asPartner ? { asAccountantId: asPartner } : {} }),
-    enabled: !!user,
+    enabled: !!user && sessionReady,
   });
   const accQ = useQuery({
     queryKey: ["accountants"],
     queryFn: () => fetchAccountants(),
-    enabled: !!isRealAdmin,
+    enabled: !!isRealAdmin && sessionReady,
   });
   const orderQ = useQuery({
     queryKey: ["job-order", user?.id, scopeKey],
     queryFn: () => fetchOrder({ data: { scopeKey } }),
-    enabled: !!user,
+    enabled: !!user && sessionReady,
   });
+  const isLoadingJobs = isLoading || !sessionReady;
 
   const savedOrder = orderQ.data?.orderedJobIds ?? [];
   const jobs = data?.jobs ?? [];
@@ -151,10 +157,7 @@ function Dashboard() {
     const newIndex = ids.indexOf(over.id as string);
     if (oldIndex < 0 || newIndex < 0) return;
     const newFilteredOrder = arrayMove(ids, oldIndex, newIndex);
-    // Splice the new order back into manualOrder, replacing the old positions of these ids
     const filteredSet = new Set(ids);
-    const remaining = manualOrder.filter((id) => !filteredSet.has(id));
-    // Preserve relative position: rebuild by walking manualOrder, replacing first filtered slot with new sequence
     const result: string[] = [];
     let inserted = false;
     for (const id of manualOrder) {
@@ -168,7 +171,6 @@ function Dashboard() {
       }
     }
     if (!inserted) result.push(...newFilteredOrder);
-    void remaining; // silence
     setManualOrder(result);
     setDirty(true);
   };
@@ -270,7 +272,7 @@ function Dashboard() {
         </div>
       )}
 
-      {isLoading && (
+      {isLoadingJobs && (
         <div className="mt-6 grid gap-3">
           {Array.from({ length: 4 }).map((_, i) => (
             <div
@@ -298,7 +300,7 @@ function Dashboard() {
         </div>
       )}
       {error && <p className="mt-8 text-sm text-destructive">{(error as Error).message}</p>}
-      {!isLoading && !isAdmin && !isPartner && (
+      {!isLoadingJobs && !isAdmin && !isPartner && (
         <Card className="mt-8">
           <CardContent className="py-6 text-sm text-muted-foreground">
             Your account is not yet linked to an Accountant in Airtable. Make sure your
@@ -338,7 +340,7 @@ function Dashboard() {
             ))}
           </div>
         )}
-        {!isLoading && filtered.length === 0 && (isAdmin || isPartner) && (
+        {!isLoadingJobs && filtered.length === 0 && (isAdmin || isPartner) && (
           <p className="text-sm text-muted-foreground">No jobs match this filter.</p>
         )}
       </div>
@@ -404,8 +406,8 @@ function JobCardInner({
           <span>SLA: {formatDate(job.fields["SLA Deadline"])}</span>
           <span>
             {isAdmin && !asPartner
-              ? `Client fee: €${job.fields["Client Fee (\u20ac)"] ?? "—"}`
-              : `Your fee: €${job.fields["Accountant Fee (\u20ac)"] ?? "—"}`}
+              ? `Client fee: \u20ac${job.fields["Client Fee (\u20ac)"] ?? "—"}`
+              : `Your fee: \u20ac${job.fields["Accountant Fee (\u20ac)"] ?? "—"}`}
           </span>
         </div>
       </CardContent>

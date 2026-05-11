@@ -10,6 +10,10 @@ type Ctx = {
   user: User | null;
   session: Session | null;
   loading: boolean;
+  /** True only after getSession() has resolved on mount.
+   *  Use this (alongside `user`) to guard TanStack Query `enabled` flags
+   *  so server functions are never called before the token is valid. */
+  sessionReady: boolean;
   isAdmin: boolean;
   isRealAdmin: boolean;
   isPartner: boolean;
@@ -25,10 +29,16 @@ const AuthCtx = createContext<Ctx | undefined>(undefined);
 
 const IMP_ID_KEY = "mgt:impersonateId";
 const IMP_NAME_KEY = "mgt:impersonateName";
+const MAX_TOKEN_POLL_ATTEMPTS = 8;
+const TOKEN_POLL_DELAY_MS = 200;
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  // sessionReady becomes true only after getSession() resolves on mount.
+  // onAuthStateChange fires earlier (during Supabase's _initialize) and
+  // must NOT be used to gate query execution.
+  const [sessionReady, setSessionReady] = useState(false);
   const [isRealAdmin, setIsRealAdmin] = useState(false);
   const [isPartner, setIsPartner] = useState(false);
   const [impersonatingId, setImpersonatingId] = useState<string | null>(null);
@@ -77,16 +87,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    // 1. Subscribe to auth state changes.
-    //    Only run the full bootstrap (claimFirstAdmin, linkPartnerProfile)
-    //    on an actual SIGNED_IN event — NOT during the initial session
-    //    recovery (_initialize / INITIAL_SESSION), where no token is ready yet.
+    // Subscribe to auth state changes.
+    // Only run bootstrap (claimFirstAdmin, linkPartnerProfile) on SIGNED_IN —
+    // NOT on INITIAL_SESSION which fires during _initialize before token is ready.
     const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
       setSession(s);
 
       if (event === "SIGNED_IN" && s) {
-        // Session is fully established at this point — safe to call server fns.
         (async () => {
+          let token = s.access_token;
+
+          for (let attempt = 0; !token && attempt < MAX_TOKEN_POLL_ATTEMPTS; attempt += 1) {
+            await new Promise((resolve) => setTimeout(resolve, TOKEN_POLL_DELAY_MS));
+            const { data } = await supabase.auth.getSession();
+            token = data.session?.access_token;
+          }
+
+          if (!token) {
+            console.error("auth bootstrap skipped: no access token after SIGNED_IN");
+            return;
+          }
+
+          setSessionReady(true);
           try {
             await claimFirstAdmin();
             await linkPartnerProfile();
@@ -96,11 +118,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
         })();
       } else if (event === "TOKEN_REFRESHED" && s) {
-        // Token was silently refreshed — re-fetch roles in case they changed.
+        setSessionReady(true);
         refresh().catch(() => {});
       } else if (!s) {
         setIsRealAdmin(false);
         setIsPartner(false);
+        setSessionReady(false);
         if (typeof window !== "undefined") {
           sessionStorage.removeItem(IMP_ID_KEY);
           sessionStorage.removeItem(IMP_NAME_KEY);
@@ -110,12 +133,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     });
 
-    // 2. On initial mount, getSession() to restore an existing session.
-    //    If a session exists, call refresh() directly — the token IS available here.
+    // On mount, getSession() is the authoritative source of truth.
+    // Only after this resolves is the token guaranteed to be valid.
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
       if (data.session) refresh();
       setLoading(false);
+      setSessionReady(true); // ← this is the only safe moment to enable queries
     });
 
     return () => sub.subscription.unsubscribe();
@@ -127,6 +151,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       sessionStorage.removeItem(IMP_NAME_KEY);
       sessionStorage.removeItem("mgt:loginTracked");
     }
+    setSessionReady(false);
     await supabase.auth.signOut();
   };
 
@@ -153,6 +178,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user: session?.user ?? null,
         session,
         loading,
+        sessionReady,
         isAdmin,
         isRealAdmin,
         isPartner,
