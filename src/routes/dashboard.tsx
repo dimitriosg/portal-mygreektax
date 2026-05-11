@@ -31,7 +31,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical } from "lucide-react";
+import { GripVertical, ChevronDown } from "lucide-react";
 
 export const Route = createFileRoute("/dashboard")({ component: Dashboard });
 
@@ -192,6 +192,7 @@ function Dashboard() {
         </div>
         <div className="flex flex-col sm:flex-row gap-2">
         {isRealAdmin && (
+          <div className="relative">
           <select
             value={asPartner}
             onChange={(e) => {
@@ -203,18 +204,21 @@ function Dashboard() {
                 startImpersonation(id, name);
               }
             }}
-            className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+            className="appearance-none pr-8 rounded-md border border-input bg-background px-3 py-2 text-sm"
           >
             <option value="">All partners (admin)</option>
             {accQ.data?.accountants.map((a) => (
               <option key={a.id} value={a.id}>View as: {a.fields.Name ?? a.id}</option>
             ))}
           </select>
+          <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground h-4 w-4" />
+          </div>
         )}
+        <div className="relative">
         <select
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value)}
-          className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+          className="appearance-none pr-8 rounded-md border border-input bg-background px-3 py-2 text-sm"
         >
           <option value="manual">Manual order (drag & drop)</option>
           <option value="code">Sort by Job Code</option>
@@ -222,16 +226,21 @@ function Dashboard() {
           <option value="tier">Sort by Tier</option>
           <option value="sla">Sort by SLA</option>
         </select>
+        <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground h-4 w-4" />
+        </div>
+        <div className="relative">
         <select
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+          className="appearance-none pr-8 rounded-md border border-input bg-background px-3 py-2 text-sm"
         >
           <option value="all">All statuses</option>
           {JOB_STATUSES.map((s) => (
             <option key={s} value={s}>{s}</option>
           ))}
         </select>
+        <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground h-4 w-4" />
+        </div>
         </div>
       </div>
 
