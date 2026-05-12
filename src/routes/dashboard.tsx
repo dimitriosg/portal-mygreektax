@@ -402,7 +402,7 @@ function Dashboard() {
                 : isPartner
                   ? "Showing jobs assigned to you"
                   : accessStatus === "verification_failed"
-                    ? "Could not verify your portal access"
+                    ? (accessError ?? "Could not verify your portal access")
                     : accessType === "unauthorized"
                       ? "Your account is not linked to an admin or accountant profile yet"
                       : "Checking your portal access"}
