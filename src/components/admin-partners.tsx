@@ -7,7 +7,6 @@ import {
   listPartnerInvites,
   listPartnerProfilesAdmin,
   revokePartnerInvite,
-  sendPartnerInviteEmail,
   setPartnerDisabled,
 } from "@/lib/invites.functions";
 import { Card, CardContent } from "@/components/ui/card";
@@ -37,6 +36,8 @@ import { getErrorMessage, isAuthSessionError } from "@/lib/auth-errors";
 
 type AirtableAcc = { id: string; fields: { Name?: string } };
 
+type IssuedInvite = { url: string; email: string; firstName: string };
+
 const INACTIVE_DAYS = 30;
 
 function relativeTime(iso: string | null | undefined): string {
@@ -63,6 +64,28 @@ function partnerStatus(p: { disabled_at: string | null; last_seen_at: string | n
   return days <= INACTIVE_DAYS ? ("active" as const) : ("inactive" as const);
 }
 
+function buildInviteMailto(invite: IssuedInvite) {
+  const subject = "Your My Greek Tax partner portal invitation";
+  const greeting = invite.firstName ? `Hi ${invite.firstName},` : "Hi,";
+  const body = [
+    greeting,
+    "You have been invited to access the My Greek Tax partner portal.",
+    "Please use the secure invitation link below to create your account:",
+    invite.url,
+    "This invitation link is personal. Please do not forward it.",
+    "Thank you,",
+    "My Greek Tax",
+  ].join("\n\n");
+
+  return `mailto:${encodeURIComponent(invite.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+
+function openInviteEmailDraft(invite: IssuedInvite) {
+  window.location.href = buildInviteMailto(invite);
+  track("partner_invite_email_draft_opened");
+  toast.success("Email draft opened");
+}
+
 export function PartnersSection({
   accountants,
   enabled = true,
@@ -76,7 +99,6 @@ export function PartnersSection({
   const fetchPartners = useServerFn(listPartnerProfilesAdmin);
   const createFn = useServerFn(createPartnerInvite);
   const revokeFn = useServerFn(revokePartnerInvite);
-  const sendEmailFn = useServerFn(sendPartnerInviteEmail);
   const toggleDisabledFn = useServerFn(setPartnerDisabled);
 
   const invitesQ = useQuery({
@@ -97,9 +119,7 @@ export function PartnersSection({
     email: "",
     airtableAccountantId: "",
   });
-  const [issued, setIssued] = useState<{ url: string; email: string; firstName: string } | null>(
-    null,
-  );
+  const [issued, setIssued] = useState<IssuedInvite | null>(null);
   const handleMutationError = (error: unknown) => {
     if (isAuthSessionError(error)) {
       navigate({ to: "/login", replace: true });
@@ -124,17 +144,6 @@ export function PartnersSection({
       setOpen(false);
       setForm({ firstName: "", lastName: "", email: "", airtableAccountantId: "" });
       qc.invalidateQueries({ queryKey: ["partner-invites"] });
-    },
-    onError: handleMutationError,
-  });
-
-  const sendMut = useMutation({
-    mutationFn: (vars: { email: string; firstName: string; inviteUrl: string }) =>
-      sendEmailFn({ data: vars }),
-    onSuccess: () => {
-      toast.success("Invite email queued");
-      track("partner_invite_sent");
-      setIssued(null);
     },
     onError: handleMutationError,
   });
@@ -222,7 +231,7 @@ export function PartnersSection({
                   onChange={(e) => setForm({ ...form, airtableAccountantId: e.target.value })}
                   className="w-full rounded border border-input bg-background px-2 py-2 text-sm"
                 >
-                  <option value="">— None —</option>
+                  <option value="">- None -</option>
                   {accountants.map((a) => (
                     <option key={a.id} value={a.id}>
                       {a.fields.Name ?? a.id}
@@ -239,7 +248,7 @@ export function PartnersSection({
                 disabled={!form.firstName || !form.lastName || !form.email || createMut.isPending}
                 onClick={() => createMut.mutate(form)}
               >
-                {createMut.isPending ? "Creating…" : "Create invite"}
+                {createMut.isPending ? "Creating..." : "Create invite"}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -256,7 +265,7 @@ export function PartnersSection({
             <p className="text-sm text-muted-foreground">
               Share this link with{" "}
               <span className="font-medium text-foreground">{issued?.email}</span>. For security,
-              the link is shown only once — copy it now.
+              the link is shown only once, copy it now.
             </p>
             <div className="rounded-md border border-border bg-muted/40 p-3 text-xs break-all font-mono">
               {issued?.url}
@@ -269,18 +278,8 @@ export function PartnersSection({
             <Button variant="outline" onClick={() => issued && copyLink(issued.url)}>
               Copy link
             </Button>
-            <Button
-              disabled={sendMut.isPending}
-              onClick={() =>
-                issued &&
-                sendMut.mutate({
-                  email: issued.email,
-                  firstName: issued.firstName,
-                  inviteUrl: issued.url,
-                })
-              }
-            >
-              {sendMut.isPending ? "Sending…" : "Send via email"}
+            <Button onClick={() => issued && openInviteEmailDraft(issued)}>
+              Open email draft
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -375,10 +374,10 @@ export function PartnersSection({
                     const isDisabled = status === "disabled";
                     return (
                       <tr key={p.user_id} className="border-t border-border">
-                        <td className="px-3 py-2">{p.full_name ?? "—"}</td>
+                        <td className="px-3 py-2">{p.full_name ?? "-"}</td>
                         <td className="px-3 py-2 text-muted-foreground">{p.email}</td>
                         <td className="px-3 py-2 text-muted-foreground">
-                          {acc?.fields.Name ?? p.airtable_accountant_id ?? "—"}
+                          {acc?.fields.Name ?? p.airtable_accountant_id ?? "-"}
                         </td>
                         <td className="px-3 py-2">
                           {status === "active" ? (
@@ -461,7 +460,7 @@ export function PartnersSection({
               }
             >
               {toggleMut.isPending
-                ? "Saving…"
+                ? "Saving..."
                 : confirm?.disable
                   ? "Disable access"
                   : "Enable access"}
