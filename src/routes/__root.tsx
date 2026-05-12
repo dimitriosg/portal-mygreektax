@@ -219,7 +219,7 @@ function AppShell() {
   const overdueJobsQuery = useQuery({
     queryKey: ["jobs", user?.id, ""],
     queryFn: () => fetchJobs({ data: {} }),
-    enabled: !!user && !isAdmin && sessionReady,
+    enabled: !loading && !!user && !isAdmin && sessionReady,
     throwOnError: false,
   });
   useEffect(() => {
@@ -242,12 +242,13 @@ function AppShell() {
       navigate({ to: "/login", replace: true });
     }
   }, [navigate, overdueJobsQuery.error, pathname, sessionReady, user?.id]);
+  const overdueJobs = Array.isArray(overdueJobsQuery.data?.jobs) ? overdueJobsQuery.data.jobs : [];
   const overdueJobsCount = useMemo(
     () =>
-      overdueJobsQuery.data?.jobs.filter(
+      overdueJobs.filter(
         (job) => job.fields.Status !== "Completed" && isPastDueDate(job.fields["SLA Deadline"]),
-      ).length ?? 0,
-    [overdueJobsQuery.data],
+      ).length,
+    [overdueJobs],
   );
   if (isPublicClientPage) {
     return (
