@@ -55,10 +55,12 @@ const IMP_NAME_KEY = "mgt:impersonateName";
 const MAX_TOKEN_POLL_ATTEMPTS = 8;
 const TOKEN_POLL_DELAY_MS = 200;
 
+/** Runtime guard for server access payloads before auth state is updated from network data. */
 function isAccessType(value: unknown): value is AccessType {
   return value === "admin" || value === "partner" || value === "unauthorized";
 }
 
+/** Runtime guard for access verification outcomes returned by getMyContext(). */
 function isAccessStatus(value: unknown): value is AccessStatus {
   return value === "resolved" || value === "unauthorized" || value === "verification_failed";
 }
@@ -76,6 +78,7 @@ function isAuthAccessContext(value: unknown): value is AuthAccessContext {
   );
 }
 
+/** Deduplicate bootstrap work per authenticated session, even when the same user signs in again later. */
 function getSessionBootstrapKey(session: Session) {
   return `${session.user.id}:${session.access_token}`;
 }
@@ -99,6 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const initialSessionResolvedRef = useRef(false);
   const pendingSignInSessionRef = useRef<Session | null>(null);
 
+  /** Fail closed whenever role verification cannot be trusted so admin/partner flags never become undefined. */
   const applyVerificationFailedState = useCallback(() => {
     setIsRealAdmin(false);
     setIsPartner(false);

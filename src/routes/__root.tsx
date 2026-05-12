@@ -350,7 +350,13 @@ function AppShell() {
               aria-label="Toggle dark mode"
               className="text-muted-foreground hover:text-foreground"
             >
-              {isHydrated && isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              {isHydrated ? (
+                isDark ? (
+                  <Sun className="h-4 w-4" />
+                ) : (
+                  <Moon className="h-4 w-4" />
+                )
+              ) : null}
             </button>
           </nav>
         </div>
