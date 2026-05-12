@@ -4,6 +4,23 @@ import { getRequest } from '@tanstack/react-start/server'
 import { createClient } from '@supabase/supabase-js'
 import type { Database } from './types'
 
+function getSupabaseProjectHost(value: string | undefined) {
+  if (!value) return null;
+
+  try {
+    return new URL(value).host;
+  } catch {
+    return null;
+  }
+}
+
+function logUnauthorized(reason: string, details: Record<string, unknown>) {
+  console.error('[requireSupabaseAuth] unauthorized', {
+    reason,
+    ...details,
+  });
+}
+
 
 
 export const requireSupabaseAuth = createMiddleware({ type: 'function' }).server(
@@ -11,6 +28,13 @@ export const requireSupabaseAuth = createMiddleware({ type: 'function' }).server
     
     const SUPABASE_URL = process.env.SUPABASE_URL;
     const SUPABASE_PUBLISHABLE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY;
+    const projectHost = getSupabaseProjectHost(SUPABASE_URL);
+
+    console.info('[requireSupabaseAuth] config', {
+      hasSupabaseUrl: !!SUPABASE_URL,
+      hasSupabasePublishableKey: !!SUPABASE_PUBLISHABLE_KEY,
+      projectHost,
+    });
 
     if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
       const missing = [
@@ -25,21 +49,25 @@ export const requireSupabaseAuth = createMiddleware({ type: 'function' }).server
     const request = getRequest();
 
     if (!request?.headers) {
+      logUnauthorized('no_request_headers', { projectHost });
       throw new Response('Unauthorized: No request headers available', { status: 401 });
     }
 
     const authHeader = request.headers.get('authorization');
 
     if (!authHeader) {
+      logUnauthorized('no_authorization_header', { projectHost });
       throw new Response('Unauthorized: No authorization header provided', { status: 401 });
     }
 
     if (!authHeader.startsWith('Bearer ')) {
+      logUnauthorized('authorization_not_bearer', { projectHost });
       throw new Response('Unauthorized: Only Bearer tokens are supported', { status: 401 });
     }
 
     const token = authHeader.replace('Bearer ', '');
     if (!token) {
+      logUnauthorized('no_token', { projectHost });
       throw new Response('Unauthorized: No token provided', { status: 401 });
     }
 
@@ -62,10 +90,16 @@ export const requireSupabaseAuth = createMiddleware({ type: 'function' }).server
 
     const { data, error } = await supabase.auth.getClaims(token);
     if (error || !data?.claims) {
+      logUnauthorized('get_claims_failed', {
+        projectHost,
+        errorMessage: error?.message ?? null,
+        hasClaims: !!data?.claims,
+      });
       throw new Response('Unauthorized: Invalid token', { status: 401 });
     }
 
     if (!data.claims.sub) {
+      logUnauthorized('claims_missing_sub', { projectHost });
       throw new Response('Unauthorized: No user ID found in token', { status: 401 });
     }
 

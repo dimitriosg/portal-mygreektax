@@ -1,4 +1,12 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { linkPartnerProfile, claimFirstAdmin, getMyContext } from "@/lib/auth.functions";
@@ -47,6 +55,27 @@ const IMP_NAME_KEY = "mgt:impersonateName";
 const MAX_TOKEN_POLL_ATTEMPTS = 8;
 const TOKEN_POLL_DELAY_MS = 200;
 
+function isAccessType(value: unknown): value is AccessType {
+  return value === "admin" || value === "partner" || value === "unauthorized";
+}
+
+function isAccessStatus(value: unknown): value is AccessStatus {
+  return value === "resolved" || value === "unauthorized" || value === "verification_failed";
+}
+
+function isAuthAccessContext(value: unknown): value is AuthAccessContext {
+  if (!value || typeof value !== "object") return false;
+
+  const context = value as Record<string, unknown>;
+  return (
+    typeof context.isAdmin === "boolean" &&
+    typeof context.isPartner === "boolean" &&
+    isAccessType(context.accessType) &&
+    isAccessStatus(context.accessStatus) &&
+    (typeof context.accessError === "string" || context.accessError === null)
+  );
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
@@ -61,6 +90,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [accessError, setAccessError] = useState<string | null>(null);
   const [impersonatingId, setImpersonatingId] = useState<string | null>(null);
   const [impersonatingName, setImpersonatingName] = useState<string | null>(null);
+  const bootstrapPromisesRef = useRef(new Map<string, Promise<void>>());
+  const completedBootstrapKeyRef = useRef<string | null>(null);
+  const initialSessionResolvedRef = useRef(false);
+
+  const applyVerificationFailedState = useCallback(() => {
+    setIsRealAdmin(false);
+    setIsPartner(false);
+    setAccessType("unauthorized");
+    setAccessStatus("verification_failed");
+    setAccessError(ACCESS_VERIFICATION_ERROR_MESSAGE);
+  }, []);
+
+  const resetAccessState = useCallback(() => {
+    setIsRealAdmin(false);
+    setIsPartner(false);
+    setAccessType(null);
+    setAccessStatus("idle");
+    setAccessError(null);
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -70,7 +118,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(async () => {
     try {
-      const ctx = (await getMyContext()) as AuthAccessContext;
+      const result = await getMyContext();
+      if (!isAuthAccessContext(result)) {
+        console.error("[auth] refresh failed: invalid access context", {
+          hasContext: result != null,
+          resultType: typeof result,
+        });
+        applyVerificationFailedState();
+        return;
+      }
+
+      const ctx = result;
       setIsRealAdmin(ctx.isAdmin);
       setIsPartner(ctx.isPartner);
       setAccessType(ctx.accessType);
@@ -99,62 +157,97 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch {
         // ignore
       }
-    } catch {
-      setIsRealAdmin(false);
-      setIsPartner(false);
-      setAccessType("unauthorized");
-      setAccessStatus("verification_failed");
-      setAccessError(ACCESS_VERIFICATION_ERROR_MESSAGE);
+    } catch (error) {
+      console.error("[auth] refresh failed", error);
+      applyVerificationFailedState();
     }
-  }, []);
+  }, [applyVerificationFailedState]);
 
   const bootstrapAuthenticatedSession = useCallback(
     async (nextSession: Session, { runPostLoginSetup }: { runPostLoginSetup: boolean }) => {
-      setSessionReady(false);
-      console.info("[auth] bootstrap:start", {
-        userId: nextSession.user.id,
-        runPostLoginSetup,
-      });
-
-      try {
-        setAccessStatus("idle");
-        setAccessError(null);
-        let token: string | null | undefined = nextSession.access_token;
-
-        for (let attempt = 0; !token && attempt < MAX_TOKEN_POLL_ATTEMPTS; attempt += 1) {
-          await new Promise((resolve) => setTimeout(resolve, TOKEN_POLL_DELAY_MS));
-          const { data } = await supabase.auth.getSession();
-          token = data.session?.access_token;
-        }
-
-        if (!token) {
-          console.error("[auth] bootstrap failed: no access token available");
-          return;
-        }
-
-        if (runPostLoginSetup) {
-          await claimFirstAdmin();
-          await linkPartnerProfile();
-        }
-
-        await refresh();
-        setSessionReady(true);
-        console.info("[auth] bootstrap:complete", {
+      const sessionKey = `${nextSession.user.id}:${nextSession.access_token}`;
+      const inFlightBootstrap = bootstrapPromisesRef.current.get(sessionKey);
+      if (inFlightBootstrap) {
+        console.info("[auth] bootstrap:deduped", {
           userId: nextSession.user.id,
+          runPostLoginSetup,
         });
-      } catch (e) {
-        console.error("[auth] bootstrap failed", e);
-        setIsRealAdmin(false);
-        setIsPartner(false);
-        setAccessType("unauthorized");
-        setAccessStatus("verification_failed");
-        setAccessError(ACCESS_VERIFICATION_ERROR_MESSAGE);
-        setSessionReady(true);
-      } finally {
-        setLoading(false);
+        await inFlightBootstrap;
+        return;
       }
+
+      if (completedBootstrapKeyRef.current === sessionKey) {
+        console.info("[auth] bootstrap:skipped completed session", {
+          userId: nextSession.user.id,
+          runPostLoginSetup,
+        });
+        return;
+      }
+
+      const bootstrapPromise = (async () => {
+        setSessionReady(false);
+        console.info("[auth] bootstrap:start", {
+          userId: nextSession.user.id,
+          runPostLoginSetup,
+        });
+
+        try {
+          setAccessStatus("idle");
+          setAccessError(null);
+          let token: string | null | undefined = nextSession.access_token;
+
+          for (let attempt = 0; !token && attempt < MAX_TOKEN_POLL_ATTEMPTS; attempt += 1) {
+            await new Promise((resolve) => setTimeout(resolve, TOKEN_POLL_DELAY_MS));
+            const { data } = await supabase.auth.getSession();
+            token = data.session?.access_token;
+          }
+
+          if (!token) {
+            console.error("[auth] bootstrap failed: no access token available");
+            applyVerificationFailedState();
+            setSessionReady(true);
+            return;
+          }
+
+          if (runPostLoginSetup) {
+            try {
+              await claimFirstAdmin();
+            } catch (error) {
+              console.error("[auth] claimFirstAdmin failed", {
+                userId: nextSession.user.id,
+                error,
+              });
+            }
+            try {
+              await linkPartnerProfile();
+            } catch (error) {
+              console.error("[auth] linkPartnerProfile failed", {
+                userId: nextSession.user.id,
+                error,
+              });
+            }
+          }
+
+          await refresh();
+          setSessionReady(true);
+          completedBootstrapKeyRef.current = sessionKey;
+          console.info("[auth] bootstrap:complete", {
+            userId: nextSession.user.id,
+          });
+        } catch (e) {
+          console.error("[auth] bootstrap failed", e);
+          applyVerificationFailedState();
+          setSessionReady(true);
+        } finally {
+          bootstrapPromisesRef.current.delete(sessionKey);
+          setLoading(false);
+        }
+      })();
+
+      bootstrapPromisesRef.current.set(sessionKey, bootstrapPromise);
+      await bootstrapPromise;
     },
-    [refresh],
+    [applyVerificationFailedState, refresh],
   );
 
   useEffect(() => {
@@ -165,6 +258,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(s);
 
       if (event === "SIGNED_IN" && s) {
+        if (!initialSessionResolvedRef.current) {
+          console.info("[auth] defer SIGNED_IN bootstrap until initial session resolves", {
+            userId: s.user.id,
+          });
+          return;
+        }
         void bootstrapAuthenticatedSession(s, { runPostLoginSetup: true });
       } else if (event === "TOKEN_REFRESHED" && s) {
         setSessionReady(true);
@@ -172,11 +271,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           console.error("[auth] refresh after TOKEN_REFRESHED failed", error);
         });
       } else if (!s) {
-        setIsRealAdmin(false);
-        setIsPartner(false);
-        setAccessType(null);
-        setAccessStatus("idle");
-        setAccessError(null);
+        completedBootstrapKeyRef.current = null;
+        bootstrapPromisesRef.current.clear();
+        resetAccessState();
         setLoading(false);
         setSessionReady(false);
         if (typeof window !== "undefined") {
@@ -193,6 +290,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void supabase.auth
       .getSession()
       .then(async ({ data }) => {
+        initialSessionResolvedRef.current = true;
         setSession(data.session);
         if (data.session) {
           await bootstrapAuthenticatedSession(data.session, { runPostLoginSetup: false });
@@ -203,18 +301,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       })
       .catch((error) => {
         console.error("[auth] getSession failed", error);
+        initialSessionResolvedRef.current = true;
         setSession(null);
-        setIsRealAdmin(false);
-        setIsPartner(false);
-        setAccessType(null);
-        setAccessStatus("idle");
-        setAccessError(null);
+        resetAccessState();
         setLoading(false);
         setSessionReady(false);
       });
 
     return () => sub.subscription.unsubscribe();
-  }, [bootstrapAuthenticatedSession, refresh]);
+  }, [bootstrapAuthenticatedSession, refresh, resetAccessState]);
 
   const signOut = async () => {
     if (typeof window !== "undefined") {
@@ -222,6 +317,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       sessionStorage.removeItem(IMP_NAME_KEY);
       sessionStorage.removeItem("mgt:loginTracked");
     }
+    completedBootstrapKeyRef.current = null;
+    bootstrapPromisesRef.current.clear();
     setSessionReady(false);
     await supabase.auth.signOut();
   };
