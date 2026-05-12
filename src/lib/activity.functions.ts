@@ -3,6 +3,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { logActivityEvent } from "./activity.server";
+import { resolveUserAccess } from "./access-context.server";
 
 /**
  * Called by the client right after a successful login (deduped per session)
@@ -14,19 +15,13 @@ export const recordPartnerLogin = createServerFn({ method: "POST" })
     const { userId, claims } = context;
     const email = (claims.email as string | undefined) ?? null;
 
-    const [{ data: roles }, { data: partner }] = await Promise.all([
-      supabaseAdmin.from("user_roles").select("role").eq("user_id", userId),
-      supabaseAdmin
-        .from("partner_profiles")
-        .select("full_name, disabled_at")
-        .eq("user_id", userId)
-        .maybeSingle(),
-    ]);
-    const isAdmin = !!roles?.some((r) => r.role === "admin");
-    const isPartner = !!roles?.some((r) => r.role === "partner");
-    const role = isAdmin ? "admin" : isPartner ? "partner" : "user";
+    const access = await resolveUserAccess({ userId, email });
+    if (access.accessStatus === "verification_failed") {
+      return { ok: false, disabled: false, verificationFailed: true } as const;
+    }
+    const { partner } = access;
 
-    if (isPartner && !isAdmin && partner?.disabled_at) {
+    if (access.isPartner && !access.isAdmin && partner?.disabled_at) {
       try {
         await supabaseAdmin.auth.admin.signOut(userId, "global");
       } catch (e) {
@@ -40,7 +35,7 @@ export const recordPartnerLogin = createServerFn({ method: "POST" })
       actorUserId: userId,
       actorEmail: email,
       actorName: partner?.full_name ?? email,
-      metadata: { role },
+      metadata: { role: access.accessType },
     });
     return { ok: true, disabled: false } as const;
   });

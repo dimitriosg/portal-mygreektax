@@ -17,24 +17,26 @@ import {
 } from "./airtable.server";
 import { JOB_STATUSES, STATUS_PROGRESS } from "./airtable-shared";
 import { logActivityEvent } from "./activity.server";
+import { requireAdminAccess, requireVerifiedAccess } from "./access-context.server";
 
-async function getActorIdentity(userId: string): Promise<{ email: string | null; name: string | null }> {
+async function getActorIdentity(
+  userId: string,
+): Promise<{ email: string | null; name: string | null }> {
   const [{ data: authUser }, { data: partner }] = await Promise.all([
     supabaseAdmin.auth.admin.getUserById(userId),
-    supabaseAdmin.from("partner_profiles").select("full_name, email").eq("user_id", userId).maybeSingle(),
+    supabaseAdmin
+      .from("partner_profiles")
+      .select("full_name, email")
+      .eq("user_id", userId)
+      .maybeSingle(),
   ]);
   const email = authUser?.user?.email ?? partner?.email ?? null;
   const name = partner?.full_name ?? email ?? null;
   return { email, name };
 }
 
-async function getRoleAndPartner(userId: string) {
-  const [{ data: roles }, { data: partner }] = await Promise.all([
-    supabaseAdmin.from("user_roles").select("role").eq("user_id", userId),
-    supabaseAdmin.from("partner_profiles").select("*").eq("user_id", userId).maybeSingle(),
-  ]);
-  const isAdmin = !!roles?.some((r) => r.role === "admin");
-  return { isAdmin, partner };
+async function getAccessContext(userId: string, email?: string | null) {
+  return requireVerifiedAccess({ userId, email });
 }
 
 function escapeFormula(s: string) {
@@ -48,26 +50,30 @@ export const listJobs = createServerFn({ method: "GET" })
   )
   .handler(async ({ data, context }) => {
     const { userId } = context;
-    const { isAdmin, partner } = await getRoleAndPartner(userId);
+    const { isAdmin, partner } = await getAccessContext(
+      userId,
+      context.claims.email as string | undefined,
+    );
     if (!isAdmin && !partner) {
-      return { jobs: [] as AirtableRecord<JobFields>[], isAdmin: false, clientNames: {} as Record<string, string> };
+      return {
+        jobs: [] as AirtableRecord<JobFields>[],
+        isAdmin: false,
+        clientNames: {} as Record<string, string>,
+      };
     }
     // Admin impersonation: filter by chosen accountant
     const impersonateId = isAdmin ? data?.asAccountantId : undefined;
-    const filterAccountantId = impersonateId ?? (!isAdmin && partner ? partner.airtable_accountant_id : undefined);
+    const filterAccountantId =
+      impersonateId ?? (!isAdmin && partner ? partner.airtable_accountant_id : undefined);
     const data2 = await airtableGet(TABLES.jobs, { pageSize: "100" });
     let jobs = data2.records as AirtableRecord<JobFields>[];
     if (filterAccountantId) {
-      jobs = jobs.filter((j) =>
-        j.fields["Assigned Accountant"]?.includes(filterAccountantId),
-      );
+      jobs = jobs.filter((j) => j.fields["Assigned Accountant"]?.includes(filterAccountantId));
     }
     // Real admins (not impersonating) see real client names
     const clientNames: Record<string, string> = {};
     if (isAdmin && !impersonateId) {
-      const ids = Array.from(
-        new Set(jobs.flatMap((j) => j.fields.Client ?? []).filter(Boolean)),
-      );
+      const ids = Array.from(new Set(jobs.flatMap((j) => j.fields.Client ?? []).filter(Boolean)));
       const results = await Promise.all(
         ids.map((id) =>
           airtableGet(`${TABLES.clients}/${id}`)
@@ -87,73 +93,98 @@ export const getJob = createServerFn({ method: "GET" })
   .inputValidator((d: { jobId: string }) => z.object({ jobId: z.string().min(1).max(50) }).parse(d))
   .handler(async ({ data, context }) => {
     const { userId } = context;
-    const { isAdmin, partner } = await getRoleAndPartner(userId);
+    const { isAdmin, partner } = await getAccessContext(
+      userId,
+      context.claims.email as string | undefined,
+    );
     const job = (await airtableGet(`${TABLES.jobs}/${data.jobId}`)) as AirtableRecord<JobFields>;
     if (!isAdmin) {
-      const allowed = partner && job.fields["Assigned Accountant"]?.includes(partner.airtable_accountant_id);
+      const allowed =
+        partner && job.fields["Assigned Accountant"]?.includes(partner.airtable_accountant_id);
       if (!allowed) throw new Error("Forbidden");
     }
     const clientId = job.fields.Client?.[0];
     const accountantId = job.fields["Assigned Accountant"]?.[0];
     const [client, accountant] = await Promise.all([
-      clientId ? (airtableGet(`${TABLES.clients}/${clientId}`) as Promise<AirtableRecord<ClientFields>>) : null,
-      accountantId ? (airtableGet(`${TABLES.accountants}/${accountantId}`) as Promise<AirtableRecord<AccountantFields>>) : null,
+      clientId
+        ? (airtableGet(`${TABLES.clients}/${clientId}`) as Promise<AirtableRecord<ClientFields>>)
+        : null,
+      accountantId
+        ? (airtableGet(`${TABLES.accountants}/${accountantId}`) as Promise<
+            AirtableRecord<AccountantFields>
+          >)
+        : null,
     ]);
     // Partners (and admins while impersonating, via dashboard) should not see real client name.
     // We always strip name for non-admins server-side; admins keep full record.
     const safeClient = isAdmin
       ? client
       : client
-        ? ({ ...client, fields: { ...client.fields, "Full Name": undefined, Email: undefined, Phone: undefined } } as AirtableRecord<ClientFields>)
+        ? ({
+            ...client,
+            fields: {
+              ...client.fields,
+              "Full Name": undefined,
+              Email: undefined,
+              Phone: undefined,
+            },
+          } as AirtableRecord<ClientFields>)
         : null;
     return { job, client: safeClient, accountant, isAdmin };
   });
 
 export const updateJob = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
-  .inputValidator((d: {
-    jobId: string;
-    status?: string;
-    notes?: string;
-    slaDeadline?: string | null;
-    dateSent?: string | null;
-    clientFee?: number | null;
-    accountantFee?: number | null;
-    tier?: string | null;
-    category?: string | null;
-    serviceId?: string | null;
-    clientId?: string | null;
-    accountantId?: string | null;
-  }) =>
-    z
-      .object({
-        jobId: z.string().min(1).max(50),
-        status: z.enum(JOB_STATUSES).optional(),
-        notes: z.string().max(5000).optional(),
-        slaDeadline: z.string().max(30).nullable().optional(),
-        dateSent: z.string().max(30).nullable().optional(),
-        clientFee: z.number().min(0).max(1_000_000).nullable().optional(),
-        accountantFee: z.number().min(0).max(1_000_000).nullable().optional(),
-        tier: z.string().max(100).nullable().optional(),
-        category: z.string().max(100).nullable().optional(),
-        serviceId: z.string().min(1).max(50).nullable().optional(),
-        clientId: z.string().min(1).max(50).nullable().optional(),
-        accountantId: z.string().min(1).max(50).nullable().optional(),
-      })
-      .parse(d),
+  .inputValidator(
+    (d: {
+      jobId: string;
+      status?: string;
+      notes?: string;
+      slaDeadline?: string | null;
+      dateSent?: string | null;
+      clientFee?: number | null;
+      accountantFee?: number | null;
+      tier?: string | null;
+      category?: string | null;
+      serviceId?: string | null;
+      clientId?: string | null;
+      accountantId?: string | null;
+    }) =>
+      z
+        .object({
+          jobId: z.string().min(1).max(50),
+          status: z.enum(JOB_STATUSES).optional(),
+          notes: z.string().max(5000).optional(),
+          slaDeadline: z.string().max(30).nullable().optional(),
+          dateSent: z.string().max(30).nullable().optional(),
+          clientFee: z.number().min(0).max(1_000_000).nullable().optional(),
+          accountantFee: z.number().min(0).max(1_000_000).nullable().optional(),
+          tier: z.string().max(100).nullable().optional(),
+          category: z.string().max(100).nullable().optional(),
+          serviceId: z.string().min(1).max(50).nullable().optional(),
+          clientId: z.string().min(1).max(50).nullable().optional(),
+          accountantId: z.string().min(1).max(50).nullable().optional(),
+        })
+        .parse(d),
   )
   .handler(async ({ data, context }) => {
     const { userId } = context;
-    const { isAdmin, partner } = await getRoleAndPartner(userId);
+    const { isAdmin, partner } = await getAccessContext(
+      userId,
+      context.claims.email as string | undefined,
+    );
     const job = (await airtableGet(`${TABLES.jobs}/${data.jobId}`)) as AirtableRecord<JobFields>;
     if (!isAdmin) {
-      const allowed = partner && job.fields["Assigned Accountant"]?.includes(partner.airtable_accountant_id);
+      const allowed =
+        partner && job.fields["Assigned Accountant"]?.includes(partner.airtable_accountant_id);
       if (!allowed) throw new Error("Forbidden");
       // Partners may only update Status and Notes directly. Other fields require admin approval.
       const partnerFields = new Set(["jobId", "status", "notes"]);
       for (const k of Object.keys(data)) {
         if (!partnerFields.has(k) && (data as any)[k] !== undefined) {
-          throw new Error("Partners can only update status and notes directly. Submit a change request for other fields.");
+          throw new Error(
+            "Partners can only update status and notes directly. Submit a change request for other fields.",
+          );
         }
       }
     }
@@ -164,12 +195,15 @@ export const updateJob = createServerFn({ method: "POST" })
       if (data.slaDeadline !== undefined) fields["SLA Deadline"] = data.slaDeadline ?? null;
       if (data.dateSent !== undefined) fields["Date Sent"] = data.dateSent ?? null;
       if (data.clientFee !== undefined) fields["Client Fee (\u20ac)"] = data.clientFee ?? null;
-      if (data.accountantFee !== undefined) fields["Accountant Fee (\u20ac)"] = data.accountantFee ?? null;
+      if (data.accountantFee !== undefined)
+        fields["Accountant Fee (\u20ac)"] = data.accountantFee ?? null;
       if (data.tier !== undefined) fields["Tier"] = data.tier ? [data.tier] : null;
       if (data.category !== undefined) fields["Category"] = data.category ? [data.category] : null;
-      if (data.serviceId !== undefined) fields["Service Catalog"] = data.serviceId ? [data.serviceId] : [];
+      if (data.serviceId !== undefined)
+        fields["Service Catalog"] = data.serviceId ? [data.serviceId] : [];
       if (data.clientId !== undefined) fields["Client"] = data.clientId ? [data.clientId] : [];
-      if (data.accountantId !== undefined) fields["Assigned Accountant"] = data.accountantId ? [data.accountantId] : [];
+      if (data.accountantId !== undefined)
+        fields["Assigned Accountant"] = data.accountantId ? [data.accountantId] : [];
     }
     if (Object.keys(fields).length === 0) return { ok: true };
     const previousStatus = job.fields.Status ?? null;
@@ -203,7 +237,11 @@ export const updateJob = createServerFn({ method: "POST" })
         to_status: data.status,
       });
     }
-    if (data.notes !== undefined && data.notes.trim() !== previousNotes.trim() && data.notes.trim() !== "") {
+    if (
+      data.notes !== undefined &&
+      data.notes.trim() !== previousNotes.trim() &&
+      data.notes.trim() !== ""
+    ) {
       events.push({
         airtable_job_id: data.jobId,
         user_id: userId,
@@ -266,10 +304,14 @@ export const listJobEvents = createServerFn({ method: "GET" })
   .inputValidator((d: { jobId: string }) => z.object({ jobId: z.string().min(1).max(50) }).parse(d))
   .handler(async ({ data, context }) => {
     const { userId } = context;
-    const { isAdmin, partner } = await getRoleAndPartner(userId);
+    const { isAdmin, partner } = await getAccessContext(
+      userId,
+      context.claims.email as string | undefined,
+    );
     if (!isAdmin) {
       const job = (await airtableGet(`${TABLES.jobs}/${data.jobId}`)) as AirtableRecord<JobFields>;
-      const allowed = partner && job.fields["Assigned Accountant"]?.includes(partner.airtable_accountant_id);
+      const allowed =
+        partner && job.fields["Assigned Accountant"]?.includes(partner.airtable_accountant_id);
       if (!allowed) throw new Error("Forbidden");
     }
     const { data: rows, error } = await supabaseAdmin
@@ -287,8 +329,10 @@ export const listJobEvents = createServerFn({ method: "GET" })
 export const listAccountants = createServerFn({ method: "GET" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { isAdmin } = await getRoleAndPartner(context.userId);
-    if (!isAdmin) throw new Error("Forbidden");
+    await requireAdminAccess({
+      userId: context.userId,
+      email: context.claims.email as string | undefined,
+    });
     const data = await airtableGet(TABLES.accountants, { pageSize: "100" });
     return { accountants: data.records as AirtableRecord<AccountantFields>[] };
   });
@@ -296,8 +340,10 @@ export const listAccountants = createServerFn({ method: "GET" })
 export const listClients = createServerFn({ method: "GET" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { isAdmin } = await getRoleAndPartner(context.userId);
-    if (!isAdmin) throw new Error("Forbidden");
+    await requireAdminAccess({
+      userId: context.userId,
+      email: context.claims.email as string | undefined,
+    });
     const data = await airtableGet(TABLES.clients, { pageSize: "100" });
     return { clients: data.records as AirtableRecord<ClientFields>[] };
   });
@@ -305,8 +351,10 @@ export const listClients = createServerFn({ method: "GET" })
 export const listServices = createServerFn({ method: "GET" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { isAdmin } = await getRoleAndPartner(context.userId);
-    if (!isAdmin) throw new Error("Forbidden");
+    await requireAdminAccess({
+      userId: context.userId,
+      email: context.claims.email as string | undefined,
+    });
     const data = await airtableGet(TABLES.serviceCatalog, { pageSize: "100" });
     const records = data.records as AirtableRecord<Record<string, unknown>>[];
     const asStr = (v: unknown): string => {
@@ -324,37 +372,43 @@ export const listServices = createServerFn({ method: "GET" })
         return { id: r.id, code, tier, category, name };
       })
       .sort((a, b) =>
-        (a.code || a.name).localeCompare(b.code || b.name, undefined, { numeric: true, sensitivity: "base" }),
+        (a.code || a.name).localeCompare(b.code || b.name, undefined, {
+          numeric: true,
+          sensitivity: "base",
+        }),
       );
     return { services };
   });
 
 export const createJob = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
-  .inputValidator((d: {
-    clientId: string;
-    serviceId: string;
-    accountantId?: string;
-    status?: string;
-    slaDeadline?: string;
-    dateSent?: string;
-    notes?: string;
-  }) =>
-    z
-      .object({
-        clientId: z.string().min(1).max(50),
-        serviceId: z.string().min(1).max(50),
-        accountantId: z.string().min(1).max(50).optional(),
-        status: z.enum(JOB_STATUSES).optional(),
-        slaDeadline: z.string().max(30).optional(),
-        dateSent: z.string().max(30).optional(),
-        notes: z.string().max(5000).optional(),
-      })
-      .parse(d),
+  .inputValidator(
+    (d: {
+      clientId: string;
+      serviceId: string;
+      accountantId?: string;
+      status?: string;
+      slaDeadline?: string;
+      dateSent?: string;
+      notes?: string;
+    }) =>
+      z
+        .object({
+          clientId: z.string().min(1).max(50),
+          serviceId: z.string().min(1).max(50),
+          accountantId: z.string().min(1).max(50).optional(),
+          status: z.enum(JOB_STATUSES).optional(),
+          slaDeadline: z.string().max(30).optional(),
+          dateSent: z.string().max(30).optional(),
+          notes: z.string().max(5000).optional(),
+        })
+        .parse(d),
   )
   .handler(async ({ data, context }) => {
-    const { isAdmin } = await getRoleAndPartner(context.userId);
-    if (!isAdmin) throw new Error("Forbidden");
+    await requireAdminAccess({
+      userId: context.userId,
+      email: context.claims.email as string | undefined,
+    });
     // Compute next Job Code (e.g. JB105) by scanning all existing codes.
     let maxN = 0;
     let prefix = "JB";
@@ -409,6 +463,13 @@ export const getJobOrder = createServerFn({ method: "GET" })
     z.object({ scopeKey: z.string().min(1).max(100).default("default") }).parse(d ?? {}),
   )
   .handler(async ({ data, context }) => {
+    const access = await getAccessContext(
+      context.userId,
+      context.claims.email as string | undefined,
+    );
+    if (!access.isAdmin && !access.isPartner) {
+      return { orderedJobIds: [] as string[] };
+    }
     const { data: row } = await supabaseAdmin
       .from("job_order_preferences")
       .select("ordered_job_ids")
@@ -429,17 +490,20 @@ export const saveJobOrder = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
-    const { error } = await supabaseAdmin
-      .from("job_order_preferences")
-      .upsert(
-        {
-          user_id: context.userId,
-          scope_key: data.scopeKey,
-          ordered_job_ids: data.orderedJobIds,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "user_id,scope_key" },
-      );
+    const access = await getAccessContext(
+      context.userId,
+      context.claims.email as string | undefined,
+    );
+    if (!access.isAdmin && !access.isPartner) throw new Error("Forbidden");
+    const { error } = await supabaseAdmin.from("job_order_preferences").upsert(
+      {
+        user_id: context.userId,
+        scope_key: data.scopeKey,
+        ordered_job_ids: data.orderedJobIds,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "user_id,scope_key" },
+    );
     if (error) {
       console.error("[saveJobOrder] DB error:", error);
       throw new Error("A database error occurred. Please try again.");
@@ -453,6 +517,11 @@ export const clearJobOrder = createServerFn({ method: "POST" })
     z.object({ scopeKey: z.string().min(1).max(100).default("default") }).parse(d ?? {}),
   )
   .handler(async ({ data, context }) => {
+    const access = await getAccessContext(
+      context.userId,
+      context.claims.email as string | undefined,
+    );
+    if (!access.isAdmin && !access.isPartner) throw new Error("Forbidden");
     await supabaseAdmin
       .from("job_order_preferences")
       .delete()
@@ -464,11 +533,15 @@ export const clearJobOrder = createServerFn({ method: "POST" })
 export const assignPartner = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((d: { jobId: string; accountantId: string }) =>
-    z.object({ jobId: z.string().min(1).max(50), accountantId: z.string().min(1).max(50) }).parse(d),
+    z
+      .object({ jobId: z.string().min(1).max(50), accountantId: z.string().min(1).max(50) })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
-    const { isAdmin } = await getRoleAndPartner(context.userId);
-    if (!isAdmin) throw new Error("Forbidden");
+    await requireAdminAccess({
+      userId: context.userId,
+      email: context.claims.email as string | undefined,
+    });
     await airtablePatch(TABLES.jobs, data.jobId, { "Assigned Accountant": [data.accountantId] });
     return { ok: true };
   });
@@ -477,12 +550,16 @@ export const createClientToken = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((d: { jobId: string }) => z.object({ jobId: z.string().min(1).max(50) }).parse(d))
   .handler(async ({ data, context }) => {
-    const { isAdmin } = await getRoleAndPartner(context.userId);
-    if (!isAdmin) throw new Error("Forbidden");
+    await requireAdminAccess({
+      userId: context.userId,
+      email: context.claims.email as string | undefined,
+    });
     const job = (await airtableGet(`${TABLES.jobs}/${data.jobId}`)) as AirtableRecord<JobFields>;
     const clientId = job.fields.Client?.[0];
     if (!clientId) throw new Error("Job has no client");
-    const client = (await airtableGet(`${TABLES.clients}/${clientId}`)) as AirtableRecord<ClientFields>;
+    const client = (await airtableGet(
+      `${TABLES.clients}/${clientId}`,
+    )) as AirtableRecord<ClientFields>;
     const email = client.fields.Email;
     if (!email) throw new Error("Client has no email");
     const token = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
@@ -513,7 +590,9 @@ export const createClientToken = createServerFn({ method: "POST" })
 
 // Public: client tracking page (no auth)
 export const getClientTracking = createServerFn({ method: "GET" })
-  .inputValidator((d: { token: string }) => z.object({ token: z.string().min(10).max(200) }).parse(d))
+  .inputValidator((d: { token: string }) =>
+    z.object({ token: z.string().min(10).max(200) }).parse(d),
+  )
   .handler(async ({ data }) => {
     const { data: row, error } = await supabaseAdmin
       .from("client_tokens")
@@ -522,8 +601,12 @@ export const getClientTracking = createServerFn({ method: "GET" })
       .maybeSingle();
     if (error || !row) throw new Error("Invalid link");
     if (new Date(row.expires_at) < new Date()) throw new Error("Link expired");
-    const job = (await airtableGet(`${TABLES.jobs}/${row.airtable_job_id}`)) as AirtableRecord<JobFields>;
-    const client = (await airtableGet(`${TABLES.clients}/${row.airtable_client_id}`)) as AirtableRecord<ClientFields>;
+    const job = (await airtableGet(
+      `${TABLES.jobs}/${row.airtable_job_id}`,
+    )) as AirtableRecord<JobFields>;
+    const client = (await airtableGet(
+      `${TABLES.clients}/${row.airtable_client_id}`,
+    )) as AirtableRecord<ClientFields>;
     const status = job.fields.Status ?? "Pending";
 
     // --- Capture open analytics (best-effort, never breaks the page) ---
@@ -632,12 +715,12 @@ export type TrackingOpenRow = {
 
 export const getJobTrackingStats = createServerFn({ method: "GET" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
-  .inputValidator((d: { jobId: string }) =>
-    z.object({ jobId: z.string().min(1).max(50) }).parse(d),
-  )
+  .inputValidator((d: { jobId: string }) => z.object({ jobId: z.string().min(1).max(50) }).parse(d))
   .handler(async ({ data, context }) => {
-    const { isAdmin } = await getRoleAndPartner(context.userId);
-    if (!isAdmin) throw new Error("Forbidden");
+    await requireAdminAccess({
+      userId: context.userId,
+      email: context.claims.email as string | undefined,
+    });
 
     const { data: tokens } = await supabaseAdmin
       .from("client_tokens")
@@ -683,8 +766,10 @@ export const extendClientToken = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
-    const { isAdmin } = await getRoleAndPartner(context.userId);
-    if (!isAdmin) throw new Error("Forbidden");
+    await requireAdminAccess({
+      userId: context.userId,
+      email: context.claims.email as string | undefined,
+    });
 
     const { data: row, error: readErr } = await supabaseAdmin
       .from("client_tokens")
@@ -695,12 +780,8 @@ export const extendClientToken = createServerFn({ method: "POST" })
 
     // Extend from whichever is later: now or current expiry, so already-expired
     // links restart from today.
-    const base = new Date(
-      Math.max(Date.now(), new Date(row.expires_at).getTime()),
-    );
-    const newExpiry = new Date(
-      base.getTime() + data.days * 24 * 60 * 60 * 1000,
-    ).toISOString();
+    const base = new Date(Math.max(Date.now(), new Date(row.expires_at).getTime()));
+    const newExpiry = new Date(base.getTime() + data.days * 24 * 60 * 60 * 1000).toISOString();
 
     const { error: updErr } = await supabaseAdmin
       .from("client_tokens")
@@ -755,8 +836,10 @@ export const getClientTokenHistory = createServerFn({ method: "GET" })
     z.object({ token: z.string().min(10).max(200) }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    const { isAdmin } = await getRoleAndPartner(context.userId);
-    if (!isAdmin) throw new Error("Forbidden");
+    await requireAdminAccess({
+      userId: context.userId,
+      email: context.claims.email as string | undefined,
+    });
     const { data: events, error } = await supabaseAdmin
       .from("client_token_events")
       .select("id, occurred_at, event_type, actor_email, actor_name, metadata")
@@ -770,8 +853,10 @@ export const getClientTokenHistory = createServerFn({ method: "GET" })
 export const listTrackingLinks = createServerFn({ method: "GET" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .handler(async ({ context }): Promise<{ links: TrackingLinkSummary[] }> => {
-    const { isAdmin } = await getRoleAndPartner(context.userId);
-    if (!isAdmin) throw new Error("Forbidden");
+    await requireAdminAccess({
+      userId: context.userId,
+      email: context.claims.email as string | undefined,
+    });
 
     const { data: rows, error } = await supabaseAdmin
       .from("client_tokens")
@@ -832,8 +917,10 @@ export const getTrackingLinkOpens = createServerFn({ method: "GET" })
     z.object({ token: z.string().min(10).max(200) }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    const { isAdmin } = await getRoleAndPartner(context.userId);
-    if (!isAdmin) throw new Error("Forbidden");
+    await requireAdminAccess({
+      userId: context.userId,
+      email: context.claims.email as string | undefined,
+    });
     const { data: opens, error } = await supabaseAdmin
       .from("tracking_link_opens")
       .select("id, opened_at, ip, country, city, user_agent, device, browser, os, referrer")
@@ -871,32 +958,44 @@ export type JobChangeRequestRow = {
 
 function jobFieldCurrentValue(job: AirtableRecord<JobFields>, field: ChangeFieldName): string {
   switch (field) {
-    case "sla_deadline": return job.fields["SLA Deadline"] ?? "";
-    case "status": return job.fields.Status ?? "";
-    case "notes": return job.fields.Notes ?? "";
+    case "sla_deadline":
+      return job.fields["SLA Deadline"] ?? "";
+    case "status":
+      return job.fields.Status ?? "";
+    case "notes":
+      return job.fields.Notes ?? "";
   }
 }
 
 export const requestJobChange = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
-  .inputValidator((d: { jobId: string; field: ChangeFieldName; requestedValue: string; reason?: string }) =>
-    z.object({
-      jobId: z.string().min(1).max(50),
-      field: z.enum(CHANGE_FIELDS),
-      requestedValue: z.string().max(5000),
-      reason: z.string().max(1000).optional(),
-    }).parse(d),
+  .inputValidator(
+    (d: { jobId: string; field: ChangeFieldName; requestedValue: string; reason?: string }) =>
+      z
+        .object({
+          jobId: z.string().min(1).max(50),
+          field: z.enum(CHANGE_FIELDS),
+          requestedValue: z.string().max(5000),
+          reason: z.string().max(1000).optional(),
+        })
+        .parse(d),
   )
   .handler(async ({ data, context }) => {
     const { userId } = context;
-    const { isAdmin, partner } = await getRoleAndPartner(userId);
+    const { isAdmin, partner } = await getAccessContext(
+      userId,
+      context.claims.email as string | undefined,
+    );
     if (isAdmin) throw new Error("Admins should edit jobs directly, not request changes.");
     if (!partner) throw new Error("Forbidden");
     const job = (await airtableGet(`${TABLES.jobs}/${data.jobId}`)) as AirtableRecord<JobFields>;
     const allowed = job.fields["Assigned Accountant"]?.includes(partner.airtable_accountant_id);
     if (!allowed) throw new Error("Forbidden");
 
-    if (data.field === "status" && !(JOB_STATUSES as readonly string[]).includes(data.requestedValue)) {
+    if (
+      data.field === "status" &&
+      !(JOB_STATUSES as readonly string[]).includes(data.requestedValue)
+    ) {
       throw new Error("Invalid status value");
     }
 
@@ -983,15 +1082,19 @@ export const cancelChangeRequest = createServerFn({ method: "POST" })
 export const decideChangeRequest = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((d: { id: string; decision: "approved" | "rejected"; decisionNote?: string }) =>
-    z.object({
-      id: z.string().uuid(),
-      decision: z.enum(["approved", "rejected"]),
-      decisionNote: z.string().max(1000).optional(),
-    }).parse(d),
+    z
+      .object({
+        id: z.string().uuid(),
+        decision: z.enum(["approved", "rejected"]),
+        decisionNote: z.string().max(1000).optional(),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
-    const { isAdmin } = await getRoleAndPartner(context.userId);
-    if (!isAdmin) throw new Error("Forbidden");
+    await requireAdminAccess({
+      userId: context.userId,
+      email: context.claims.email as string | undefined,
+    });
 
     const { data: req, error: readErr } = await supabaseAdmin
       .from("job_change_requests" as any)
@@ -1088,7 +1191,10 @@ export const listJobChangeRequests = createServerFn({ method: "GET" })
   .inputValidator((d: { jobId: string }) => z.object({ jobId: z.string().min(1).max(50) }).parse(d))
   .handler(async ({ data, context }) => {
     const { userId } = context;
-    const { isAdmin, partner } = await getRoleAndPartner(userId);
+    const { isAdmin, partner } = await getAccessContext(
+      userId,
+      context.claims.email as string | undefined,
+    );
     if (!isAdmin) {
       // Partners only see their own requests for this job.
       if (!partner) return { requests: [] as unknown as JobChangeRequestRow[] };
@@ -1111,11 +1217,17 @@ export const listJobChangeRequests = createServerFn({ method: "GET" })
 export const listChangeRequests = createServerFn({ method: "GET" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((d?: { status?: "pending" | "approved" | "rejected" | "cancelled" | "all" }) =>
-    z.object({ status: z.enum(["pending","approved","rejected","cancelled","all"]).default("pending") }).parse(d ?? {}),
+    z
+      .object({
+        status: z.enum(["pending", "approved", "rejected", "cancelled", "all"]).default("pending"),
+      })
+      .parse(d ?? {}),
   )
   .handler(async ({ data, context }) => {
-    const { isAdmin } = await getRoleAndPartner(context.userId);
-    if (!isAdmin) throw new Error("Forbidden");
+    await requireAdminAccess({
+      userId: context.userId,
+      email: context.claims.email as string | undefined,
+    });
     let q = supabaseAdmin
       .from("job_change_requests" as any)
       .select("*")
@@ -1130,7 +1242,10 @@ export const listChangeRequests = createServerFn({ method: "GET" })
 export const getPendingRequestCount = createServerFn({ method: "GET" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { isAdmin } = await getRoleAndPartner(context.userId);
+    const { isAdmin } = await getAccessContext(
+      context.userId,
+      context.claims.email as string | undefined,
+    );
     if (!isAdmin) return { count: 0 };
     const { count } = await supabaseAdmin
       .from("job_change_requests" as any)

@@ -80,6 +80,9 @@ function Dashboard() {
     user,
     loading,
     sessionReady,
+    accessType,
+    accessStatus,
+    accessError,
     isAdmin,
     isRealAdmin,
     isPartner,
@@ -113,6 +116,11 @@ function Dashboard() {
   const scopeKey = asPartner ? `partner:${asPartner}` : isAdmin ? "admin" : "self";
   const isAuthBootstrapping = loading || (!!user && !sessionReady);
   const isDashboardQueryEnabled = !loading && !!user && sessionReady;
+  const hasPortalAccess =
+    accessStatus === "resolved" && (accessType === "admin" || accessType === "partner");
+  const shouldFetchJobs = isDashboardQueryEnabled && hasPortalAccess;
+  const shouldFetchOrder = shouldFetchJobs;
+  const shouldFetchAccountants = isDashboardQueryEnabled && !!isRealAdmin;
 
   // `sessionReady` ensures we never fire server functions during Supabase's
   // internal _initialize/_recoverAndRefresh cycle, where the token is not yet
@@ -120,22 +128,25 @@ function Dashboard() {
   const { data, isLoading, error } = useQuery({
     queryKey: ["jobs", user?.id, asPartner],
     queryFn: () => fetchJobs({ data: asPartner ? { asAccountantId: asPartner } : {} }),
-    enabled: isDashboardQueryEnabled,
+    enabled: shouldFetchJobs,
     throwOnError: false,
   });
   const accQ = useQuery({
     queryKey: ["accountants"],
     queryFn: () => fetchAccountants(),
-    enabled: isDashboardQueryEnabled && !!isRealAdmin,
+    enabled: shouldFetchAccountants,
     throwOnError: false,
   });
   const orderQ = useQuery({
     queryKey: ["job-order", user?.id, scopeKey],
     queryFn: () => fetchOrder({ data: { scopeKey } }),
-    enabled: isDashboardQueryEnabled,
+    enabled: shouldFetchOrder,
     throwOnError: false,
   });
-  const queryErrors = useMemo(() => [error, accQ.error, orderQ.error], [accQ.error, error, orderQ.error]);
+  const queryErrors = useMemo(
+    () => [error, accQ.error, orderQ.error],
+    [accQ.error, error, orderQ.error],
+  );
   const authError = useMemo(
     () => queryErrors.find((err) => err != null && isAuthSessionError(err)),
     [queryErrors],
@@ -146,7 +157,7 @@ function Dashboard() {
   );
   const isLoadingJobs =
     isAuthBootstrapping ||
-    (isDashboardQueryEnabled && (isLoading || orderQ.isLoading || (!!isRealAdmin && accQ.isLoading)));
+    (shouldFetchJobs && (isLoading || orderQ.isLoading || (!!isRealAdmin && accQ.isLoading)));
 
   useEffect(() => {
     console.info("[dashboard] auth gate", {
@@ -156,9 +167,23 @@ function Dashboard() {
       isAdmin,
       isRealAdmin,
       isPartner,
+      accessType,
+      accessStatus,
+      accessError,
       impersonatingId,
     });
-  }, [impersonatingId, isAdmin, isPartner, isRealAdmin, loading, sessionReady, user?.id]);
+  }, [
+    accessError,
+    accessStatus,
+    accessType,
+    impersonatingId,
+    isAdmin,
+    isPartner,
+    isRealAdmin,
+    loading,
+    sessionReady,
+    user?.id,
+  ]);
 
   useEffect(() => {
     if (!authError) {
@@ -193,8 +218,10 @@ function Dashboard() {
 
     console.error("[dashboard] query error", {
       jobs: error && !isAuthSessionError(error) ? getErrorMessage(error) : null,
-      accountants: accQ.error && !isAuthSessionError(accQ.error) ? getErrorMessage(accQ.error) : null,
-      order: orderQ.error && !isAuthSessionError(orderQ.error) ? getErrorMessage(orderQ.error) : null,
+      accountants:
+        accQ.error && !isAuthSessionError(accQ.error) ? getErrorMessage(accQ.error) : null,
+      order:
+        orderQ.error && !isAuthSessionError(orderQ.error) ? getErrorMessage(orderQ.error) : null,
       pathname,
       userId: user?.id ?? null,
       sessionReady,
@@ -320,7 +347,9 @@ function Dashboard() {
               <p className="text-sm text-muted-foreground">
                 Your session expired. Please sign in again.
               </p>
-              <Button onClick={() => navigate({ to: "/login", replace: true })}>Go to sign in</Button>
+              <Button onClick={() => navigate({ to: "/login", replace: true })}>
+                Go to sign in
+              </Button>
             </div>
           </CardContent>
         </Card>
@@ -372,68 +401,74 @@ function Dashboard() {
                 ? `Impersonating partner: ${impersonatingName ?? impersonatingId}`
                 : isPartner
                   ? "Showing jobs assigned to you"
-                  : "No partner profile linked yet"}
+                  : accessStatus === "verification_failed"
+                    ? "Could not verify your portal access"
+                    : accessType === "unauthorized"
+                      ? "Your account is not linked to an admin or accountant profile yet"
+                      : "Checking your portal access"}
           </p>
         </div>
-        <div className="flex flex-col sm:flex-row gap-2">
-          {isRealAdmin && (
+        {hasPortalAccess && (
+          <div className="flex flex-col gap-2 sm:flex-row">
+            {isRealAdmin && (
+              <div className="relative">
+                <select
+                  value={asPartner}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    if (!id) {
+                      stopImpersonation();
+                    } else {
+                      const name = accountants.find((a) => a.id === id)?.fields.Name ?? id;
+                      startImpersonation(id, name);
+                    }
+                  }}
+                  className="appearance-none pr-8 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                >
+                  <option value="">All partners (admin)</option>
+                  {accountants.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      View as: {a.fields.Name ?? a.id}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground h-4 w-4" />
+              </div>
+            )}
             <div className="relative">
               <select
-                value={asPartner}
-                onChange={(e) => {
-                  const id = e.target.value;
-                  if (!id) {
-                    stopImpersonation();
-                  } else {
-                    const name = accountants.find((a) => a.id === id)?.fields.Name ?? id;
-                    startImpersonation(id, name);
-                  }
-                }}
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
                 className="appearance-none pr-8 rounded-md border border-input bg-background px-3 py-2 text-sm"
               >
-                <option value="">All partners (admin)</option>
-                {accountants.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    View as: {a.fields.Name ?? a.id}
+                <option value="manual">Manual order (drag & drop)</option>
+                <option value="code">Sort by Job Code</option>
+                <option value="status">Sort by Status</option>
+                <option value="tier">Sort by Tier</option>
+                <option value="sla">Sort by SLA</option>
+              </select>
+              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground h-4 w-4" />
+            </div>
+            <div className="relative">
+              <select
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                className="appearance-none pr-8 rounded-md border border-input bg-background px-3 py-2 text-sm"
+              >
+                <option value="all">All statuses</option>
+                {JOB_STATUSES.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
                   </option>
                 ))}
               </select>
               <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground h-4 w-4" />
             </div>
-          )}
-          <div className="relative">
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value)}
-              className="appearance-none pr-8 rounded-md border border-input bg-background px-3 py-2 text-sm"
-            >
-              <option value="manual">Manual order (drag & drop)</option>
-              <option value="code">Sort by Job Code</option>
-              <option value="status">Sort by Status</option>
-              <option value="tier">Sort by Tier</option>
-              <option value="sla">Sort by SLA</option>
-            </select>
-            <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground h-4 w-4" />
           </div>
-          <div className="relative">
-            <select
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              className="appearance-none pr-8 rounded-md border border-input bg-background px-3 py-2 text-sm"
-            >
-              <option value="all">All statuses</option>
-              {JOB_STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-            <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground h-4 w-4" />
-          </div>
-        </div>
+        )}
       </div>
 
-      {sortBy === "manual" && savedOrder.length > 0 && newJobIds.length > 0 && (
+      {hasPortalAccess && sortBy === "manual" && savedOrder.length > 0 && newJobIds.length > 0 && (
         <div className="mt-4 rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">
           You're viewing your saved custom order. {newJobIds.length} new job
           {newJobIds.length === 1 ? " has" : "s have"} been added since and{" "}
@@ -441,7 +476,7 @@ function Dashboard() {
           {newJobIds.length === 1 ? "it" : "them"} in your order.
         </div>
       )}
-      {sortBy === "manual" && (dirty || savedOrder.length > 0) && (
+      {hasPortalAccess && sortBy === "manual" && (dirty || savedOrder.length > 0) && (
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <Button size="sm" onClick={() => saveMut.mutate()} disabled={!dirty || saveMut.isPending}>
             {saveMut.isPending ? "Saving…" : "Save order"}
@@ -460,7 +495,7 @@ function Dashboard() {
         </div>
       )}
 
-      {isLoadingJobs && (
+      {hasPortalAccess && isLoadingJobs && (
         <div className="mt-6 grid gap-3">
           {Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className="rounded-xl border bg-card text-card-foreground shadow">
@@ -484,59 +519,75 @@ function Dashboard() {
           ))}
         </div>
       )}
-      {!isLoadingJobs && !isAdmin && !isPartner && (
+      {!isLoadingJobs && accessStatus === "verification_failed" && (
+        <Card className="mt-8 border-destructive/40">
+          <CardContent className="py-6 text-sm text-muted-foreground">
+            <p>
+              {accessError ?? "Could not verify portal access. Please contact the administrator."}
+            </p>
+          </CardContent>
+        </Card>
+      )}
+      {!isLoadingJobs && accessStatus === "unauthorized" && (
         <Card className="mt-8">
           <CardContent className="py-6 text-sm text-muted-foreground">
-            Your account is not yet linked to an Accountant in Airtable. Make sure your login email
-            matches the Email field on your Accountant record, then sign out and sign back in.
+            <p>
+              Your Supabase account exists, but it is not linked to an admin or accountant profile
+              yet.
+            </p>
+            <p className="mt-2">
+              Please contact the My Greek Tax administrator to enable your portal access.
+            </p>
           </CardContent>
         </Card>
       )}
 
-      <div className="mt-6">
-        {sortBy === "manual" ? (
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={handleDragEnd}
-          >
-            <SortableContext
-              items={filtered.map((j) => j.id)}
-              strategy={verticalListSortingStrategy}
+      {hasPortalAccess && (
+        <div className="mt-6">
+          {sortBy === "manual" ? (
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
             >
-              <div className="grid gap-3">
-                {filtered.map((job) => (
-                  <SortableJobRow
-                    key={job.id}
-                    job={job}
-                    isNew={newJobIds.includes(job.id)}
-                    isAdmin={isAdmin}
-                    asPartner={asPartner}
-                    clientName={clientNames[job.fields.Client?.[0] ?? ""]}
-                  />
-                ))}
-              </div>
-            </SortableContext>
-          </DndContext>
-        ) : (
-          <div className="grid gap-3">
-            {filtered.map((job) => (
-              <JobCard
-                key={job.id}
-                job={job}
-                isAdmin={isAdmin}
-                asPartner={asPartner}
-                clientName={clientNames[job.fields.Client?.[0] ?? ""]}
-              />
-            ))}
-          </div>
-        )}
-        {!isLoadingJobs && filtered.length === 0 && (isAdmin || isPartner) && (
-          <p className="text-sm text-muted-foreground">
-            {jobs.length === 0 ? "No jobs available yet." : "No jobs match this filter."}
-          </p>
-        )}
-      </div>
+              <SortableContext
+                items={filtered.map((j) => j.id)}
+                strategy={verticalListSortingStrategy}
+              >
+                <div className="grid gap-3">
+                  {filtered.map((job) => (
+                    <SortableJobRow
+                      key={job.id}
+                      job={job}
+                      isNew={newJobIds.includes(job.id)}
+                      isAdmin={isAdmin}
+                      asPartner={asPartner}
+                      clientName={clientNames[job.fields.Client?.[0] ?? ""]}
+                    />
+                  ))}
+                </div>
+              </SortableContext>
+            </DndContext>
+          ) : (
+            <div className="grid gap-3">
+              {filtered.map((job) => (
+                <JobCard
+                  key={job.id}
+                  job={job}
+                  isAdmin={isAdmin}
+                  asPartner={asPartner}
+                  clientName={clientNames[job.fields.Client?.[0] ?? ""]}
+                />
+              ))}
+            </div>
+          )}
+          {!isLoadingJobs && filtered.length === 0 && (isAdmin || isPartner) && (
+            <p className="text-sm text-muted-foreground">
+              {jobs.length === 0 ? "No jobs available yet." : "No jobs match this filter."}
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

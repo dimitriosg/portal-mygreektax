@@ -5,19 +5,14 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { enqueuePartnerInviteEmail } from "./invite-email.server";
+import { requireAdminAccess } from "./access-context.server";
 
 function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
-async function assertAdmin(userId: string) {
-  const { data: roles } = await supabaseAdmin
-    .from("user_roles")
-    .select("role")
-    .eq("user_id", userId);
-  if (!roles?.some((r) => r.role === "admin")) {
-    throw new Error("Forbidden");
-  }
+async function assertAdmin(userId: string, email?: string | null) {
+  await requireAdminAccess({ userId, email });
 }
 
 export const createPartnerInvite = createServerFn({ method: "POST" })
@@ -33,7 +28,7 @@ export const createPartnerInvite = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertAdmin(context.userId);
+    await assertAdmin(context.userId, context.claims.email as string | undefined);
 
     // Reject if email already linked to a partner profile
     const { data: existingPartner } = await supabaseAdmin
@@ -79,7 +74,7 @@ export const createPartnerInvite = createServerFn({ method: "POST" })
 export const listPartnerInvites = createServerFn({ method: "GET" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .handler(async ({ context }) => {
-    await assertAdmin(context.userId);
+    await assertAdmin(context.userId, context.claims.email as string | undefined);
     const { data, error } = await supabaseAdmin
       .from("partner_invites")
       .select("id, email, first_name, last_name, airtable_accountant_id, created_at, expires_at, consumed_at")
@@ -95,7 +90,7 @@ export const revokePartnerInvite = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((d) => z.object({ inviteId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    await assertAdmin(context.userId);
+    await assertAdmin(context.userId, context.claims.email as string | undefined);
     const { error } = await supabaseAdmin
       .from("partner_invites")
       .update({ consumed_at: new Date().toISOString() })
@@ -120,7 +115,7 @@ export const sendPartnerInviteEmail = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertAdmin(context.userId);
+    await assertAdmin(context.userId, context.claims.email as string | undefined);
     await enqueuePartnerInviteEmail(data);
     return { ok: true };
   });
@@ -128,7 +123,7 @@ export const sendPartnerInviteEmail = createServerFn({ method: "POST" })
 export const listPartnerProfilesAdmin = createServerFn({ method: "GET" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .handler(async ({ context }) => {
-    await assertAdmin(context.userId);
+    await assertAdmin(context.userId, context.claims.email as string | undefined);
     const { data, error } = await supabaseAdmin
       .from("partner_profiles")
       .select("user_id, email, full_name, airtable_accountant_id, created_at, disabled_at")
@@ -167,7 +162,7 @@ export const setPartnerDisabled = createServerFn({ method: "POST" })
     z.object({ userId: z.string().uuid(), disabled: z.boolean() }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertAdmin(context.userId);
+    await assertAdmin(context.userId, context.claims.email as string | undefined);
     const { data: profile, error: pErr } = await supabaseAdmin
       .from("partner_profiles")
       .select("user_id, email, full_name")

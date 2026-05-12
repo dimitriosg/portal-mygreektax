@@ -6,6 +6,18 @@ import { recordPartnerLogin } from "@/lib/activity.functions";
 import { track } from "@/lib/analytics";
 import { toast } from "sonner";
 
+type AccessType = "admin" | "partner" | "unauthorized";
+type AccessStatus = "resolved" | "unauthorized" | "verification_failed";
+const ACCESS_VERIFICATION_ERROR_MESSAGE =
+  "Could not verify portal access. Please contact the administrator.";
+type AuthAccessContext = {
+  isAdmin: boolean;
+  isPartner: boolean;
+  accessType: AccessType;
+  accessStatus: AccessStatus;
+  accessError: string | null;
+};
+
 type Ctx = {
   user: User | null;
   session: Session | null;
@@ -17,6 +29,9 @@ type Ctx = {
   isAdmin: boolean;
   isRealAdmin: boolean;
   isPartner: boolean;
+  accessType: AccessType | null;
+  accessStatus: AccessStatus | "idle";
+  accessError: string | null;
   impersonatingId: string | null;
   impersonatingName: string | null;
   startImpersonation: (id: string, name: string) => void;
@@ -41,6 +56,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [sessionReady, setSessionReady] = useState(false);
   const [isRealAdmin, setIsRealAdmin] = useState(false);
   const [isPartner, setIsPartner] = useState(false);
+  const [accessType, setAccessType] = useState<AccessType | null>(null);
+  const [accessStatus, setAccessStatus] = useState<AccessStatus | "idle">("idle");
+  const [accessError, setAccessError] = useState<string | null>(null);
   const [impersonatingId, setImpersonatingId] = useState<string | null>(null);
   const [impersonatingName, setImpersonatingName] = useState<string | null>(null);
 
@@ -52,16 +70,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(async () => {
     try {
-      const ctx = await getMyContext();
+      const ctx = (await getMyContext()) as AuthAccessContext;
       setIsRealAdmin(ctx.isAdmin);
       setIsPartner(ctx.isPartner);
+      setAccessType(ctx.accessType);
+      setAccessStatus(ctx.accessStatus);
+      setAccessError(ctx.accessError);
       try {
-        if (typeof window !== "undefined") {
+        if (ctx.accessStatus !== "verification_failed" && typeof window !== "undefined") {
           const flag = "mgt:loginTracked";
           if (!sessionStorage.getItem(flag)) {
             sessionStorage.setItem(flag, "1");
             track("partner_login", {
-              role: ctx.isAdmin ? "admin" : ctx.isPartner ? "partner" : "user",
+              role: ctx.accessType,
             });
             recordPartnerLogin()
               .then((res) => {
@@ -81,6 +102,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       setIsRealAdmin(false);
       setIsPartner(false);
+      setAccessType("unauthorized");
+      setAccessStatus("verification_failed");
+      setAccessError(ACCESS_VERIFICATION_ERROR_MESSAGE);
     }
   }, []);
 
@@ -93,6 +117,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
       try {
+        setAccessStatus("idle");
+        setAccessError(null);
         let token: string | null | undefined = nextSession.access_token;
 
         for (let attempt = 0; !token && attempt < MAX_TOKEN_POLL_ATTEMPTS; attempt += 1) {
@@ -120,6 +146,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.error("[auth] bootstrap failed", e);
         setIsRealAdmin(false);
         setIsPartner(false);
+        setAccessType("unauthorized");
+        setAccessStatus("verification_failed");
+        setAccessError(ACCESS_VERIFICATION_ERROR_MESSAGE);
+        setSessionReady(true);
       } finally {
         setLoading(false);
       }
@@ -129,8 +159,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     // Subscribe to auth state changes.
-    // Only run bootstrap (claimFirstAdmin, linkPartnerProfile) on SIGNED_IN —
-    // NOT on INITIAL_SESSION which fires during _initialize before token is ready.
+    // Only run post-login partner linking on SIGNED_IN — not on INITIAL_SESSION,
+    // which fires during _initialize before the token is ready.
     const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
       setSession(s);
 
@@ -144,6 +174,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else if (!s) {
         setIsRealAdmin(false);
         setIsPartner(false);
+        setAccessType(null);
+        setAccessStatus("idle");
+        setAccessError(null);
         setLoading(false);
         setSessionReady(false);
         if (typeof window !== "undefined") {
@@ -173,6 +206,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(null);
         setIsRealAdmin(false);
         setIsPartner(false);
+        setAccessType(null);
+        setAccessStatus("idle");
+        setAccessError(null);
         setLoading(false);
         setSessionReady(false);
       });
@@ -217,6 +253,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAdmin,
         isRealAdmin,
         isPartner,
+        accessType,
+        accessStatus,
+        accessError,
         impersonatingId,
         impersonatingName,
         startImpersonation,

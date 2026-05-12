@@ -1,6 +1,7 @@
 import * as React from 'react'
 import { render } from '@react-email/components'
 import { createClient } from '@supabase/supabase-js'
+import { requireAdminAccess } from '@/lib/access-context.server'
 import { createFileRoute } from '@tanstack/react-router'
 import { TEMPLATES } from '@/lib/email-templates/registry'
 
@@ -62,15 +63,10 @@ export const Route = createFileRoute("/lovable/email/transactional/send")({
         // Only admins may invoke this endpoint directly. Other server-side
         // flows (e.g. partner invite) call the enqueue helper internally
         // with their own authorization checks.
-        const { data: roles, error: rolesError } = await supabase
-          .from('user_roles')
-          .select('role')
-          .eq('user_id', user.id)
-        if (rolesError) {
-          console.error('Role lookup failed', { error: rolesError })
-          return Response.json({ error: 'Forbidden' }, { status: 403 })
-        }
-        if (!roles?.some((r: { role: string }) => r.role === 'admin')) {
+        try {
+          await requireAdminAccess({ userId: user.id, email: user.email })
+        } catch (error) {
+          console.error('Admin access lookup failed', { error })
           return Response.json({ error: 'Forbidden' }, { status: 403 })
         }
 
