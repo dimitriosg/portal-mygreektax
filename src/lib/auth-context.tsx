@@ -93,7 +93,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
       try {
-        let token = nextSession.access_token;
+        let token: string | null | undefined = nextSession.access_token;
 
         for (let attempt = 0; !token && attempt < MAX_TOKEN_POLL_ATTEMPTS; attempt += 1) {
           await new Promise((resolve) => setTimeout(resolve, TOKEN_POLL_DELAY_MS));
