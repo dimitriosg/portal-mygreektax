@@ -7,6 +7,11 @@ import { track } from "@/lib/analytics";
 import { toast } from "sonner";
 
 type AccessType = "admin" | "partner" | "unauthorized";
+type AuthAccessContext = {
+  isAdmin: boolean;
+  isPartner: boolean;
+  accessType: AccessType;
+};
 
 type Ctx = {
   user: User | null;
@@ -56,7 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(async () => {
     try {
-      const ctx = await getMyContext();
+      const ctx = (await getMyContext()) as AuthAccessContext;
       setIsRealAdmin(ctx.isAdmin);
       setIsPartner(ctx.isPartner);
       setAccessType(ctx.accessType);

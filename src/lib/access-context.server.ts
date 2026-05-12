@@ -1,10 +1,10 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import type { Database } from "@/integrations/supabase/types";
+import type { Database, Json } from "@/integrations/supabase/types";
 
 export type AccessType = "admin" | "partner" | "unauthorized";
 
 type PartnerProfile = Database["public"]["Tables"]["partner_profiles"]["Row"];
-type AdminRecord = Record<string, unknown>;
+type AdminRecord = Record<string, Json | undefined>;
 
 export type UserAccessContext = {
   userId: string;
