@@ -6,6 +6,7 @@ import type {
   ActivitySummaryRow,
 } from "./email-templates/activity-summary";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { listAdminEmails } from "./access-context.server";
 
 const SENDER_DOMAIN = "notify.portal.mygreektax.eu";
 const FROM_DOMAIN = "portal.mygreektax.eu";
@@ -172,21 +173,6 @@ export async function buildSummary(period: SummaryPeriod) {
   const totals = sections.map((s) => ({ label: s.title, value: s.count }));
 
   return { period, rangeLabel: label, totals, sections, totalEvents: (events ?? []).length };
-}
-
-async function listAdminEmails(): Promise<string[]> {
-  const { data: roles } = await supabaseAdmin
-    .from("user_roles")
-    .select("user_id")
-    .eq("role", "admin");
-  const ids = (roles ?? []).map((r) => r.user_id).filter(Boolean);
-  const out: string[] = [];
-  for (const id of ids) {
-    const { data } = await supabaseAdmin.auth.admin.getUserById(id);
-    const email = data?.user?.email;
-    if (email) out.push(email);
-  }
-  return Array.from(new Set(out.map((e) => e.toLowerCase())));
 }
 
 async function enqueueOne(recipient: string, summary: Awaited<ReturnType<typeof buildSummary>>) {

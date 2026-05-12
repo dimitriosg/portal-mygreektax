@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { requireAdminAccess } from "./access-context.server";
 
 const PLAUSIBLE_SITE_ID = "portal.mygreektax.eu";
 const PLAUSIBLE_BASE = "https://plausible.io/api/v1/stats";
@@ -36,16 +36,11 @@ export type AdminAnalyticsData = {
   topEvents: { name: string; visitors: number }[];
 };
 
-async function requireAdmin(userId: string): Promise<void> {
-  const { data: roles, error: rolesError } = await supabaseAdmin
-    .from("user_roles")
-    .select("role")
-    .eq("user_id", userId);
-  if (rolesError) {
-    console.error("[getPlausibleStats] Failed to verify admin role", rolesError);
-    throw new Error("Could not verify analytics access.");
-  }
-  if (!roles?.some((r) => r.role === "admin")) {
+async function requireAdmin(userId: string, email?: string | null): Promise<void> {
+  try {
+    await requireAdminAccess({ userId, email });
+  } catch (error) {
+    console.error("[getPlausibleStats] Failed to verify admin access", error);
     throw new Error("You do not have access to analytics.");
   }
 }
@@ -77,7 +72,7 @@ export const getPlausibleStats = createServerFn({ method: "GET" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .handler(async ({ context }): Promise<AdminAnalyticsData> => {
     try {
-      await requireAdmin(context.userId);
+      await requireAdmin(context.userId, context.claims.email as string | undefined);
 
       if (!process.env.PLAUSIBLE_API_KEY) {
         return {

@@ -2,6 +2,7 @@ import { render } from "@react-email/components";
 import * as React from "react";
 import { adminTemplate, decisionTemplate } from "./email-templates/change-request";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { listAdminEmails } from "./access-context.server";
 
 const SENDER_DOMAIN = "notify.portal.mygreektax.eu";
 const FROM_DOMAIN = "portal.mygreektax.eu";
@@ -41,20 +42,6 @@ async function enqueue(opts: {
   if (error) {
     console.error("[change-request-email] enqueue failed", error);
   }
-}
-
-async function listAdminEmails(): Promise<string[]> {
-  const { data: roles } = await supabaseAdmin
-    .from("user_roles")
-    .select("user_id")
-    .eq("role", "admin");
-  const ids = (roles ?? []).map((r) => r.user_id);
-  const emails: string[] = [];
-  for (const id of ids) {
-    const { data } = await supabaseAdmin.auth.admin.getUserById(id);
-    if (data?.user?.email) emails.push(data.user.email);
-  }
-  return Array.from(new Set(emails));
 }
 
 export async function enqueueChangeRequestAdminEmail(params: {

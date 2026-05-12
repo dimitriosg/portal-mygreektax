@@ -1,10 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
-import { linkPartnerProfile, claimFirstAdmin, getMyContext } from "@/lib/auth.functions";
+import { linkPartnerProfile, getMyContext } from "@/lib/auth.functions";
 import { recordPartnerLogin } from "@/lib/activity.functions";
 import { track } from "@/lib/analytics";
 import { toast } from "sonner";
+
+type AccessType = "admin" | "partner" | "unauthorized";
 
 type Ctx = {
   user: User | null;
@@ -17,6 +19,7 @@ type Ctx = {
   isAdmin: boolean;
   isRealAdmin: boolean;
   isPartner: boolean;
+  accessType: AccessType | null;
   impersonatingId: string | null;
   impersonatingName: string | null;
   startImpersonation: (id: string, name: string) => void;
@@ -41,6 +44,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [sessionReady, setSessionReady] = useState(false);
   const [isRealAdmin, setIsRealAdmin] = useState(false);
   const [isPartner, setIsPartner] = useState(false);
+  const [accessType, setAccessType] = useState<AccessType | null>(null);
   const [impersonatingId, setImpersonatingId] = useState<string | null>(null);
   const [impersonatingName, setImpersonatingName] = useState<string | null>(null);
 
@@ -55,13 +59,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const ctx = await getMyContext();
       setIsRealAdmin(ctx.isAdmin);
       setIsPartner(ctx.isPartner);
+      setAccessType(ctx.accessType);
       try {
         if (typeof window !== "undefined") {
           const flag = "mgt:loginTracked";
           if (!sessionStorage.getItem(flag)) {
             sessionStorage.setItem(flag, "1");
             track("partner_login", {
-              role: ctx.isAdmin ? "admin" : ctx.isPartner ? "partner" : "user",
+              role: ctx.accessType,
             });
             recordPartnerLogin()
               .then((res) => {
@@ -81,6 +86,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       setIsRealAdmin(false);
       setIsPartner(false);
+      setAccessType(null);
     }
   }, []);
 
@@ -107,7 +113,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         if (runPostLoginSetup) {
-          await claimFirstAdmin();
           await linkPartnerProfile();
         }
 
@@ -129,8 +134,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     // Subscribe to auth state changes.
-    // Only run bootstrap (claimFirstAdmin, linkPartnerProfile) on SIGNED_IN —
-    // NOT on INITIAL_SESSION which fires during _initialize before token is ready.
+    // Only run post-login partner linking on SIGNED_IN — not on INITIAL_SESSION,
+    // which fires during _initialize before the token is ready.
     const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
       setSession(s);
 
@@ -144,6 +149,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else if (!s) {
         setIsRealAdmin(false);
         setIsPartner(false);
+        setAccessType(null);
         setLoading(false);
         setSessionReady(false);
         if (typeof window !== "undefined") {
@@ -173,6 +179,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(null);
         setIsRealAdmin(false);
         setIsPartner(false);
+        setAccessType(null);
         setLoading(false);
         setSessionReady(false);
       });
@@ -217,6 +224,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAdmin,
         isRealAdmin,
         isPartner,
+        accessType,
         impersonatingId,
         impersonatingName,
         startImpersonation,

@@ -195,6 +195,7 @@ function AppShell() {
     user,
     isAdmin,
     isRealAdmin,
+    isPartner,
     signOut,
     loading,
     sessionReady,
@@ -219,7 +220,7 @@ function AppShell() {
   const overdueJobsQuery = useQuery({
     queryKey: ["jobs", user?.id, ""],
     queryFn: () => fetchJobs({ data: {} }),
-    enabled: !loading && !!user && !isAdmin && sessionReady,
+    enabled: !loading && !!user && sessionReady && !isRealAdmin && isPartner,
     throwOnError: false,
   });
   useEffect(() => {
@@ -290,7 +291,7 @@ function AppShell() {
                 <Link to="/dashboard" activeProps={{ className: "font-semibold" }}>
                   <span className="inline-flex items-center gap-2">
                     <span>Dashboard</span>
-                    {!isAdmin && overdueJobsCount > 0 && (
+                    {!isRealAdmin && isPartner && overdueJobsCount > 0 && (
                       <span className="rounded-full bg-destructive text-white text-xs h-5 w-5 flex items-center justify-center">
                         {overdueJobsCount}
                       </span>
