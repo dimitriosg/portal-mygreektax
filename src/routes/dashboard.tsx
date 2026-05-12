@@ -34,6 +34,9 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { GripVertical, ChevronDown } from "lucide-react";
 
+// Briefly keep the session-expired UI visible before routing back to sign-in.
+const AUTH_ERROR_REDIRECT_DELAY_MS = 1500;
+
 export const Route = createFileRoute("/dashboard")({
   component: Dashboard,
   errorComponent: DashboardErrorComponent,
@@ -108,6 +111,8 @@ function Dashboard() {
   const queryClient = useQueryClient();
   const asPartner = impersonatingId ?? "";
   const scopeKey = asPartner ? `partner:${asPartner}` : isAdmin ? "admin" : "self";
+  const isAuthBootstrapping = loading || (!!user && !sessionReady);
+  const isDashboardQueryEnabled = !loading && !!user && sessionReady;
 
   // `sessionReady` ensures we never fire server functions during Supabase's
   // internal _initialize/_recoverAndRefresh cycle, where the token is not yet
@@ -115,22 +120,33 @@ function Dashboard() {
   const { data, isLoading, error } = useQuery({
     queryKey: ["jobs", user?.id, asPartner],
     queryFn: () => fetchJobs({ data: asPartner ? { asAccountantId: asPartner } : {} }),
-    enabled: !!user && sessionReady,
+    enabled: isDashboardQueryEnabled,
     throwOnError: false,
   });
   const accQ = useQuery({
     queryKey: ["accountants"],
     queryFn: () => fetchAccountants(),
-    enabled: !!isRealAdmin && sessionReady,
+    enabled: isDashboardQueryEnabled && !!isRealAdmin,
     throwOnError: false,
   });
   const orderQ = useQuery({
     queryKey: ["job-order", user?.id, scopeKey],
     queryFn: () => fetchOrder({ data: { scopeKey } }),
-    enabled: !!user && sessionReady,
+    enabled: isDashboardQueryEnabled,
     throwOnError: false,
   });
-  const isLoadingJobs = isLoading || !sessionReady;
+  const queryErrors = useMemo(() => [error, accQ.error, orderQ.error], [accQ.error, error, orderQ.error]);
+  const authError = useMemo(
+    () => queryErrors.find((err) => err != null && isAuthSessionError(err)),
+    [queryErrors],
+  );
+  const queryError = useMemo(
+    () => queryErrors.find((err) => err != null && !isAuthSessionError(err)),
+    [queryErrors],
+  );
+  const isLoadingJobs =
+    isAuthBootstrapping ||
+    (isDashboardQueryEnabled && (isLoading || orderQ.isLoading || (!!isRealAdmin && accQ.isLoading)));
 
   useEffect(() => {
     console.info("[dashboard] auth gate", {
@@ -145,8 +161,6 @@ function Dashboard() {
   }, [impersonatingId, isAdmin, isPartner, isRealAdmin, loading, sessionReady, user?.id]);
 
   useEffect(() => {
-    const queryErrors = [error, accQ.error, orderQ.error];
-    const authError = queryErrors.find((err) => err != null && isAuthSessionError(err));
     if (!authError) {
       lastProcessedAuthErrorRef.current = null;
       return;
@@ -162,32 +176,35 @@ function Dashboard() {
         userId: user?.id ?? null,
         sessionReady,
       });
-      navigate({ to: "/login", replace: true });
     }
-  }, [accQ.error, error, navigate, orderQ.error, pathname, sessionReady, user?.id]);
+    const timeoutId = window.setTimeout(() => {
+      navigate({ to: "/login", replace: true });
+    }, AUTH_ERROR_REDIRECT_DELAY_MS);
+    return () => window.clearTimeout(timeoutId);
+  }, [authError, navigate, pathname, sessionReady, user?.id]);
 
   useEffect(() => {
-    const queryErrors = [error, accQ.error, orderQ.error];
-    const routeError = queryErrors.find(Boolean);
-    if (!routeError) {
+    if (!queryError) {
       lastProcessedQueryErrorRef.current = null;
       return;
     }
-    if (lastProcessedQueryErrorRef.current === routeError) return;
-    lastProcessedQueryErrorRef.current = routeError;
+    if (lastProcessedQueryErrorRef.current === queryError) return;
+    lastProcessedQueryErrorRef.current = queryError;
 
     console.error("[dashboard] query error", {
-      jobs: error ? getErrorMessage(error) : null,
-      accountants: accQ.error ? getErrorMessage(accQ.error) : null,
-      order: orderQ.error ? getErrorMessage(orderQ.error) : null,
+      jobs: error && !isAuthSessionError(error) ? getErrorMessage(error) : null,
+      accountants: accQ.error && !isAuthSessionError(accQ.error) ? getErrorMessage(accQ.error) : null,
+      order: orderQ.error && !isAuthSessionError(orderQ.error) ? getErrorMessage(orderQ.error) : null,
       pathname,
       userId: user?.id ?? null,
       sessionReady,
     });
-  }, [accQ.error, error, orderQ.error, pathname, sessionReady, user?.id]);
+  }, [accQ.error, error, orderQ.error, pathname, queryError, sessionReady, user?.id]);
 
   const savedOrder = Array.isArray(orderQ.data?.orderedJobIds) ? orderQ.data.orderedJobIds : [];
-  const jobs = data?.jobs ?? [];
+  const jobs = Array.isArray(data?.jobs) ? data.jobs : [];
+  const accountants = Array.isArray(accQ.data?.accountants) ? accQ.data.accountants : [];
+  const clientNames = data?.clientNames ?? {};
 
   // Local manual ordering (initialised from saved order; new jobs appended)
   const [manualOrder, setManualOrder] = useState<string[]>([]);
@@ -201,7 +218,7 @@ function Dashboard() {
   };
 
   useEffect(() => {
-    if (!data) return;
+    if (!isDashboardQueryEnabled || !data) return;
     const ids = jobs.map((j) => j.id);
     if (savedOrder.length === 0) {
       setManualOrder(ids);
@@ -283,7 +300,65 @@ function Dashboard() {
     setDirty(true);
   };
 
+  if (isAuthBootstrapping) {
+    return (
+      <div className="mx-auto max-w-6xl px-4 py-6 text-sm text-muted-foreground">
+        Loading your dashboard…
+      </div>
+    );
+  }
+
   if (!user) return null;
+
+  if (authError) {
+    return (
+      <div className="mx-auto max-w-3xl px-4 py-8">
+        <Card>
+          <CardContent className="py-6">
+            <div className="space-y-2">
+              <h1 className="text-xl font-semibold tracking-tight">Session expired</h1>
+              <p className="text-sm text-muted-foreground">
+                Your session expired. Please sign in again.
+              </p>
+              <Button onClick={() => navigate({ to: "/login", replace: true })}>Go to sign in</Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (queryError) {
+    return (
+      <div className="mx-auto max-w-3xl px-4 py-8">
+        <Card>
+          <CardContent className="py-6">
+            <div className="space-y-2">
+              <h1 className="text-xl font-semibold tracking-tight">Dashboard unavailable</h1>
+              <p className="text-sm text-muted-foreground">
+                Could not load dashboard data. Please try again.
+              </p>
+              <p className="text-sm text-destructive">{getErrorMessage(queryError)}</p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  onClick={() => {
+                    queryClient.invalidateQueries({ queryKey: ["jobs", user.id, asPartner] });
+                    queryClient.invalidateQueries({ queryKey: ["job-order", user.id, scopeKey] });
+                    queryClient.invalidateQueries({ queryKey: ["accountants"] });
+                  }}
+                >
+                  Retry
+                </Button>
+                <Button variant="outline" onClick={() => navigate({ to: "/login", replace: true })}>
+                  Go to sign in
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 sm:py-8">
@@ -310,14 +385,14 @@ function Dashboard() {
                   if (!id) {
                     stopImpersonation();
                   } else {
-                    const name = accQ.data?.accountants.find((a) => a.id === id)?.fields.Name ?? id;
+                    const name = accountants.find((a) => a.id === id)?.fields.Name ?? id;
                     startImpersonation(id, name);
                   }
                 }}
                 className="appearance-none pr-8 rounded-md border border-input bg-background px-3 py-2 text-sm"
               >
                 <option value="">All partners (admin)</option>
-                {accQ.data?.accountants.map((a) => (
+                {accountants.map((a) => (
                   <option key={a.id} value={a.id}>
                     View as: {a.fields.Name ?? a.id}
                   </option>
@@ -409,7 +484,6 @@ function Dashboard() {
           ))}
         </div>
       )}
-      {error && <p className="mt-8 text-sm text-destructive">{(error as Error).message}</p>}
       {!isLoadingJobs && !isAdmin && !isPartner && (
         <Card className="mt-8">
           <CardContent className="py-6 text-sm text-muted-foreground">
@@ -438,7 +512,7 @@ function Dashboard() {
                     isNew={newJobIds.includes(job.id)}
                     isAdmin={isAdmin}
                     asPartner={asPartner}
-                    clientName={data?.clientNames?.[job.fields.Client?.[0] ?? ""]}
+                    clientName={clientNames[job.fields.Client?.[0] ?? ""]}
                   />
                 ))}
               </div>
@@ -452,13 +526,15 @@ function Dashboard() {
                 job={job}
                 isAdmin={isAdmin}
                 asPartner={asPartner}
-                clientName={data?.clientNames?.[job.fields.Client?.[0] ?? ""]}
+                clientName={clientNames[job.fields.Client?.[0] ?? ""]}
               />
             ))}
           </div>
         )}
         {!isLoadingJobs && filtered.length === 0 && (isAdmin || isPartner) && (
-          <p className="text-sm text-muted-foreground">No jobs match this filter.</p>
+          <p className="text-sm text-muted-foreground">
+            {jobs.length === 0 ? "No jobs available yet." : "No jobs match this filter."}
+          </p>
         )}
       </div>
     </div>
