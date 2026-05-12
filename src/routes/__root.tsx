@@ -208,10 +208,20 @@ function AppShell() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const fetchJobs = useServerFn(listJobs);
   const lastProcessedOverdueJobsErrorRef = useRef<unknown>(null);
-  const [isDark, setIsDark] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    return window.matchMedia("(prefers-color-scheme: dark)").matches;
-  });
+  const [isHydrated, setIsHydrated] = useState(false);
+  const [isDark, setIsDark] = useState(false);
+
+  useEffect(() => {
+    setIsHydrated(true);
+
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const syncTheme = () => setIsDark(mediaQuery.matches);
+    syncTheme();
+
+    mediaQuery.addEventListener("change", syncTheme);
+    return () => mediaQuery.removeEventListener("change", syncTheme);
+  }, []);
+
   useEffect(() => {
     const root = document.documentElement;
     if (isDark) root.classList.add("dark");
@@ -250,7 +260,10 @@ function AppShell() {
       navigate({ to: "/login", replace: true });
     }
   }, [navigate, overdueJobsQuery.error, pathname, sessionReady, user?.id]);
-  const overdueJobs = Array.isArray(overdueJobsQuery.data?.jobs) ? overdueJobsQuery.data.jobs : [];
+  const overdueJobs = useMemo(
+    () => (Array.isArray(overdueJobsQuery.data?.jobs) ? overdueJobsQuery.data.jobs : []),
+    [overdueJobsQuery.data?.jobs],
+  );
   const overdueJobsCount = useMemo(
     () =>
       overdueJobs.filter(
@@ -258,6 +271,8 @@ function AppShell() {
       ).length,
     [overdueJobs],
   );
+  const showAuthenticatedNav = isHydrated && !loading && !!user;
+  const showImpersonationBanner = isHydrated && !!impersonatingId;
   if (isPublicClientPage) {
     return (
       <div className="min-h-screen bg-background text-foreground">
@@ -267,7 +282,7 @@ function AppShell() {
   }
   return (
     <div className="min-h-screen flex flex-col bg-background text-foreground">
-      {impersonatingId && (
+      {showImpersonationBanner && (
         <div className="bg-amber-100 text-amber-900 border-b border-amber-300 text-sm">
           <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-2">
             <span>
@@ -293,7 +308,7 @@ function AppShell() {
             My Greek Tax
           </Link>
           <nav className="flex flex-wrap items-center gap-3 sm:gap-4 text-sm">
-            {!loading && user ? (
+            {showAuthenticatedNav ? (
               <>
                 <Link to="/dashboard" activeProps={{ className: "font-semibold" }}>
                   <span className="inline-flex items-center gap-2">
@@ -335,7 +350,13 @@ function AppShell() {
               aria-label="Toggle dark mode"
               className="text-muted-foreground hover:text-foreground"
             >
-              {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              {isHydrated ? (
+                isDark ? (
+                  <Sun className="h-4 w-4" />
+                ) : (
+                  <Moon className="h-4 w-4" />
+                )
+              ) : null}
             </button>
           </nav>
         </div>

@@ -12,6 +12,10 @@ import {
 } from "@/lib/jobs.functions";
 import { useAuth } from "@/lib/auth-context";
 import { getErrorMessage, isAuthSessionError } from "@/lib/auth-errors";
+import {
+  describeSupabaseToken,
+  getSupabaseProjectHost,
+} from "@/integrations/supabase/auth-diagnostics";
 import { formatDate } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -36,6 +40,10 @@ import { GripVertical, ChevronDown } from "lucide-react";
 
 // Briefly keep the session-expired UI visible before routing back to sign-in.
 const AUTH_ERROR_REDIRECT_DELAY_MS = 1500;
+
+function isRequireSupabaseAuthMessage(error: unknown) {
+  return getErrorMessage(error).startsWith("Unauthorized:");
+}
 
 export const Route = createFileRoute("/dashboard")({
   component: Dashboard,
@@ -78,6 +86,7 @@ function DashboardErrorComponent({ error, reset }: { error: unknown; reset: () =
 function Dashboard() {
   const {
     user,
+    session,
     loading,
     sessionReady,
     accessType,
@@ -97,6 +106,15 @@ function Dashboard() {
   const lastProcessedQueryErrorRef = useRef<unknown>(null);
   const [filter, setFilter] = useState<string>("all");
   const [sortBy, setSortBy] = useState<string>("manual");
+  const [showAuthDebugPanel, setShowAuthDebugPanel] = useState(false);
+  const clientTokenDiagnostics = useMemo(
+    () => describeSupabaseToken(session?.access_token),
+    [session?.access_token],
+  );
+  const clientProjectHost = useMemo(
+    () => getSupabaseProjectHost(import.meta.env.VITE_SUPABASE_URL || undefined),
+    [],
+  );
   useEffect(() => {
     if (loading) return;
     if (!user) {
@@ -105,6 +123,14 @@ function Dashboard() {
     }
     if (!sessionReady) return;
   }, [loading, sessionReady, user, navigate]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const host = window.location.host;
+    const isPreviewWorkerHost =
+      host.endsWith(".workers.dev") && host.includes("-portal-mygreektax.");
+    setShowAuthDebugPanel(import.meta.env.DEV || isPreviewWorkerHost);
+  }, []);
 
   const fetchJobs = useServerFn(listJobs);
   const fetchAccountants = useServerFn(listAccountants);
@@ -153,6 +179,10 @@ function Dashboard() {
   );
   const queryError = useMemo(
     () => queryErrors.find((err) => err != null && !isAuthSessionError(err)),
+    [queryErrors],
+  );
+  const serverFunctionAuthError = useMemo(
+    () => queryErrors.find((err) => err != null && isRequireSupabaseAuthMessage(err)),
     [queryErrors],
   );
   const isLoadingJobs =
@@ -402,7 +432,7 @@ function Dashboard() {
                 : isPartner
                   ? "Showing jobs assigned to you"
                   : accessStatus === "verification_failed"
-                    ? "Could not verify your portal access"
+                    ? (accessError ?? "Could not verify your portal access")
                     : accessType === "unauthorized"
                       ? "Your account is not linked to an admin or accountant profile yet"
                       : "Checking your portal access"}
@@ -525,6 +555,26 @@ function Dashboard() {
             <p>
               {accessError ?? "Could not verify portal access. Please contact the administrator."}
             </p>
+            {showAuthDebugPanel && (
+              <dl className="mt-4 grid gap-1 text-xs">
+                <div className="flex gap-2">
+                  <dt className="font-medium text-foreground">Client project host:</dt>
+                  <dd>{clientProjectHost ?? "unknown"}</dd>
+                </div>
+                <div className="flex gap-2">
+                  <dt className="font-medium text-foreground">Client session:</dt>
+                  <dd>{session ? "present" : "missing"}</dd>
+                </div>
+                <div className="flex gap-2">
+                  <dt className="font-medium text-foreground">Access token:</dt>
+                  <dd>{clientTokenDiagnostics.exists ? "present" : "missing"}</dd>
+                </div>
+                <div className="flex gap-2">
+                  <dt className="font-medium text-foreground">Token shape:</dt>
+                  <dd>{clientTokenDiagnostics.headerValue}</dd>
+                </div>
+              </dl>
+            )}
           </CardContent>
         </Card>
       )}
@@ -538,6 +588,33 @@ function Dashboard() {
             <p className="mt-2">
               Please contact the My Greek Tax administrator to enable your portal access.
             </p>
+          </CardContent>
+        </Card>
+      )}
+      {!isLoadingJobs && hasPortalAccess && serverFunctionAuthError && (
+        <Card className="mt-8 border-destructive/40">
+          <CardContent className="py-6 text-sm text-muted-foreground">
+            <p>{getErrorMessage(serverFunctionAuthError)}</p>
+            {showAuthDebugPanel && (
+              <dl className="mt-4 grid gap-1 text-xs">
+                <div className="flex gap-2">
+                  <dt className="font-medium text-foreground">Client project host:</dt>
+                  <dd>{clientProjectHost ?? "unknown"}</dd>
+                </div>
+                <div className="flex gap-2">
+                  <dt className="font-medium text-foreground">Client session:</dt>
+                  <dd>{session ? "present" : "missing"}</dd>
+                </div>
+                <div className="flex gap-2">
+                  <dt className="font-medium text-foreground">Access token:</dt>
+                  <dd>{clientTokenDiagnostics.exists ? "present" : "missing"}</dd>
+                </div>
+                <div className="flex gap-2">
+                  <dt className="font-medium text-foreground">Token shape:</dt>
+                  <dd>{clientTokenDiagnostics.headerValue}</dd>
+                </div>
+              </dl>
+            )}
           </CardContent>
         </Card>
       )}

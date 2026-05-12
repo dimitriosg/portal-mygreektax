@@ -8,6 +8,8 @@ type PartnerProfile = Database["public"]["Tables"]["partner_profiles"]["Row"];
 
 export const ACCESS_VERIFICATION_ERROR_MESSAGE =
   "Could not verify portal access. Please contact the administrator.";
+export const ACCESS_SCHEMA_MISSING_ERROR_MESSAGE =
+  "Portal database schema is missing. Apply Supabase migrations.";
 
 export type UserAccessContext = {
   userId: string;
@@ -78,12 +80,54 @@ function createVerificationFailureContext(input: {
   });
 }
 
+function createMissingSchemaContext(input: {
+  userId: string;
+  email: string | null;
+  partner: PartnerProfile | null;
+  missingTables: string[];
+}): UserAccessContext {
+  console.error("[auth] missing database schema", {
+    userId: input.userId,
+    missingTables: input.missingTables,
+  });
+
+  return createAccessContext({
+    userId: input.userId,
+    email: input.email,
+    isAdmin: false,
+    isPartner: false,
+    partner: input.partner,
+    accessStatus: "verification_failed",
+    accessError: ACCESS_SCHEMA_MISSING_ERROR_MESSAGE,
+  });
+}
+
+function getMissingRequiredTables(input: {
+  rolesError?: { code?: string } | null;
+  partnerError?: { code?: string } | null;
+}) {
+  const missingTables: string[] = [];
+
+  if (input.rolesError?.code === "42P01") missingTables.push("user_roles");
+  if (input.partnerError?.code === "42P01") missingTables.push("partner_profiles");
+
+  return missingTables;
+}
+
 export async function listAdminEmails(): Promise<string[]> {
   const { data, error } = await supabaseAdmin
     .from("user_roles")
     .select("user_id")
     .eq("role", "admin");
   if (error) {
+    if (error.code === "42P01") {
+      console.error("[auth] missing database schema", {
+        operation: "listAdminEmails",
+        missingTables: ["user_roles"],
+      });
+      throw new Error(ACCESS_SCHEMA_MISSING_ERROR_MESSAGE);
+    }
+
     console.error("[auth] failed to list admin emails", {
       message: error.message,
       details: error.details,
@@ -125,6 +169,16 @@ export async function resolveUserAccess(input: {
       supabaseAdmin.from("user_roles").select("role").eq("user_id", input.userId).limit(10),
       supabaseAdmin.from("partner_profiles").select("*").eq("user_id", input.userId).maybeSingle(),
     ]);
+
+  const missingTables = getMissingRequiredTables({ rolesError, partnerError });
+  if (missingTables.length > 0) {
+    return createMissingSchemaContext({
+      userId: input.userId,
+      email,
+      partner: null,
+      missingTables,
+    });
+  }
 
   if (rolesError || partnerError) {
     if (rolesError) {

@@ -1,5 +1,6 @@
-// Server-only Airtable helpers via the Lovable connector gateway.
-const GATEWAY_URL = "https://connector-gateway.lovable.dev/airtable";
+// Server-only Airtable helpers.
+// This project uses the direct Airtable REST API only.
+const AIRTABLE_API_URL = "https://api.airtable.com";
 export const BASE_ID = "appBJ9yHC38YHvvSw";
 
 export const TABLES = {
@@ -11,21 +12,23 @@ export const TABLES = {
 
 const GENERIC_ERROR = "Service temporarily unavailable. Please try again.";
 
-function authHeaders() {
-  const LOVABLE_API_KEY = process.env.LOVABLE_API_KEY;
+function getAirtableHeaders(): Record<string, string> {
   const AIRTABLE_API_KEY = process.env.AIRTABLE_API_KEY;
-  if (!LOVABLE_API_KEY) {
-    console.error("[airtable] LOVABLE_API_KEY is not configured");
-    throw new Error(GENERIC_ERROR);
-  }
+
   if (!AIRTABLE_API_KEY) {
     console.error("[airtable] AIRTABLE_API_KEY is not configured");
     throw new Error(GENERIC_ERROR);
   }
+
   return {
-    Authorization: `Bearer ${LOVABLE_API_KEY}`,
-    "X-Connection-Api-Key": AIRTABLE_API_KEY,
+    Authorization: `Bearer ${AIRTABLE_API_KEY}`,
   };
+}
+
+function getAirtableUrl(path: string, query?: Record<string, string>) {
+  const url = new URL(`${AIRTABLE_API_URL}/v0/${BASE_ID}/${path}`);
+  if (query) for (const [k, v] of Object.entries(query)) url.searchParams.set(k, v);
+  return url;
 }
 
 async function logAndThrow(method: string, path: string, res: Response): Promise<never> {
@@ -36,11 +39,10 @@ async function logAndThrow(method: string, path: string, res: Response): Promise
 }
 
 export async function airtableGet(path: string, query?: Record<string, string>) {
-  const url = new URL(`${GATEWAY_URL}/v0/${BASE_ID}/${path}`);
-  if (query) for (const [k, v] of Object.entries(query)) url.searchParams.set(k, v);
+  const url = getAirtableUrl(path, query);
   let res: Response;
   try {
-    res = await fetch(url.toString(), { headers: authHeaders() });
+    res = await fetch(url.toString(), { headers: getAirtableHeaders() });
   } catch (e) {
     console.error(`[airtable] GET ${path} network error:`, e);
     throw new Error(GENERIC_ERROR);
@@ -50,11 +52,12 @@ export async function airtableGet(path: string, query?: Record<string, string>) 
 }
 
 export async function airtablePatch(table: string, recordId: string, fields: Record<string, unknown>) {
+  const url = getAirtableUrl(`${table}/${recordId}`);
   let res: Response;
   try {
-    res = await fetch(`${GATEWAY_URL}/v0/${BASE_ID}/${table}/${recordId}`, {
+    res = await fetch(url.toString(), {
       method: "PATCH",
-      headers: { ...authHeaders(), "Content-Type": "application/json" },
+      headers: { ...getAirtableHeaders(), "Content-Type": "application/json" },
       body: JSON.stringify({ fields }),
     });
   } catch (e) {
@@ -66,11 +69,12 @@ export async function airtablePatch(table: string, recordId: string, fields: Rec
 }
 
 export async function airtablePost(table: string, fields: Record<string, unknown>) {
+  const url = getAirtableUrl(table);
   let res: Response;
   try {
-    res = await fetch(`${GATEWAY_URL}/v0/${BASE_ID}/${table}`, {
+    res = await fetch(url.toString(), {
       method: "POST",
-      headers: { ...authHeaders(), "Content-Type": "application/json" },
+      headers: { ...getAirtableHeaders(), "Content-Type": "application/json" },
       body: JSON.stringify({ records: [{ fields }], typecast: true }),
     });
   } catch (e) {
