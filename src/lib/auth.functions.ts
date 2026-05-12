@@ -110,7 +110,11 @@ export const claimFirstAdmin = createServerFn({ method: "POST" })
     const { error } = await supabaseAdmin
       .from("user_roles")
       .insert({ user_id: context.userId, role: "admin" });
-    if (error && error.code !== "23505") {
+    if (error?.code === "23505") {
+      console.info("[claimFirstAdmin] admin role already present", { userId: context.userId });
+      return { promoted: false };
+    }
+    if (error) {
       console.error("[claimFirstAdmin] DB error:", error);
       throw new Error("Could not complete setup. Please try again.");
     }

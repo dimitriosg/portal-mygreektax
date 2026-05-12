@@ -5,7 +5,6 @@ export type AccessType = "admin" | "partner" | "unauthorized";
 export type AccessStatus = "resolved" | "unauthorized" | "verification_failed";
 
 type PartnerProfile = Database["public"]["Tables"]["partner_profiles"]["Row"];
-type UserRole = Database["public"]["Tables"]["user_roles"]["Row"]["role"];
 
 export const ACCESS_VERIFICATION_ERROR_MESSAGE =
   "Could not verify portal access. Please contact the administrator.";
@@ -123,7 +122,7 @@ export async function resolveUserAccess(input: {
 
   const [{ data: roleRows, error: rolesError }, { data: partner, error: partnerError }] =
     await Promise.all([
-      supabaseAdmin.from("user_roles").select("role").eq("user_id", input.userId),
+      supabaseAdmin.from("user_roles").select("role").eq("user_id", input.userId).limit(10),
       supabaseAdmin.from("partner_profiles").select("*").eq("user_id", input.userId).maybeSingle(),
     ]);
 
@@ -156,9 +155,8 @@ export async function resolveUserAccess(input: {
     });
   }
 
-  const roleSet = new Set<UserRole>((roleRows ?? []).map((row) => row.role));
-  const isAdmin = roleSet.has("admin");
-  const isPartner = roleSet.has("partner") || !!partner;
+  const isAdmin = (roleRows ?? []).some((row) => row.role === "admin");
+  const isPartner = (roleRows ?? []).some((row) => row.role === "partner") || !!partner;
 
   return createAccessContext({
     userId: input.userId,
