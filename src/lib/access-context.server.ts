@@ -138,10 +138,34 @@ export async function listAdminEmails(): Promise<string[]> {
   }
 
   const emails = new Set<string>();
-  for (const row of data ?? []) {
-    const email = normalizeEmail(row.email);
-    if (email) emails.add(email);
-  }
+
+  await Promise.all(
+    (data ?? []).map(async (row) => {
+      const email = normalizeEmail(row.email);
+      if (email) {
+        emails.add(email);
+        return;
+      }
+
+      if (!row.user_id) return;
+
+      const { data: authUser, error: authUserError } = await supabaseAdmin.auth.admin.getUserById(
+        row.user_id,
+      );
+
+      if (authUserError) {
+        console.error("[auth] failed to resolve admin email from user_id", {
+          userId: row.user_id,
+          message: authUserError.message,
+        });
+        return;
+      }
+
+      const resolvedEmail = normalizeEmail(authUser.user?.email);
+      if (resolvedEmail) emails.add(resolvedEmail);
+    }),
+  );
+
   return Array.from(emails);
 }
 
