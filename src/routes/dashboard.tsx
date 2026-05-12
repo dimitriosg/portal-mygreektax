@@ -34,6 +34,8 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { GripVertical, ChevronDown } from "lucide-react";
 
+const AUTH_ERROR_REDIRECT_DELAY_MS = 1500;
+
 export const Route = createFileRoute("/dashboard")({
   component: Dashboard,
   errorComponent: DashboardErrorComponent,
@@ -170,7 +172,7 @@ function Dashboard() {
     }
     const timeoutId = window.setTimeout(() => {
       navigate({ to: "/login", replace: true });
-    }, 1500);
+    }, AUTH_ERROR_REDIRECT_DELAY_MS);
     return () => window.clearTimeout(timeoutId);
   }, [authError, navigate, pathname, sessionReady, user?.id]);
 
