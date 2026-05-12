@@ -25,6 +25,17 @@ function logUnauthorized(reason: string, details: Record<string, unknown>) {
   });
 }
 
+function createUnauthorizedResponse(message: string, reason: string, projectHost: string | null) {
+  return new Response(message, {
+    status: 401,
+    headers: {
+      "content-type": "text/plain; charset=utf-8",
+      "x-mgt-auth-reason": reason,
+      "x-mgt-supabase-project-host": projectHost ?? "unknown",
+    },
+  });
+}
+
 export const requireSupabaseAuth = createMiddleware({ type: "function" }).server(
   async ({ next }) => {
     const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -51,25 +62,37 @@ export const requireSupabaseAuth = createMiddleware({ type: "function" }).server
 
     if (!request?.headers) {
       logUnauthorized("no_request_headers", { projectHost });
-      throw new Response("Unauthorized: No request headers available", { status: 401 });
+      throw createUnauthorizedResponse(
+        "Unauthorized: No request headers available",
+        "no_request_headers",
+        projectHost,
+      );
     }
 
     const authHeader = request.headers.get("authorization");
 
     if (!authHeader) {
       logUnauthorized("no_authorization_header", { projectHost });
-      throw new Response("Unauthorized: No authorization header provided", { status: 401 });
+      throw createUnauthorizedResponse(
+        "Unauthorized: No authorization header provided",
+        "no_authorization_header",
+        projectHost,
+      );
     }
 
     if (!authHeader.startsWith("Bearer ")) {
       logUnauthorized("authorization_not_bearer", { projectHost });
-      throw new Response("Unauthorized: Only Bearer tokens are supported", { status: 401 });
+      throw createUnauthorizedResponse(
+        "Unauthorized: Only Bearer tokens are supported",
+        "authorization_not_bearer",
+        projectHost,
+      );
     }
 
     const token = authHeader.replace("Bearer ", "");
     if (!token) {
       logUnauthorized("no_token", { projectHost });
-      throw new Response("Unauthorized: No token provided", { status: 401 });
+      throw createUnauthorizedResponse("Unauthorized: No token provided", "no_token", projectHost);
     }
 
     const supabase = createClient<Database>(SUPABASE_URL!, SUPABASE_PUBLISHABLE_KEY!, {
@@ -92,12 +115,20 @@ export const requireSupabaseAuth = createMiddleware({ type: "function" }).server
         errorMessage: error?.message ?? null,
         hasClaims: !!data?.claims,
       });
-      throw new Response("Unauthorized: Invalid token", { status: 401 });
+      throw createUnauthorizedResponse(
+        `Unauthorized: Supabase token claims validation failed${projectHost ? ` for ${projectHost}` : ""}`,
+        "get_claims_failed",
+        projectHost,
+      );
     }
 
     if (!data.claims.sub) {
       logUnauthorized("claims_missing_sub", { projectHost });
-      throw new Response("Unauthorized: No user ID found in token", { status: 401 });
+      throw createUnauthorizedResponse(
+        "Unauthorized: Supabase token claims are missing sub",
+        "claims_missing_sub",
+        projectHost,
+      );
     }
 
     return next({

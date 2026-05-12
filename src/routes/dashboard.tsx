@@ -37,6 +37,10 @@ import { GripVertical, ChevronDown } from "lucide-react";
 // Briefly keep the session-expired UI visible before routing back to sign-in.
 const AUTH_ERROR_REDIRECT_DELAY_MS = 1500;
 
+function isRequireSupabaseAuthMessage(error: unknown) {
+  return getErrorMessage(error).startsWith("Unauthorized:");
+}
+
 export const Route = createFileRoute("/dashboard")({
   component: Dashboard,
   errorComponent: DashboardErrorComponent,
@@ -153,6 +157,10 @@ function Dashboard() {
   );
   const queryError = useMemo(
     () => queryErrors.find((err) => err != null && !isAuthSessionError(err)),
+    [queryErrors],
+  );
+  const serverFunctionAuthError = useMemo(
+    () => queryErrors.find((err) => err != null && isRequireSupabaseAuthMessage(err)),
     [queryErrors],
   );
   const isLoadingJobs =
@@ -538,6 +546,13 @@ function Dashboard() {
             <p className="mt-2">
               Please contact the My Greek Tax administrator to enable your portal access.
             </p>
+          </CardContent>
+        </Card>
+      )}
+      {!isLoadingJobs && hasPortalAccess && serverFunctionAuthError && (
+        <Card className="mt-8 border-destructive/40">
+          <CardContent className="py-6 text-sm text-muted-foreground">
+            <p>{getErrorMessage(serverFunctionAuthError)}</p>
           </CardContent>
         </Card>
       )}

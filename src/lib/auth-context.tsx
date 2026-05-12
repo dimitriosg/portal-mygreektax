@@ -83,6 +83,19 @@ function getSessionBootstrapKey(session: Session) {
   return `${session.user.id}:${session.access_token}`;
 }
 
+function getSafeVerificationErrorMessage(error: unknown) {
+  if (error instanceof Error) {
+    if (
+      error.message.startsWith("Unauthorized:") ||
+      error.message.startsWith("Missing Supabase environment variable")
+    ) {
+      return error.message;
+    }
+  }
+
+  return ACCESS_VERIFICATION_ERROR_MESSAGE;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
@@ -103,12 +116,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const pendingSignInSessionRef = useRef<Session | null>(null);
 
   /** Fail closed whenever role verification cannot be trusted so admin/partner flags never become undefined. */
-  const applyVerificationFailedState = useCallback(() => {
+  const applyVerificationFailedState = useCallback((message?: string) => {
     setIsRealAdmin(false);
     setIsPartner(false);
     setAccessType("unauthorized");
     setAccessStatus("verification_failed");
-    setAccessError(ACCESS_VERIFICATION_ERROR_MESSAGE);
+    setAccessError(message ?? ACCESS_VERIFICATION_ERROR_MESSAGE);
   }, []);
 
   const resetAccessState = useCallback(() => {
@@ -168,7 +181,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     } catch (error) {
       console.error("[auth] refresh failed", error);
-      applyVerificationFailedState();
+      applyVerificationFailedState(getSafeVerificationErrorMessage(error));
     }
   }, [applyVerificationFailedState]);
 
@@ -306,11 +319,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         pendingSignInSessionRef.current = null;
         setSession(data.session);
         if (data.session) {
-          await bootstrapAuthenticatedSession(data.session, { runPostLoginSetup: false });
-          if (
-            pendingSignInSession &&
-            getSessionBootstrapKey(pendingSignInSession) !== getSessionBootstrapKey(data.session)
-          ) {
+          const shouldRunPostLoginSetup =
+            !!pendingSignInSession &&
+            getSessionBootstrapKey(pendingSignInSession) === getSessionBootstrapKey(data.session);
+
+          await bootstrapAuthenticatedSession(data.session, {
+            runPostLoginSetup: shouldRunPostLoginSetup,
+          });
+
+          if (pendingSignInSession && !shouldRunPostLoginSetup) {
             setSession(pendingSignInSession);
             await bootstrapAuthenticatedSession(pendingSignInSession, { runPostLoginSetup: true });
           }
