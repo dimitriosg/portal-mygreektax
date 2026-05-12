@@ -137,17 +137,14 @@ export async function listAdminEmails(): Promise<string[]> {
     throw new Error(ACCESS_VERIFICATION_ERROR_MESSAGE);
   }
 
-  const emails = new Set<string>();
-
-  await Promise.all(
+  const resolvedEmails = await Promise.all(
     (data ?? []).map(async (row) => {
       const email = normalizeEmail(row.email);
       if (email) {
-        emails.add(email);
-        return;
+        return email;
       }
 
-      if (!row.user_id) return;
+      if (!row.user_id) return null;
 
       const { data: authUser, error: authUserError } = await supabaseAdmin.auth.admin.getUserById(
         row.user_id,
@@ -158,14 +155,14 @@ export async function listAdminEmails(): Promise<string[]> {
           userId: row.user_id,
           message: authUserError.message,
         });
-        return;
+        return null;
       }
 
-      const resolvedEmail = normalizeEmail(authUser.user?.email);
-      if (resolvedEmail) emails.add(resolvedEmail);
+      return normalizeEmail(authUser.user?.email);
     }),
   );
 
+  const emails = new Set(resolvedEmails.filter((email): email is string => !!email));
   return Array.from(emails);
 }
 
