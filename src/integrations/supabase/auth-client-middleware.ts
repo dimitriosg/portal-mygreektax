@@ -7,7 +7,11 @@ function getSupabaseProjectHost() {
 
   try {
     return new URL(supabaseUrl).host;
-  } catch {
+  } catch (error) {
+    console.error("[attachSupabaseAuth] invalid Supabase URL", {
+      hasSupabaseUrl: true,
+      error: error instanceof Error ? error.message : String(error),
+    });
     return null;
   }
 }

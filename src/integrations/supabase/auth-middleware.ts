@@ -9,7 +9,11 @@ function getSupabaseProjectHost(value: string | undefined) {
 
   try {
     return new URL(value).host;
-  } catch {
+  } catch (error) {
+    console.error("[requireSupabaseAuth] invalid Supabase URL", {
+      hasSupabaseUrl: true,
+      error: error instanceof Error ? error.message : String(error),
+    });
     return null;
   }
 }

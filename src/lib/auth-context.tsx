@@ -76,6 +76,10 @@ function isAuthAccessContext(value: unknown): value is AuthAccessContext {
   );
 }
 
+function getSessionBootstrapKey(session: Session) {
+  return `${session.user.id}:${session.access_token}`;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
@@ -93,6 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const bootstrapPromisesRef = useRef(new Map<string, Promise<void>>());
   const completedBootstrapKeyRef = useRef<string | null>(null);
   const initialSessionResolvedRef = useRef(false);
+  const pendingSignInSessionRef = useRef<Session | null>(null);
 
   const applyVerificationFailedState = useCallback(() => {
     setIsRealAdmin(false);
@@ -165,7 +170,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const bootstrapAuthenticatedSession = useCallback(
     async (nextSession: Session, { runPostLoginSetup }: { runPostLoginSetup: boolean }) => {
-      const sessionKey = `${nextSession.user.id}:${nextSession.access_token}`;
+      const sessionKey = getSessionBootstrapKey(nextSession);
       const inFlightBootstrap = bootstrapPromisesRef.current.get(sessionKey);
       if (inFlightBootstrap) {
         console.info("[auth] bootstrap:deduped", {
@@ -259,6 +264,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (event === "SIGNED_IN" && s) {
         if (!initialSessionResolvedRef.current) {
+          pendingSignInSessionRef.current = s;
           console.info("[auth] defer SIGNED_IN bootstrap until initial session resolves", {
             userId: s.user.id,
           });
@@ -273,6 +279,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else if (!s) {
         completedBootstrapKeyRef.current = null;
         bootstrapPromisesRef.current.clear();
+        pendingSignInSessionRef.current = null;
         resetAccessState();
         setLoading(false);
         setSessionReady(false);
@@ -291,9 +298,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .getSession()
       .then(async ({ data }) => {
         initialSessionResolvedRef.current = true;
+        const pendingSignInSession = pendingSignInSessionRef.current;
+        pendingSignInSessionRef.current = null;
         setSession(data.session);
         if (data.session) {
           await bootstrapAuthenticatedSession(data.session, { runPostLoginSetup: false });
+          if (
+            pendingSignInSession &&
+            getSessionBootstrapKey(pendingSignInSession) !== getSessionBootstrapKey(data.session)
+          ) {
+            setSession(pendingSignInSession);
+            await bootstrapAuthenticatedSession(pendingSignInSession, { runPostLoginSetup: true });
+          }
+          return;
+        }
+        if (pendingSignInSession) {
+          setSession(pendingSignInSession);
+          await bootstrapAuthenticatedSession(pendingSignInSession, { runPostLoginSetup: true });
           return;
         }
         setLoading(false);
@@ -302,6 +323,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .catch((error) => {
         console.error("[auth] getSession failed", error);
         initialSessionResolvedRef.current = true;
+        pendingSignInSessionRef.current = null;
         setSession(null);
         resetAccessState();
         setLoading(false);
@@ -319,6 +341,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     completedBootstrapKeyRef.current = null;
     bootstrapPromisesRef.current.clear();
+    pendingSignInSessionRef.current = null;
     setSessionReady(false);
     await supabase.auth.signOut();
   };
