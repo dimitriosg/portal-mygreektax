@@ -5,11 +5,50 @@ import { createClient } from "@supabase/supabase-js";
 import { describeSupabaseToken, getSupabaseProjectHost } from "./auth-diagnostics";
 import type { Database } from "./types";
 
+type AuthValidationSource =
+  | "publishable_get_user"
+  | "publishable_rest_user"
+  | "service_role_rest_user";
+
+type AuthValidationAttempt = {
+  source: AuthValidationSource;
+  ok: boolean;
+  status: number | null;
+  errorDetail: string | null;
+};
+
+type AuthenticatedUser = {
+  id: string;
+  email: string | null;
+};
+
 function logUnauthorized(reason: string, details: Record<string, unknown>) {
   console.error("[requireSupabaseAuth] unauthorized", {
     reason,
     ...details,
   });
+}
+
+function getSafeErrorDetail(error: unknown) {
+  if (error instanceof Error) return error.message.slice(0, 180);
+  if (typeof error === "string") return error.slice(0, 180);
+  return null;
+}
+
+function getAuthAttemptHeaderValue(attempts: AuthValidationAttempt[]) {
+  if (attempts.length === 0) return "none";
+  return attempts
+    .map((attempt) => {
+      const status = attempt.status == null ? "no_status" : String(attempt.status);
+      const detail = attempt.errorDetail
+        ? attempt.errorDetail
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "_")
+            .slice(0, 48)
+        : "none";
+      return `${attempt.source}:${status}:${detail}`;
+    })
+    .join(",");
 }
 
 function createUnauthorizedResponse(
@@ -21,6 +60,8 @@ function createUnauthorizedResponse(
     clientSessionPresent?: string | null;
     clientAccessTokenPresent?: string | null;
     tokenShape?: string | null;
+    authDetail?: string | null;
+    validationSource?: string | null;
   },
 ) {
   return new Response(message, {
@@ -33,6 +74,8 @@ function createUnauthorizedResponse(
       "x-mgt-client-session-present": input.clientSessionPresent ?? "unknown",
       "x-mgt-client-access-token-present": input.clientAccessTokenPresent ?? "unknown",
       "x-mgt-client-supabase-project-host": input.clientProjectHost ?? "unknown",
+      "x-mgt-auth-detail": input.authDetail ?? "unknown",
+      "x-mgt-auth-validation-source": input.validationSource ?? "unknown",
     },
   });
 }
@@ -54,22 +97,110 @@ function createAuthContext(input: {
   };
 }
 
+async function validateUserWithRest(input: {
+  source: Extract<AuthValidationSource, "publishable_rest_user" | "service_role_rest_user">;
+  supabaseUrl: string;
+  apiKey: string;
+  token: string;
+}): Promise<{ attempt: AuthValidationAttempt; user: AuthenticatedUser | null }> {
+  try {
+    const response = await fetch(new URL("/auth/v1/user", input.supabaseUrl), {
+      method: "GET",
+      headers: {
+        apikey: input.apiKey,
+        Authorization: `Bearer ${input.token}`,
+      },
+    });
+
+    let payload: unknown = null;
+    try {
+      payload = await response.clone().json();
+    } catch {
+      payload = await response.text();
+    }
+
+    const user =
+      payload && typeof payload === "object" && "id" in payload && typeof payload.id === "string"
+        ? {
+            id: payload.id,
+            email: "email" in payload && typeof payload.email === "string" ? payload.email : null,
+          }
+        : null;
+
+    if (response.ok && user?.id) {
+      return {
+        attempt: {
+          source: input.source,
+          ok: true,
+          status: response.status,
+          errorDetail: null,
+        },
+        user,
+      };
+    }
+
+    const payloadError =
+      payload && typeof payload === "object"
+        ? [
+            "code" in payload && typeof payload.code === "string" ? payload.code : null,
+            "error" in payload && typeof payload.error === "string" ? payload.error : null,
+            "msg" in payload && typeof payload.msg === "string" ? payload.msg : null,
+            "message" in payload && typeof payload.message === "string" ? payload.message : null,
+            "error_description" in payload && typeof payload.error_description === "string"
+              ? payload.error_description
+              : null,
+          ]
+            .filter(Boolean)
+            .join(": ")
+        : typeof payload === "string"
+          ? payload
+          : null;
+
+    return {
+      attempt: {
+        source: input.source,
+        ok: false,
+        status: response.status,
+        errorDetail: (payloadError || response.statusText || "rest_user_lookup_failed").slice(
+          0,
+          180,
+        ),
+      },
+      user: null,
+    };
+  } catch (error) {
+    return {
+      attempt: {
+        source: input.source,
+        ok: false,
+        status: null,
+        errorDetail: getSafeErrorDetail(error) ?? "rest_user_lookup_failed",
+      },
+      user: null,
+    };
+  }
+}
+
 export const requireSupabaseAuth = createMiddleware({ type: "function" }).server(
   async ({ next }) => {
     const SUPABASE_URL = process.env.SUPABASE_URL;
     const SUPABASE_PUBLISHABLE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY;
+    const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
     const projectHost = getSupabaseProjectHost(SUPABASE_URL);
 
     console.info("[requireSupabaseAuth] config", {
       hasSupabaseUrl: !!SUPABASE_URL,
       hasSupabasePublishableKey: !!SUPABASE_PUBLISHABLE_KEY,
+      hasSupabaseServiceRoleKey: !!SUPABASE_SERVICE_ROLE_KEY,
       projectHost,
     });
 
-    if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
+    if (!SUPABASE_URL || (!SUPABASE_PUBLISHABLE_KEY && !SUPABASE_SERVICE_ROLE_KEY)) {
       const missing = [
         ...(!SUPABASE_URL ? ["SUPABASE_URL"] : []),
-        ...(!SUPABASE_PUBLISHABLE_KEY ? ["SUPABASE_PUBLISHABLE_KEY"] : []),
+        ...(!SUPABASE_PUBLISHABLE_KEY && !SUPABASE_SERVICE_ROLE_KEY
+          ? ["SUPABASE_PUBLISHABLE_KEY or SUPABASE_SERVICE_ROLE_KEY"]
+          : []),
       ];
       const message = `Missing Supabase environment variable(s): ${missing.join(", ")}. Connect Supabase in Lovable Cloud.`;
       console.error(`[Supabase] ${message}`);
@@ -160,46 +291,112 @@ export const requireSupabaseAuth = createMiddleware({ type: "function" }).server
       );
     }
 
-    const supabase = createClient<Database>(SUPABASE_URL!, SUPABASE_PUBLISHABLE_KEY!, {
-      global: {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      },
-      auth: {
-        storage: undefined,
-        persistSession: false,
-        autoRefreshToken: false,
-      },
-    });
+    const supabase =
+      SUPABASE_PUBLISHABLE_KEY != null
+        ? createClient<Database>(SUPABASE_URL!, SUPABASE_PUBLISHABLE_KEY, {
+            global: {
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            },
+            auth: {
+              storage: undefined,
+              persistSession: false,
+              autoRefreshToken: false,
+            },
+          })
+        : createClient<Database>(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!, {
+            global: {
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            },
+            auth: {
+              storage: undefined,
+              persistSession: false,
+              autoRefreshToken: false,
+            },
+          });
 
-    let userData: { user?: { id?: string; email?: string | null } | null } = {};
-    let userErrorMessage: string | null = null;
+    const validationAttempts: AuthValidationAttempt[] = [];
+    let validatedUser: AuthenticatedUser | null = null;
+    let validationSource: AuthValidationSource | null = null;
 
-    try {
-      const { data, error } = await supabase.auth.getUser(token);
-      userData = data;
-      userErrorMessage = error?.message ?? null;
-    } catch (error) {
-      userErrorMessage = error instanceof Error ? error.message : String(error);
+    if (SUPABASE_PUBLISHABLE_KEY) {
+      try {
+        const { data, error } = await supabase.auth.getUser(token);
+        const user =
+          data.user?.id != null
+            ? {
+                id: data.user.id,
+                email: data.user.email ?? null,
+              }
+            : null;
+        const attempt: AuthValidationAttempt = {
+          source: "publishable_get_user",
+          ok: !!user && !error,
+          status: error?.status ?? null,
+          errorDetail: error?.message ?? (!user ? "missing_user_id" : null),
+        };
+        validationAttempts.push(attempt);
+        if (user && attempt.ok) {
+          validatedUser = user;
+          validationSource = attempt.source;
+        }
+      } catch (error) {
+        validationAttempts.push({
+          source: "publishable_get_user",
+          ok: false,
+          status: null,
+          errorDetail: getSafeErrorDetail(error) ?? "get_user_failed",
+        });
+      }
     }
 
-    if (!userData.user?.id) {
+    if (!validatedUser && SUPABASE_PUBLISHABLE_KEY) {
+      const restResult = await validateUserWithRest({
+        source: "publishable_rest_user",
+        supabaseUrl: SUPABASE_URL!,
+        apiKey: SUPABASE_PUBLISHABLE_KEY,
+        token,
+      });
+      validationAttempts.push(restResult.attempt);
+      if (restResult.user) {
+        validatedUser = restResult.user;
+        validationSource = restResult.attempt.source;
+      }
+    }
+
+    if (!validatedUser && SUPABASE_SERVICE_ROLE_KEY) {
+      const restResult = await validateUserWithRest({
+        source: "service_role_rest_user",
+        supabaseUrl: SUPABASE_URL!,
+        apiKey: SUPABASE_SERVICE_ROLE_KEY,
+        token,
+      });
+      validationAttempts.push(restResult.attempt);
+      if (restResult.user) {
+        validatedUser = restResult.user;
+        validationSource = restResult.attempt.source;
+      }
+    }
+
+    const authDetail = getAuthAttemptHeaderValue(validationAttempts);
+
+    if (!validatedUser?.id) {
       console.warn("[requireSupabaseAuth] auth diagnostic", {
         reason: "get_user_failed",
         ...authDiagnostics,
-        errorMessage: userErrorMessage,
-        hasUser: !!userData.user,
-        hasUserId: !!userData.user?.id,
+        authDetail,
+        validationAttempts,
       });
       logUnauthorized("token_validation_failed", {
         ...authDiagnostics,
-        getUserErrorMessage: userErrorMessage,
-        hasUser: !!userData.user,
-        hasUserId: !!userData.user?.id,
+        authDetail,
+        validationAttempts,
       });
       throw createUnauthorizedResponse(
-        `Unauthorized: Supabase user validation failed (get_user_failed)${projectHost ? ` for ${projectHost}` : ""}`,
+        `Unauthorized: Supabase user validation failed${projectHost ? ` for ${projectHost}` : ""} [${authDetail}]`,
         "token_validation_failed",
         {
           projectHost,
@@ -207,8 +404,19 @@ export const requireSupabaseAuth = createMiddleware({ type: "function" }).server
           clientSessionPresent,
           clientAccessTokenPresent,
           tokenShape: tokenDiagnostics.headerValue,
+          authDetail,
+          validationSource: validationSource ?? "none",
         },
       );
+    }
+
+    if (validationSource !== "publishable_get_user") {
+      console.warn("[requireSupabaseAuth] auth diagnostic", {
+        reason: "user_validation_fallback_succeeded",
+        ...authDiagnostics,
+        validationSource,
+        authDetail,
+      });
     }
 
     let claimsData: { claims?: Record<string, unknown> | null } | null = null;
@@ -241,20 +449,20 @@ export const requireSupabaseAuth = createMiddleware({ type: "function" }).server
       });
     }
 
-    if (claimsSub && claimsSub !== userData.user.id) {
+    if (claimsSub && claimsSub !== validatedUser.id) {
       console.warn("[requireSupabaseAuth] auth diagnostic", {
         reason: "claims_sub_mismatch",
         ...authDiagnostics,
         claimsSub,
-        userId: userData.user.id,
+        userId: validatedUser.id,
       });
     }
 
     return next({
       context: createAuthContext({
         supabase,
-        userId: userData.user.id,
-        email: userData.user.email ?? null,
+        userId: validatedUser.id,
+        email: validatedUser.email ?? null,
         claims: claimsData?.claims ?? null,
       }),
     });
