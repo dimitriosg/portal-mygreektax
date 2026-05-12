@@ -50,6 +50,29 @@ function isCatastrophicSsrErrorBody(body: string, responseStatus: number): boole
   );
 }
 
+function applyCloudflareEnvBindings(env: unknown) {
+  if (!env || typeof env !== "object") return;
+  if (typeof process === "undefined") return;
+
+  process.env ??= {};
+
+  const bindings = env as Record<string, unknown>;
+  const copiedKeys: string[] = [];
+
+  for (const [key, value] of Object.entries(bindings)) {
+    if (typeof value !== "string") continue;
+    if (process.env[key]) continue;
+    process.env[key] = value;
+    copiedKeys.push(key);
+  }
+
+  if (copiedKeys.length > 0) {
+    console.info("[server] copied Cloudflare env bindings into process.env", {
+      keys: copiedKeys,
+    });
+  }
+}
+
 // h3 swallows in-handler throws into a normal 500 Response with body
 // {"unhandled":true,"message":"HTTPError"} — try/catch alone never fires for those.
 async function normalizeCatastrophicSsrResponse(response: Response): Promise<Response> {
@@ -69,6 +92,7 @@ async function normalizeCatastrophicSsrResponse(response: Response): Promise<Res
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
+      applyCloudflareEnvBindings(env);
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
       return await normalizeCatastrophicSsrResponse(response);
