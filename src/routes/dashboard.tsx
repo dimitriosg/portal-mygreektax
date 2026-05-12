@@ -34,6 +34,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { GripVertical, ChevronDown } from "lucide-react";
 
+// Briefly keep the session-expired UI visible before routing back to sign-in.
 const AUTH_ERROR_REDIRECT_DELAY_MS = 1500;
 
 export const Route = createFileRoute("/dashboard")({
@@ -134,9 +135,15 @@ function Dashboard() {
     enabled: isDashboardQueryEnabled,
     throwOnError: false,
   });
-  const queryErrors = [error, accQ.error, orderQ.error];
-  const authError = queryErrors.find((err) => err != null && isAuthSessionError(err));
-  const queryError = queryErrors.find((err) => err != null && !isAuthSessionError(err));
+  const queryErrors = useMemo(() => [error, accQ.error, orderQ.error], [accQ.error, error, orderQ.error]);
+  const authError = useMemo(
+    () => queryErrors.find((err) => err != null && isAuthSessionError(err)),
+    [queryErrors],
+  );
+  const queryError = useMemo(
+    () => queryErrors.find((err) => err != null && !isAuthSessionError(err)),
+    [queryErrors],
+  );
   const isLoadingJobs =
     isAuthBootstrapping ||
     (isDashboardQueryEnabled && (isLoading || orderQ.isLoading || (!!isRealAdmin && accQ.isLoading)));
