@@ -10,6 +10,7 @@ import {
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { linkPartnerProfile, claimFirstAdmin, getMyContext } from "@/lib/auth.functions";
+import { getErrorMessage } from "@/lib/auth-errors";
 import { recordPartnerLogin } from "@/lib/activity.functions";
 import { track } from "@/lib/analytics";
 import { toast } from "sonner";
@@ -84,13 +85,14 @@ function getSessionBootstrapKey(session: Session) {
 }
 
 function getSafeVerificationErrorMessage(error: unknown) {
-  if (error instanceof Error) {
-    if (
-      error.message.startsWith("Unauthorized:") ||
-      error.message.startsWith("Missing Supabase environment variable")
-    ) {
-      return error.message;
-    }
+  const message = getErrorMessage(error);
+
+  if (
+    message.startsWith("Unauthorized:") ||
+    message.startsWith("Missing Supabase environment variable") ||
+    message === "Invalid Supabase session token. Please sign out and sign in again."
+  ) {
+    return message;
   }
 
   return ACCESS_VERIFICATION_ERROR_MESSAGE;
@@ -258,7 +260,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           });
         } catch (e) {
           console.error("[auth] bootstrap failed", e);
-          applyVerificationFailedState();
+          applyVerificationFailedState(getSafeVerificationErrorMessage(e));
           setSessionReady(true);
         } finally {
           bootstrapPromisesRef.current.delete(sessionKey);

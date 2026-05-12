@@ -2,21 +2,8 @@
 import { createMiddleware } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
 import { createClient } from "@supabase/supabase-js";
+import { describeSupabaseToken, getSupabaseProjectHost } from "./auth-diagnostics";
 import type { Database } from "./types";
-
-function getSupabaseProjectHost(value: string | undefined) {
-  if (!value) return null;
-
-  try {
-    return new URL(value).host;
-  } catch (error) {
-    console.error("[requireSupabaseAuth] invalid Supabase URL", {
-      hasSupabaseUrl: true,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return null;
-  }
-}
 
 function logUnauthorized(reason: string, details: Record<string, unknown>) {
   console.error("[requireSupabaseAuth] unauthorized", {
@@ -25,13 +12,27 @@ function logUnauthorized(reason: string, details: Record<string, unknown>) {
   });
 }
 
-function createUnauthorizedResponse(message: string, reason: string, projectHost: string | null) {
+function createUnauthorizedResponse(
+  message: string,
+  reason: string,
+  input: {
+    projectHost: string | null;
+    clientProjectHost?: string | null;
+    clientSessionPresent?: string | null;
+    clientAccessTokenPresent?: string | null;
+    tokenShape?: string | null;
+  },
+) {
   return new Response(message, {
     status: 401,
     headers: {
       "content-type": "text/plain; charset=utf-8",
       "x-mgt-auth-reason": reason,
-      "x-mgt-supabase-project-host": projectHost ?? "unknown",
+      "x-mgt-supabase-project-host": input.projectHost ?? "unknown",
+      "x-mgt-token-shape": input.tokenShape ?? "unknown",
+      "x-mgt-client-session-present": input.clientSessionPresent ?? "unknown",
+      "x-mgt-client-access-token-present": input.clientAccessTokenPresent ?? "unknown",
+      "x-mgt-client-supabase-project-host": input.clientProjectHost ?? "unknown",
     },
   });
 }
@@ -40,11 +41,13 @@ function createAuthContext(input: {
   supabase: ReturnType<typeof createClient<Database>>;
   userId: string;
   email?: string | null;
+  claims?: Record<string, unknown> | null;
 }) {
   return {
     supabase: input.supabase,
     userId: input.userId,
     claims: {
+      ...(input.claims ?? {}),
       sub: input.userId,
       email: input.email ?? null,
     },
@@ -74,13 +77,16 @@ export const requireSupabaseAuth = createMiddleware({ type: "function" }).server
     }
 
     const request = getRequest();
+    const clientProjectHost = request?.headers?.get("x-mgt-client-supabase-project-host");
+    const clientSessionPresent = request?.headers?.get("x-mgt-client-session-present");
+    const clientAccessTokenPresent = request?.headers?.get("x-mgt-client-access-token-present");
 
     if (!request?.headers) {
       logUnauthorized("no_request_headers", { projectHost });
       throw createUnauthorizedResponse(
         "Unauthorized: No request headers available",
         "no_request_headers",
-        projectHost,
+        { projectHost, clientProjectHost, clientSessionPresent, clientAccessTokenPresent },
       );
     }
 
@@ -91,7 +97,7 @@ export const requireSupabaseAuth = createMiddleware({ type: "function" }).server
       throw createUnauthorizedResponse(
         "Unauthorized: No authorization header provided",
         "no_authorization_header",
-        projectHost,
+        { projectHost, clientProjectHost, clientSessionPresent, clientAccessTokenPresent },
       );
     }
 
@@ -100,14 +106,58 @@ export const requireSupabaseAuth = createMiddleware({ type: "function" }).server
       throw createUnauthorizedResponse(
         "Unauthorized: Only Bearer tokens are supported",
         "authorization_not_bearer",
-        projectHost,
+        { projectHost, clientProjectHost, clientSessionPresent, clientAccessTokenPresent },
       );
     }
 
     const token = authHeader.replace("Bearer ", "");
+    const tokenDiagnostics = describeSupabaseToken(token);
+    const authDiagnostics = {
+      projectHost,
+      clientProjectHost,
+      clientSessionPresent,
+      clientAccessTokenPresent,
+      tokenExists: tokenDiagnostics.exists,
+      tokenLength: tokenDiagnostics.length,
+      tokenHasThreeSegments: tokenDiagnostics.hasThreeSegments,
+      tokenPrefixType: tokenDiagnostics.prefixType,
+      tokenShape: tokenDiagnostics.headerValue,
+    };
+
+    console.info("[requireSupabaseAuth] request auth diagnostics", authDiagnostics);
+
     if (!token) {
-      logUnauthorized("no_token", { projectHost });
-      throw createUnauthorizedResponse("Unauthorized: No token provided", "no_token", projectHost);
+      logUnauthorized("no_token", authDiagnostics);
+      throw createUnauthorizedResponse("Unauthorized: No token provided", "no_token", {
+        projectHost,
+        clientProjectHost,
+        clientSessionPresent,
+        clientAccessTokenPresent,
+        tokenShape: tokenDiagnostics.headerValue,
+      });
+    }
+
+    if (clientProjectHost && projectHost && clientProjectHost !== projectHost) {
+      console.warn("[requireSupabaseAuth] auth diagnostic", {
+        reason: "project_host_mismatch",
+        clientProjectHost,
+        projectHost,
+      });
+    }
+
+    if (!tokenDiagnostics.isLikelyJwt) {
+      logUnauthorized("invalid_token_shape", authDiagnostics);
+      throw createUnauthorizedResponse(
+        "Unauthorized: Invalid Supabase session token. Please sign out and sign in again.",
+        "invalid_token_shape",
+        {
+          projectHost,
+          clientProjectHost,
+          clientSessionPresent,
+          clientAccessTokenPresent,
+          tokenShape: tokenDiagnostics.headerValue,
+        },
+      );
     }
 
     const supabase = createClient<Database>(SUPABASE_URL!, SUPABASE_PUBLISHABLE_KEY!, {
@@ -123,48 +173,81 @@ export const requireSupabaseAuth = createMiddleware({ type: "function" }).server
       },
     });
 
-    const { data, error } = await supabase.auth.getClaims(token);
-    if (!error && data?.claims?.sub) {
-      return next({
-        context: createAuthContext({
-          supabase,
-          userId: data.claims.sub,
-          email: typeof data.claims.email === "string" ? data.claims.email : null,
-        }),
-      });
+    let userData: { user?: { id?: string; email?: string | null } | null } = {};
+    let userErrorMessage: string | null = null;
+
+    try {
+      const { data, error } = await supabase.auth.getUser(token);
+      userData = data;
+      userErrorMessage = error?.message ?? null;
+    } catch (error) {
+      userErrorMessage = error instanceof Error ? error.message : String(error);
     }
 
-    console.warn("[requireSupabaseAuth] auth diagnostic", {
-      reason: "get_claims_failed",
-      projectHost,
-      errorMessage: error?.message ?? null,
-      hasClaims: !!data?.claims,
-      hasSub: !!data?.claims?.sub,
-    });
-
-    const { data: userData, error: userError } = await supabase.auth.getUser(token);
-    if (userError || !userData.user?.id) {
+    if (!userData.user?.id) {
       console.warn("[requireSupabaseAuth] auth diagnostic", {
         reason: "get_user_failed",
-        projectHost,
-        errorMessage: userError?.message ?? null,
+        ...authDiagnostics,
+        errorMessage: userErrorMessage,
         hasUser: !!userData.user,
         hasUserId: !!userData.user?.id,
       });
       logUnauthorized("token_validation_failed", {
-        projectHost,
-        claimsErrorMessage: error?.message ?? null,
-        hasClaims: !!data?.claims,
-        hasClaimsSub: !!data?.claims?.sub,
-        getUserErrorMessage: userError?.message ?? null,
+        ...authDiagnostics,
+        getUserErrorMessage: userErrorMessage,
         hasUser: !!userData.user,
         hasUserId: !!userData.user?.id,
       });
       throw createUnauthorizedResponse(
-        `Unauthorized: Supabase token validation failed${projectHost ? ` for ${projectHost}` : ""}`,
+        `Unauthorized: Supabase user validation failed (get_user_failed)${projectHost ? ` for ${projectHost}` : ""}`,
         "token_validation_failed",
-        projectHost,
+        {
+          projectHost,
+          clientProjectHost,
+          clientSessionPresent,
+          clientAccessTokenPresent,
+          tokenShape: tokenDiagnostics.headerValue,
+        },
       );
+    }
+
+    let claimsData: { claims?: Record<string, unknown> | null } | null = null;
+    let claimsErrorMessage: string | null = null;
+
+    try {
+      const { data, error } = await supabase.auth.getClaims(token);
+      claimsData = data
+        ? {
+            claims:
+              data.claims && typeof data.claims === "object"
+                ? (data.claims as Record<string, unknown>)
+                : null,
+          }
+        : null;
+      claimsErrorMessage = error?.message ?? null;
+    } catch (error) {
+      claimsErrorMessage = error instanceof Error ? error.message : String(error);
+    }
+
+    const claimsSub = typeof claimsData?.claims?.sub === "string" ? claimsData.claims.sub : null;
+
+    if (!claimsSub) {
+      console.warn("[requireSupabaseAuth] auth diagnostic", {
+        reason: "get_claims_failed",
+        ...authDiagnostics,
+        errorMessage: claimsErrorMessage,
+        hasClaims: !!claimsData?.claims,
+        hasSub: !!claimsSub,
+      });
+    }
+
+    if (claimsSub && claimsSub !== userData.user.id) {
+      console.warn("[requireSupabaseAuth] auth diagnostic", {
+        reason: "claims_sub_mismatch",
+        ...authDiagnostics,
+        claimsSub,
+        userId: userData.user.id,
+      });
     }
 
     return next({
@@ -172,6 +255,7 @@ export const requireSupabaseAuth = createMiddleware({ type: "function" }).server
         supabase,
         userId: userData.user.id,
         email: userData.user.email ?? null,
+        claims: claimsData?.claims ?? null,
       }),
     });
   },
