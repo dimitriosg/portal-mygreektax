@@ -260,7 +260,10 @@ function AppShell() {
       navigate({ to: "/login", replace: true });
     }
   }, [navigate, overdueJobsQuery.error, pathname, sessionReady, user?.id]);
-  const overdueJobs = Array.isArray(overdueJobsQuery.data?.jobs) ? overdueJobsQuery.data.jobs : [];
+  const overdueJobs = useMemo(
+    () => (Array.isArray(overdueJobsQuery.data?.jobs) ? overdueJobsQuery.data.jobs : []),
+    [overdueJobsQuery.data?.jobs],
+  );
   const overdueJobsCount = useMemo(
     () =>
       overdueJobs.filter(
