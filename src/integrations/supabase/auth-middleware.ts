@@ -104,7 +104,8 @@ async function validateUserWithRest(input: {
   token: string;
 }): Promise<{ attempt: AuthValidationAttempt; user: AuthenticatedUser | null }> {
   try {
-    const response = await fetch(new URL("/auth/v1/user", input.supabaseUrl), {
+    const userUrl = new URL("/auth/v1/user", input.supabaseUrl);
+    const response = await fetch(userUrl, {
       method: "GET",
       headers: {
         apikey: input.apiKey,
@@ -112,11 +113,12 @@ async function validateUserWithRest(input: {
       },
     });
 
-    let payload: unknown = null;
+    const responseText = await response.text();
+    let payload: unknown = responseText || null;
     try {
-      payload = await response.clone().json();
+      payload = responseText ? JSON.parse(responseText) : null;
     } catch {
-      payload = await response.text();
+      payload = responseText || null;
     }
 
     const user =
@@ -136,6 +138,18 @@ async function validateUserWithRest(input: {
           errorDetail: null,
         },
         user,
+      };
+    }
+
+    if (response.ok && !user?.id) {
+      return {
+        attempt: {
+          source: input.source,
+          ok: false,
+          status: response.status,
+          errorDetail: "ok_without_user_id",
+        },
+        user: null,
       };
     }
 
@@ -199,7 +213,7 @@ export const requireSupabaseAuth = createMiddleware({ type: "function" }).server
       const missing = [
         ...(!SUPABASE_URL ? ["SUPABASE_URL"] : []),
         ...(!SUPABASE_PUBLISHABLE_KEY && !SUPABASE_SERVICE_ROLE_KEY
-          ? ["SUPABASE_PUBLISHABLE_KEY or SUPABASE_SERVICE_ROLE_KEY"]
+          ? ["at least one of SUPABASE_PUBLISHABLE_KEY or SUPABASE_SERVICE_ROLE_KEY"]
           : []),
       ];
       const message = `Missing Supabase environment variable(s): ${missing.join(", ")}. Connect Supabase in Lovable Cloud.`;
@@ -291,32 +305,24 @@ export const requireSupabaseAuth = createMiddleware({ type: "function" }).server
       );
     }
 
-    const supabase =
-      SUPABASE_PUBLISHABLE_KEY != null
-        ? createClient<Database>(SUPABASE_URL!, SUPABASE_PUBLISHABLE_KEY, {
-            global: {
-              headers: {
-                Authorization: `Bearer ${token}`,
-              },
-            },
-            auth: {
-              storage: undefined,
-              persistSession: false,
-              autoRefreshToken: false,
-            },
-          })
-        : createClient<Database>(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!, {
-            global: {
-              headers: {
-                Authorization: `Bearer ${token}`,
-              },
-            },
-            auth: {
-              storage: undefined,
-              persistSession: false,
-              autoRefreshToken: false,
-            },
-          });
+    const authClientOptions = {
+      global: {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      },
+      auth: {
+        storage: undefined,
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    } as const;
+
+    const supabase = createClient<Database>(
+      SUPABASE_URL!,
+      SUPABASE_PUBLISHABLE_KEY ?? SUPABASE_SERVICE_ROLE_KEY!,
+      authClientOptions,
+    );
 
     const validationAttempts: AuthValidationAttempt[] = [];
     let validatedUser: AuthenticatedUser | null = null;
@@ -336,7 +342,7 @@ export const requireSupabaseAuth = createMiddleware({ type: "function" }).server
           source: "publishable_get_user",
           ok: !!user && !error,
           status: error?.status ?? null,
-          errorDetail: error?.message ?? (!user ? "missing_user_id" : null),
+          errorDetail: error?.message ?? (!user ? "user_without_id" : null),
         };
         validationAttempts.push(attempt);
         if (user && attempt.ok) {
@@ -412,7 +418,10 @@ export const requireSupabaseAuth = createMiddleware({ type: "function" }).server
 
     if (validationSource !== "publishable_get_user") {
       console.warn("[requireSupabaseAuth] auth diagnostic", {
-        reason: "user_validation_fallback_succeeded",
+        reason:
+          validationSource === "service_role_rest_user"
+            ? "service_role_fallback_succeeded"
+            : "publishable_rest_fallback_succeeded",
         ...authDiagnostics,
         validationSource,
         authDetail,
