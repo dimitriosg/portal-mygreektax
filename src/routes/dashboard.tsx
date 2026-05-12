@@ -126,7 +126,10 @@ function Dashboard() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    setShowAuthDebugPanel(import.meta.env.DEV || window.location.host.endsWith("workers.dev"));
+    const host = window.location.host;
+    const isPreviewWorkerHost =
+      host.endsWith(".workers.dev") && host.includes("-portal-mygreektax.");
+    setShowAuthDebugPanel(import.meta.env.DEV || isPreviewWorkerHost);
   }, []);
 
   const fetchJobs = useServerFn(listJobs);
