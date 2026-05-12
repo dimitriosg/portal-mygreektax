@@ -37,6 +37,44 @@ function getSafeErrorDetail(error: unknown) {
   return null;
 }
 
+function decodeJwtPayload(token: string): Record<string, unknown> | null {
+  try {
+    const payloadPart = token.split(".")[1];
+    if (!payloadPart) return null;
+    const padded = payloadPart.replace(/-/g, "+").replace(/_/g, "/").padEnd(
+      Math.ceil(payloadPart.length / 4) * 4,
+      "=",
+    );
+    return JSON.parse(atob(padded)) as Record<string, unknown>;
+  } catch (error) {
+    console.warn("[requireSupabaseAuth] could not decode JWT payload", {
+      error: getSafeErrorDetail(error),
+    });
+    return null;
+  }
+}
+
+function getSupabaseUrlFromJwt(token: string) {
+  const payload = decodeJwtPayload(token);
+  const issuer = typeof payload?.iss === "string" ? payload.iss : null;
+  if (!issuer) return null;
+  if (!issuer.endsWith("/auth/v1")) return null;
+  return issuer.slice(0, -"/auth/v1".length);
+}
+
+function getSupabaseUrlFromClientHost(clientProjectHost: string | null | undefined) {
+  if (!clientProjectHost) return null;
+  if (!/^[a-z0-9.-]+\.supabase\.co$/.test(clientProjectHost)) return null;
+  return `https://${clientProjectHost}`;
+}
+
+function ensureProcessSupabaseUrl(url: string | null) {
+  if (!url || typeof process === "undefined") return;
+  process.env ??= {};
+  if (!process.env.SUPABASE_URL) process.env.SUPABASE_URL = url;
+  if (!process.env.VITE_SUPABASE_URL) process.env.VITE_SUPABASE_URL = url;
+}
+
 function getAuthAttemptHeaderValue(attempts: AuthValidationAttempt[]) {
   if (attempts.length === 0) return "none";
   return attempts
@@ -78,6 +116,32 @@ function createUnauthorizedResponse(
       "x-mgt-client-supabase-project-host": input.clientProjectHost ?? "unknown",
       "x-mgt-auth-detail": input.authDetail ?? "unknown",
       "x-mgt-auth-validation-source": input.validationSource ?? "unknown",
+    },
+  });
+}
+
+function createMissingEnvResponse(input: {
+  missing: string[];
+  projectHost: string | null;
+  tokenShape?: string | null;
+  clientProjectHost?: string | null;
+  clientSessionPresent?: string | null;
+  clientAccessTokenPresent?: string | null;
+  supabaseUrlSource: string;
+}) {
+  const message = `Missing Supabase environment variable(s): ${input.missing.join(", ")}. Configure Cloudflare Worker variables.`;
+  return new Response(message, {
+    status: 500,
+    headers: {
+      "content-type": "text/plain; charset=utf-8",
+      "x-mgt-auth-reason": "missing_supabase_env",
+      "x-mgt-missing-env": input.missing.join(","),
+      "x-mgt-supabase-project-host": input.projectHost ?? "unknown",
+      "x-mgt-supabase-url-source": input.supabaseUrlSource,
+      "x-mgt-token-shape": input.tokenShape ?? "unknown",
+      "x-mgt-client-session-present": input.clientSessionPresent ?? "unknown",
+      "x-mgt-client-access-token-present": input.clientAccessTokenPresent ?? "unknown",
+      "x-mgt-client-supabase-project-host": input.clientProjectHost ?? "unknown",
     },
   });
 }
@@ -199,7 +263,57 @@ async function validateUserWithRest(input: {
 
 export const requireSupabaseAuth = createMiddleware({ type: "function" }).server(
   async ({ next }) => {
-    const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+    const request = getRequest();
+    const clientProjectHost = request?.headers?.get("x-mgt-client-supabase-project-host");
+    const clientSessionPresent = request?.headers?.get("x-mgt-client-session-present");
+    const clientAccessTokenPresent = request?.headers?.get("x-mgt-client-access-token-present");
+
+    if (!request?.headers) {
+      logUnauthorized("no_request_headers", { projectHost: null });
+      throw createUnauthorizedResponse(
+        "Unauthorized: No request headers available",
+        "no_request_headers",
+        { projectHost: null, clientProjectHost, clientSessionPresent, clientAccessTokenPresent },
+      );
+    }
+
+    const authHeader = request.headers.get("authorization");
+
+    if (!authHeader) {
+      logUnauthorized("no_authorization_header", { projectHost: null });
+      throw createUnauthorizedResponse(
+        "Unauthorized: No authorization header provided",
+        "no_authorization_header",
+        { projectHost: null, clientProjectHost, clientSessionPresent, clientAccessTokenPresent },
+      );
+    }
+
+    if (!authHeader.startsWith("Bearer ")) {
+      logUnauthorized("authorization_not_bearer", { projectHost: null });
+      throw createUnauthorizedResponse(
+        "Unauthorized: Only Bearer tokens are supported",
+        "authorization_not_bearer",
+        { projectHost: null, clientProjectHost, clientSessionPresent, clientAccessTokenPresent },
+      );
+    }
+
+    const token = authHeader.replace("Bearer ", "");
+    const tokenDiagnostics = describeSupabaseToken(token);
+    const derivedUrlFromJwt = tokenDiagnostics.isLikelyJwt ? getSupabaseUrlFromJwt(token) : null;
+    const derivedUrlFromClientHost = getSupabaseUrlFromClientHost(clientProjectHost);
+    const envSupabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+    const supabaseUrlSource = process.env.SUPABASE_URL
+      ? "SUPABASE_URL"
+      : process.env.VITE_SUPABASE_URL
+        ? "VITE_SUPABASE_URL"
+        : derivedUrlFromJwt
+          ? "jwt_issuer"
+          : derivedUrlFromClientHost
+            ? "client_project_host"
+            : "missing";
+    const SUPABASE_URL = envSupabaseUrl || derivedUrlFromJwt || derivedUrlFromClientHost;
+    ensureProcessSupabaseUrl(SUPABASE_URL);
+
     const SUPABASE_PUBLISHABLE_KEY =
       process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
     const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -207,6 +321,7 @@ export const requireSupabaseAuth = createMiddleware({ type: "function" }).server
 
     console.info("[requireSupabaseAuth] config", {
       hasSupabaseUrl: !!SUPABASE_URL,
+      supabaseUrlSource,
       hasSupabasePublishableKey: !!SUPABASE_PUBLISHABLE_KEY,
       hasSupabaseServiceRoleKey: !!SUPABASE_SERVICE_ROLE_KEY,
       authApiKeyMode: SUPABASE_PUBLISHABLE_KEY
@@ -224,47 +339,22 @@ export const requireSupabaseAuth = createMiddleware({ type: "function" }).server
           ? ["SUPABASE_PUBLISHABLE_KEY or SUPABASE_SERVICE_ROLE_KEY"]
           : []),
       ];
-      const message = `Missing Supabase environment variable(s): ${missing.join(", ")}. Connect Supabase in Lovable Cloud.`;
-      console.error(`[Supabase] ${message}`);
-      throw new Response(message, { status: 500 });
+      console.error("[Supabase] missing environment variable(s)", {
+        missing,
+        supabaseUrlSource,
+        projectHost,
+      });
+      throw createMissingEnvResponse({
+        missing,
+        projectHost,
+        tokenShape: tokenDiagnostics.headerValue,
+        clientProjectHost,
+        clientSessionPresent,
+        clientAccessTokenPresent,
+        supabaseUrlSource,
+      });
     }
 
-    const request = getRequest();
-    const clientProjectHost = request?.headers?.get("x-mgt-client-supabase-project-host");
-    const clientSessionPresent = request?.headers?.get("x-mgt-client-session-present");
-    const clientAccessTokenPresent = request?.headers?.get("x-mgt-client-access-token-present");
-
-    if (!request?.headers) {
-      logUnauthorized("no_request_headers", { projectHost });
-      throw createUnauthorizedResponse(
-        "Unauthorized: No request headers available",
-        "no_request_headers",
-        { projectHost, clientProjectHost, clientSessionPresent, clientAccessTokenPresent },
-      );
-    }
-
-    const authHeader = request.headers.get("authorization");
-
-    if (!authHeader) {
-      logUnauthorized("no_authorization_header", { projectHost });
-      throw createUnauthorizedResponse(
-        "Unauthorized: No authorization header provided",
-        "no_authorization_header",
-        { projectHost, clientProjectHost, clientSessionPresent, clientAccessTokenPresent },
-      );
-    }
-
-    if (!authHeader.startsWith("Bearer ")) {
-      logUnauthorized("authorization_not_bearer", { projectHost });
-      throw createUnauthorizedResponse(
-        "Unauthorized: Only Bearer tokens are supported",
-        "authorization_not_bearer",
-        { projectHost, clientProjectHost, clientSessionPresent, clientAccessTokenPresent },
-      );
-    }
-
-    const token = authHeader.replace("Bearer ", "");
-    const tokenDiagnostics = describeSupabaseToken(token);
     const authDiagnostics = {
       projectHost,
       clientProjectHost,
@@ -275,6 +365,7 @@ export const requireSupabaseAuth = createMiddleware({ type: "function" }).server
       tokenHasThreeSegments: tokenDiagnostics.hasThreeSegments,
       tokenPrefixType: tokenDiagnostics.prefixType,
       tokenShape: tokenDiagnostics.headerValue,
+      supabaseUrlSource,
     };
 
     console.info("[requireSupabaseAuth] request auth diagnostics", authDiagnostics);
@@ -327,7 +418,7 @@ export const requireSupabaseAuth = createMiddleware({ type: "function" }).server
     } as const;
 
     const authApiKey = SUPABASE_PUBLISHABLE_KEY ?? SUPABASE_SERVICE_ROLE_KEY;
-    const supabase = createClient<Database>(SUPABASE_URL!, authApiKey!, authClientOptions);
+    const supabase = createClient<Database>(SUPABASE_URL, authApiKey!, authClientOptions);
 
     const validationAttempts: AuthValidationAttempt[] = [];
     let validatedUser: AuthenticatedUser | null = null;
@@ -367,7 +458,7 @@ export const requireSupabaseAuth = createMiddleware({ type: "function" }).server
     if (!validatedUser && SUPABASE_PUBLISHABLE_KEY) {
       const restResult = await validateUserWithRest({
         source: "publishable_rest_user",
-        supabaseUrl: SUPABASE_URL!,
+        supabaseUrl: SUPABASE_URL,
         apiKey: SUPABASE_PUBLISHABLE_KEY,
         token,
       });
@@ -381,7 +472,7 @@ export const requireSupabaseAuth = createMiddleware({ type: "function" }).server
     if (!validatedUser && SUPABASE_SERVICE_ROLE_KEY) {
       const restResult = await validateUserWithRest({
         source: "service_role_rest_user",
-        supabaseUrl: SUPABASE_URL!,
+        supabaseUrl: SUPABASE_URL,
         apiKey: SUPABASE_SERVICE_ROLE_KEY,
         token,
       });
