@@ -36,6 +36,21 @@ function createUnauthorizedResponse(message: string, reason: string, projectHost
   });
 }
 
+function createAuthContext(input: {
+  supabase: ReturnType<typeof createClient<Database>>;
+  userId: string;
+  email?: string | null;
+}) {
+  return {
+    supabase: input.supabase,
+    userId: input.userId,
+    claims: {
+      sub: input.userId,
+      email: input.email ?? null,
+    },
+  };
+}
+
 export const requireSupabaseAuth = createMiddleware({ type: "function" }).server(
   async ({ next }) => {
     const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -109,34 +124,55 @@ export const requireSupabaseAuth = createMiddleware({ type: "function" }).server
     });
 
     const { data, error } = await supabase.auth.getClaims(token);
-    if (error || !data?.claims) {
-      logUnauthorized("get_claims_failed", {
-        projectHost,
-        errorMessage: error?.message ?? null,
-        hasClaims: !!data?.claims,
+    if (!error && data?.claims?.sub) {
+      return next({
+        context: createAuthContext({
+          supabase,
+          userId: data.claims.sub,
+          email: typeof data.claims.email === "string" ? data.claims.email : null,
+        }),
       });
-      throw createUnauthorizedResponse(
-        `Unauthorized: Supabase token claims validation failed${projectHost ? ` for ${projectHost}` : ""}`,
-        "get_claims_failed",
-        projectHost,
-      );
     }
 
-    if (!data.claims.sub) {
-      logUnauthorized("claims_missing_sub", { projectHost });
+    console.warn("[requireSupabaseAuth] auth diagnostic", {
+      reason: "get_claims_failed",
+      projectHost,
+      errorMessage: error?.message ?? null,
+      hasClaims: !!data?.claims,
+      hasSub: !!data?.claims?.sub,
+    });
+
+    const { data: userData, error: userError } = await supabase.auth.getUser(token);
+    if (userError || !userData.user?.id) {
+      console.warn("[requireSupabaseAuth] auth diagnostic", {
+        reason: "get_user_failed",
+        projectHost,
+        errorMessage: userError?.message ?? null,
+        hasUser: !!userData.user,
+        hasUserId: !!userData.user?.id,
+      });
+      logUnauthorized("token_validation_failed", {
+        projectHost,
+        claimsErrorMessage: error?.message ?? null,
+        hasClaims: !!data?.claims,
+        hasClaimsSub: !!data?.claims?.sub,
+        getUserErrorMessage: userError?.message ?? null,
+        hasUser: !!userData.user,
+        hasUserId: !!userData.user?.id,
+      });
       throw createUnauthorizedResponse(
-        "Unauthorized: Supabase token claims are missing sub",
-        "claims_missing_sub",
+        `Unauthorized: Supabase token validation failed${projectHost ? ` for ${projectHost}` : ""}`,
+        "token_validation_failed",
         projectHost,
       );
     }
 
     return next({
-      context: {
+      context: createAuthContext({
         supabase,
-        userId: data.claims.sub,
-        claims: data.claims,
-      },
+        userId: userData.user.id,
+        email: userData.user.email ?? null,
+      }),
     });
   },
 );
