@@ -7,10 +7,15 @@ import { track } from "@/lib/analytics";
 import { toast } from "sonner";
 
 type AccessType = "admin" | "partner" | "unauthorized";
+type AccessStatus = "resolved" | "unauthorized" | "verification_failed";
+const ACCESS_VERIFICATION_ERROR_MESSAGE =
+  "Could not verify portal access. Please contact the administrator.";
 type AuthAccessContext = {
   isAdmin: boolean;
   isPartner: boolean;
   accessType: AccessType;
+  accessStatus: AccessStatus;
+  accessError: string | null;
 };
 
 type Ctx = {
@@ -25,6 +30,8 @@ type Ctx = {
   isRealAdmin: boolean;
   isPartner: boolean;
   accessType: AccessType | null;
+  accessStatus: AccessStatus | "idle";
+  accessError: string | null;
   impersonatingId: string | null;
   impersonatingName: string | null;
   startImpersonation: (id: string, name: string) => void;
@@ -50,6 +57,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isRealAdmin, setIsRealAdmin] = useState(false);
   const [isPartner, setIsPartner] = useState(false);
   const [accessType, setAccessType] = useState<AccessType | null>(null);
+  const [accessStatus, setAccessStatus] = useState<AccessStatus | "idle">("idle");
+  const [accessError, setAccessError] = useState<string | null>(null);
   const [impersonatingId, setImpersonatingId] = useState<string | null>(null);
   const [impersonatingName, setImpersonatingName] = useState<string | null>(null);
 
@@ -65,8 +74,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsRealAdmin(ctx.isAdmin);
       setIsPartner(ctx.isPartner);
       setAccessType(ctx.accessType);
+      setAccessStatus(ctx.accessStatus);
+      setAccessError(ctx.accessError);
       try {
-        if (typeof window !== "undefined") {
+        if (ctx.accessStatus !== "verification_failed" && typeof window !== "undefined") {
           const flag = "mgt:loginTracked";
           if (!sessionStorage.getItem(flag)) {
             sessionStorage.setItem(flag, "1");
@@ -91,7 +102,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       setIsRealAdmin(false);
       setIsPartner(false);
-      setAccessType(null);
+      setAccessType("unauthorized");
+      setAccessStatus("verification_failed");
+      setAccessError(ACCESS_VERIFICATION_ERROR_MESSAGE);
     }
   }, []);
 
@@ -104,6 +117,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
       try {
+        setAccessStatus("idle");
+        setAccessError(null);
         let token: string | null | undefined = nextSession.access_token;
 
         for (let attempt = 0; !token && attempt < MAX_TOKEN_POLL_ATTEMPTS; attempt += 1) {
@@ -130,6 +145,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.error("[auth] bootstrap failed", e);
         setIsRealAdmin(false);
         setIsPartner(false);
+        setAccessType("unauthorized");
+        setAccessStatus("verification_failed");
+        setAccessError(ACCESS_VERIFICATION_ERROR_MESSAGE);
+        setSessionReady(true);
       } finally {
         setLoading(false);
       }
@@ -155,6 +174,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setIsRealAdmin(false);
         setIsPartner(false);
         setAccessType(null);
+        setAccessStatus("idle");
+        setAccessError(null);
         setLoading(false);
         setSessionReady(false);
         if (typeof window !== "undefined") {
@@ -185,6 +206,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setIsRealAdmin(false);
         setIsPartner(false);
         setAccessType(null);
+        setAccessStatus("idle");
+        setAccessError(null);
         setLoading(false);
         setSessionReady(false);
       });
@@ -230,6 +253,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isRealAdmin,
         isPartner,
         accessType,
+        accessStatus,
+        accessError,
         impersonatingId,
         impersonatingName,
         startImpersonation,

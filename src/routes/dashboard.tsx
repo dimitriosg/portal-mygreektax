@@ -81,6 +81,8 @@ function Dashboard() {
     loading,
     sessionReady,
     accessType,
+    accessStatus,
+    accessError,
     isAdmin,
     isRealAdmin,
     isPartner,
@@ -114,7 +116,8 @@ function Dashboard() {
   const scopeKey = asPartner ? `partner:${asPartner}` : isAdmin ? "admin" : "self";
   const isAuthBootstrapping = loading || (!!user && !sessionReady);
   const isDashboardQueryEnabled = !loading && !!user && sessionReady;
-  const hasPortalAccess = accessType === "admin" || accessType === "partner";
+  const hasPortalAccess =
+    accessStatus === "resolved" && (accessType === "admin" || accessType === "partner");
   const shouldFetchJobs = isDashboardQueryEnabled && hasPortalAccess;
   const shouldFetchOrder = shouldFetchJobs;
   const shouldFetchAccountants = isDashboardQueryEnabled && !!isRealAdmin;
@@ -140,7 +143,10 @@ function Dashboard() {
     enabled: shouldFetchOrder,
     throwOnError: false,
   });
-  const queryErrors = useMemo(() => [error, accQ.error, orderQ.error], [accQ.error, error, orderQ.error]);
+  const queryErrors = useMemo(
+    () => [error, accQ.error, orderQ.error],
+    [accQ.error, error, orderQ.error],
+  );
   const authError = useMemo(
     () => queryErrors.find((err) => err != null && isAuthSessionError(err)),
     [queryErrors],
@@ -162,9 +168,22 @@ function Dashboard() {
       isRealAdmin,
       isPartner,
       accessType,
+      accessStatus,
+      accessError,
       impersonatingId,
     });
-  }, [accessType, impersonatingId, isAdmin, isPartner, isRealAdmin, loading, sessionReady, user?.id]);
+  }, [
+    accessError,
+    accessStatus,
+    accessType,
+    impersonatingId,
+    isAdmin,
+    isPartner,
+    isRealAdmin,
+    loading,
+    sessionReady,
+    user?.id,
+  ]);
 
   useEffect(() => {
     if (!authError) {
@@ -199,8 +218,10 @@ function Dashboard() {
 
     console.error("[dashboard] query error", {
       jobs: error && !isAuthSessionError(error) ? getErrorMessage(error) : null,
-      accountants: accQ.error && !isAuthSessionError(accQ.error) ? getErrorMessage(accQ.error) : null,
-      order: orderQ.error && !isAuthSessionError(orderQ.error) ? getErrorMessage(orderQ.error) : null,
+      accountants:
+        accQ.error && !isAuthSessionError(accQ.error) ? getErrorMessage(accQ.error) : null,
+      order:
+        orderQ.error && !isAuthSessionError(orderQ.error) ? getErrorMessage(orderQ.error) : null,
       pathname,
       userId: user?.id ?? null,
       sessionReady,
@@ -326,7 +347,9 @@ function Dashboard() {
               <p className="text-sm text-muted-foreground">
                 Your session expired. Please sign in again.
               </p>
-              <Button onClick={() => navigate({ to: "/login", replace: true })}>Go to sign in</Button>
+              <Button onClick={() => navigate({ to: "/login", replace: true })}>
+                Go to sign in
+              </Button>
             </div>
           </CardContent>
         </Card>
@@ -378,9 +401,11 @@ function Dashboard() {
                 ? `Impersonating partner: ${impersonatingName ?? impersonatingId}`
                 : isPartner
                   ? "Showing jobs assigned to you"
-                  : accessType === "unauthorized"
-                    ? "Your account is not linked to an admin or accountant profile yet"
-                    : "Checking your portal access"}
+                  : accessStatus === "verification_failed"
+                    ? "Could not verify your portal access"
+                    : accessType === "unauthorized"
+                      ? "Your account is not linked to an admin or accountant profile yet"
+                      : "Checking your portal access"}
           </p>
         </div>
         {hasPortalAccess && (
@@ -494,11 +519,25 @@ function Dashboard() {
           ))}
         </div>
       )}
-      {!isLoadingJobs && accessType === "unauthorized" && (
+      {!isLoadingJobs && accessStatus === "verification_failed" && (
+        <Card className="mt-8 border-destructive/40">
+          <CardContent className="py-6 text-sm text-muted-foreground">
+            <p>
+              {accessError ?? "Could not verify portal access. Please contact the administrator."}
+            </p>
+          </CardContent>
+        </Card>
+      )}
+      {!isLoadingJobs && accessStatus === "unauthorized" && (
         <Card className="mt-8">
           <CardContent className="py-6 text-sm text-muted-foreground">
-            <p>Your Supabase account exists, but it is not linked to an admin or accountant profile yet.</p>
-            <p className="mt-2">Please contact the My Greek Tax administrator to enable your portal access.</p>
+            <p>
+              Your Supabase account exists, but it is not linked to an admin or accountant profile
+              yet.
+            </p>
+            <p className="mt-2">
+              Please contact the My Greek Tax administrator to enable your portal access.
+            </p>
           </CardContent>
         </Card>
       )}

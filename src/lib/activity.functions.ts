@@ -16,6 +16,9 @@ export const recordPartnerLogin = createServerFn({ method: "POST" })
     const email = (claims.email as string | undefined) ?? null;
 
     const access = await resolveUserAccess({ userId, email });
+    if (access.accessStatus === "verification_failed") {
+      return { ok: false, disabled: false, verificationFailed: true } as const;
+    }
     const { partner } = access;
 
     if (access.isPartner && !access.isAdmin && partner?.disabled_at) {
