@@ -121,7 +121,7 @@ export async function resolveUserAccess(input: {
 }): Promise<UserAccessContext> {
   const email = normalizeEmail(input.email);
 
-  const [{ data: roles, error: rolesError }, { data: partner, error: partnerError }] =
+  const [{ data: roleRows, error: rolesError }, { data: partner, error: partnerError }] =
     await Promise.all([
       supabaseAdmin.from("user_roles").select("role").eq("user_id", input.userId),
       supabaseAdmin.from("partner_profiles").select("*").eq("user_id", input.userId).maybeSingle(),
@@ -151,12 +151,12 @@ export async function resolveUserAccess(input: {
     return createVerificationFailureContext({
       userId: input.userId,
       email,
-      isPartner: false,
+      isPartner: !!partner,
       partner: partner ?? null,
     });
   }
 
-  const roleSet = new Set<UserRole>((roles ?? []).map((row) => row.role));
+  const roleSet = new Set<UserRole>((roleRows ?? []).map((row) => row.role));
   const isAdmin = roleSet.has("admin");
   const isPartner = roleSet.has("partner") || !!partner;
 
