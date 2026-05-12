@@ -101,9 +101,19 @@ export const getMyContext = createServerFn({ method: "GET" })
 export const claimFirstAdmin = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .handler(async ({ context }) => {
-    console.info("[auth] claimFirstAdmin skipped", {
-      userId: context.userId,
-      reason: "Admins table is the source of truth",
-    });
-    return { promoted: false, skipped: true };
+    const { count } = await supabaseAdmin
+      .from("user_roles")
+      .select("*", { count: "exact", head: true })
+      .eq("role", "admin");
+    if ((count ?? 0) > 0) return { promoted: false };
+
+    const { error } = await supabaseAdmin
+      .from("user_roles")
+      .insert({ user_id: context.userId, role: "admin" });
+    if (error && !error.message.includes("duplicate")) {
+      console.error("[claimFirstAdmin] DB error:", error);
+      throw new Error("Could not complete setup. Please try again.");
+    }
+
+    return { promoted: true };
   });

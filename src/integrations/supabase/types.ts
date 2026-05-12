@@ -8,21 +8,6 @@ export type Database = {
   };
   public: {
     Tables: {
-      Admins: {
-        Row: {
-          email: string | null;
-          user_id: string | null;
-        };
-        Insert: {
-          email?: string | null;
-          user_id?: string | null;
-        };
-        Update: {
-          email?: string | null;
-          user_id?: string | null;
-        };
-        Relationships: [];
-      };
       activity_events: {
         Row: {
           actor_email: string | null;

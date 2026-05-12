@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
-import { linkPartnerProfile, getMyContext } from "@/lib/auth.functions";
+import { linkPartnerProfile, claimFirstAdmin, getMyContext } from "@/lib/auth.functions";
 import { recordPartnerLogin } from "@/lib/activity.functions";
 import { track } from "@/lib/analytics";
 import { toast } from "sonner";
@@ -133,6 +133,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         if (runPostLoginSetup) {
+          await claimFirstAdmin();
           await linkPartnerProfile();
         }
 

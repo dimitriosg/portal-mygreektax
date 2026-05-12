@@ -5,8 +5,7 @@ export type AccessType = "admin" | "partner" | "unauthorized";
 export type AccessStatus = "resolved" | "unauthorized" | "verification_failed";
 
 type PartnerProfile = Database["public"]["Tables"]["partner_profiles"]["Row"];
-type AdminRow = Database["public"]["Tables"]["Admins"]["Row"];
-type AdminSummary = Pick<AdminRow, "user_id" | "email">;
+type UserRole = Database["public"]["Tables"]["user_roles"]["Row"]["role"];
 
 export const ACCESS_VERIFICATION_ERROR_MESSAGE =
   "Could not verify portal access. Please contact the administrator.";
@@ -19,7 +18,6 @@ export type UserAccessContext = {
   accessType: AccessType;
   accessStatus: AccessStatus;
   accessError: string | null;
-  admin: AdminSummary | null;
   partner: PartnerProfile | null;
 };
 
@@ -30,20 +28,23 @@ function normalizeEmail(email: string | null | undefined): string | null {
 function createAccessContext(input: {
   userId: string;
   email: string | null;
-  admin: AdminSummary | null;
+  isAdmin: boolean;
+  isPartner: boolean;
   partner: PartnerProfile | null;
   accessStatus: AccessStatus;
   accessError?: string | null;
 }): UserAccessContext {
-  const isAdmin = !!input.admin;
-  const isPartner = !!input.partner;
-  const accessType: AccessType = isAdmin ? "admin" : isPartner ? "partner" : "unauthorized";
+  const accessType: AccessType = input.isAdmin
+    ? "admin"
+    : input.isPartner
+      ? "partner"
+      : "unauthorized";
 
   console.info("[auth] context resolved", {
     userId: input.userId,
     email: input.email,
-    isAdmin,
-    isPartner,
+    isAdmin: input.isAdmin,
+    isPartner: input.isPartner,
     accessType,
     accessStatus: input.accessStatus,
     accessError: input.accessError ?? null,
@@ -52,12 +53,11 @@ function createAccessContext(input: {
   return {
     userId: input.userId,
     email: input.email,
-    isAdmin,
-    isPartner,
+    isAdmin: input.isAdmin,
+    isPartner: input.isPartner,
     accessType,
     accessStatus: input.accessStatus,
     accessError: input.accessError ?? null,
-    admin: input.admin,
     partner: input.partner,
   };
 }
@@ -65,68 +65,25 @@ function createAccessContext(input: {
 function createVerificationFailureContext(input: {
   userId: string;
   email: string | null;
+  isPartner?: boolean;
   partner: PartnerProfile | null;
 }): UserAccessContext {
   return createAccessContext({
     userId: input.userId,
     email: input.email,
-    admin: null,
+    isAdmin: false,
+    isPartner: input.isPartner ?? !!input.partner,
     partner: input.partner,
     accessStatus: "verification_failed",
     accessError: ACCESS_VERIFICATION_ERROR_MESSAGE,
   });
 }
 
-async function queryAdminByUserId(userId: string): Promise<{
-  admin: AdminSummary | null;
-  verificationFailed: boolean;
-}> {
-  const { data, error } = await supabaseAdmin
-    .from("Admins")
-    .select("user_id, email")
-    .eq("user_id", userId)
-    .maybeSingle();
-
-  if (error) {
-    console.error("[auth] admin lookup by user_id failed", {
-      userId,
-      message: error.message,
-      details: error.details,
-      hint: error.hint,
-      code: error.code,
-    });
-    return { admin: null, verificationFailed: true };
-  }
-
-  return { admin: data, verificationFailed: false };
-}
-
-async function queryAdminByEmail(email: string): Promise<{
-  admin: AdminSummary | null;
-  verificationFailed: boolean;
-}> {
-  const { data, error } = await supabaseAdmin
-    .from("Admins")
-    .select("user_id, email")
-    .ilike("email", email)
-    .maybeSingle();
-
-  if (error) {
-    console.error("[auth] admin lookup by email failed", {
-      email,
-      message: error.message,
-      details: error.details,
-      hint: error.hint,
-      code: error.code,
-    });
-    return { admin: null, verificationFailed: true };
-  }
-
-  return { admin: data, verificationFailed: false };
-}
-
 export async function listAdminEmails(): Promise<string[]> {
-  const { data, error } = await supabaseAdmin.from("Admins").select("user_id, email");
+  const { data, error } = await supabaseAdmin
+    .from("user_roles")
+    .select("user_id")
+    .eq("role", "admin");
   if (error) {
     console.error("[auth] failed to list admin emails", {
       message: error.message,
@@ -138,21 +95,13 @@ export async function listAdminEmails(): Promise<string[]> {
   }
 
   const resolvedEmails = await Promise.all(
-    (data ?? []).map(async (row) => {
-      const email = normalizeEmail(row.email);
-      if (email) {
-        return email;
-      }
-
-      if (!row.user_id) return null;
-
-      const { data: authUser, error: authUserError } = await supabaseAdmin.auth.admin.getUserById(
-        row.user_id,
-      );
+    (data ?? []).map(async ({ user_id }) => {
+      const { data: authUser, error: authUserError } =
+        await supabaseAdmin.auth.admin.getUserById(user_id);
 
       if (authUserError) {
-        console.error("[auth] failed to resolve admin email from user_id", {
-          userId: row.user_id,
+        console.error("[auth] failed to resolve admin email", {
+          userId: user_id,
           message: authUserError.message,
         });
         return null;
@@ -172,73 +121,52 @@ export async function resolveUserAccess(input: {
 }): Promise<UserAccessContext> {
   const email = normalizeEmail(input.email);
 
-  const { data: partner, error: partnerError } = await supabaseAdmin
-    .from("partner_profiles")
-    .select("*")
-    .eq("user_id", input.userId)
-    .maybeSingle();
+  const [{ data: roles, error: rolesError }, { data: partner, error: partnerError }] =
+    await Promise.all([
+      supabaseAdmin.from("user_roles").select("role").eq("user_id", input.userId),
+      supabaseAdmin.from("partner_profiles").select("*").eq("user_id", input.userId).maybeSingle(),
+    ]);
 
-  if (partnerError) {
-    console.error("[auth] failed to load partner profile", {
-      userId: input.userId,
-      message: partnerError.message,
-      details: partnerError.details,
-      hint: partnerError.hint,
-      code: partnerError.code,
-    });
+  if (rolesError || partnerError) {
+    if (rolesError) {
+      console.error("[auth] failed to load user roles", {
+        userId: input.userId,
+        message: rolesError.message,
+        details: rolesError.details,
+        hint: rolesError.hint,
+        code: rolesError.code,
+      });
+    }
+
+    if (partnerError) {
+      console.error("[auth] failed to load partner profile", {
+        userId: input.userId,
+        message: partnerError.message,
+        details: partnerError.details,
+        hint: partnerError.hint,
+        code: partnerError.code,
+      });
+    }
+
     return createVerificationFailureContext({
       userId: input.userId,
       email,
-      partner: null,
-    });
-  }
-
-  const adminByUserId = await queryAdminByUserId(input.userId);
-  if (adminByUserId.verificationFailed) {
-    return createVerificationFailureContext({
-      userId: input.userId,
-      email,
+      isPartner: false,
       partner: partner ?? null,
     });
   }
 
-  if (adminByUserId.admin) {
-    return createAccessContext({
-      userId: input.userId,
-      email,
-      admin: adminByUserId.admin,
-      partner: partner ?? null,
-      accessStatus: "resolved",
-    });
-  }
-
-  if (email) {
-    const adminByEmail = await queryAdminByEmail(email);
-    if (adminByEmail.verificationFailed) {
-      return createVerificationFailureContext({
-        userId: input.userId,
-        email,
-        partner: partner ?? null,
-      });
-    }
-
-    if (adminByEmail.admin) {
-      return createAccessContext({
-        userId: input.userId,
-        email,
-        admin: adminByEmail.admin,
-        partner: partner ?? null,
-        accessStatus: "resolved",
-      });
-    }
-  }
+  const roleSet = new Set<UserRole>((roles ?? []).map((row) => row.role));
+  const isAdmin = roleSet.has("admin");
+  const isPartner = roleSet.has("partner") || !!partner;
 
   return createAccessContext({
     userId: input.userId,
     email,
-    admin: null,
+    isAdmin,
+    isPartner,
     partner: partner ?? null,
-    accessStatus: partner ? "resolved" : "unauthorized",
+    accessStatus: isAdmin || isPartner ? "resolved" : "unauthorized",
   });
 }
 
