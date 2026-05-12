@@ -378,7 +378,9 @@ function Dashboard() {
                 ? `Impersonating partner: ${impersonatingName ?? impersonatingId}`
                 : isPartner
                   ? "Showing jobs assigned to you"
-                  : "Your account is not linked to an admin or accountant profile yet"}
+                  : accessType === "unauthorized"
+                    ? "Your account is not linked to an admin or accountant profile yet"
+                    : "Checking your portal access"}
           </p>
         </div>
         {hasPortalAccess && (

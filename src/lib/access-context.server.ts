@@ -26,7 +26,7 @@ function getStringField(row: AdminRecord, key: string): string | null {
 }
 
 async function listAdminRows(): Promise<AdminRecord[]> {
-  const { data, error } = await (supabaseAdmin as any).from("Admins").select("*");
+  const { data, error } = await supabaseAdmin.from("Admins" as never).select("*");
   if (error) {
     console.error("[auth] failed to load Admins table", {
       message: error.message,
@@ -37,7 +37,7 @@ async function listAdminRows(): Promise<AdminRecord[]> {
     throw new Error("Could not resolve admin access.");
   }
 
-  return Array.isArray(data) ? (data as AdminRecord[]) : [];
+  return Array.isArray(data) ? (data as unknown as AdminRecord[]) : [];
 }
 
 export async function listAdminEmails(): Promise<string[]> {
