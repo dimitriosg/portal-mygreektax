@@ -10,7 +10,7 @@ import { Check, Calendar, Clock, ShieldCheck, MessageSquare } from "lucide-react
 import logo from "@/assets/mygreektax-mark.svg";
 import { formatDate } from "@/lib/utils";
 import { cn } from "@/lib/utils";
-import { isOverdueEligibleStatus, JOB_STATUSES } from "@/lib/airtable-shared";
+import { hasJobProgressStage, isOverdueEligibleStatus, JOB_STATUSES } from "@/lib/airtable-shared";
 import { track } from "@/lib/analytics";
 
 export const Route = createFileRoute("/track/$token")({
@@ -151,8 +151,9 @@ type TrackData = {
 };
 
 function TrackContent({ data }: { data: TrackData }) {
-  const currentIndex =
-    data.status === "Cancelled / NMF" ? -1 : STAGES.findIndex((stage) => stage === data.status);
+  const currentIndex = hasJobProgressStage(data.status)
+    ? STAGES.findIndex((stage) => stage === data.status)
+    : -1;
   const remaining = getRemaining(data.sla, data.status);
   const tone = statusTone(data.status);
 
