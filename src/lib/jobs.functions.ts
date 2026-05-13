@@ -15,7 +15,12 @@ import {
   type ClientFields,
   type AccountantFields,
 } from "./airtable.server";
-import { JOB_STATUSES, NEXT_ACTION_OPTIONS, STATUS_PROGRESS } from "./airtable-shared";
+import {
+  isPartnerAllowedJobStatus,
+  JOB_STATUSES,
+  NEXT_ACTION_OPTIONS,
+  STATUS_PROGRESS,
+} from "./airtable-shared";
 import { logActivityEvent } from "./activity.server";
 import { requireAdminAccess, requireVerifiedAccess } from "./access-context.server";
 
@@ -49,6 +54,12 @@ function getPartnerProgressNotes(job: Pick<AirtableRecord<JobFields>, "fields">)
     return partnerProgressNotes;
   }
   return job.fields.Notes ?? "";
+}
+
+function getAutoNextActionNeeded(status?: string) {
+  if (status === "Delivered") return "Admin";
+  if (status === "Completed") return "None";
+  return undefined;
 }
 
 export const listJobs = createServerFn({ method: "GET" })
@@ -201,6 +212,11 @@ export const updateJob = createServerFn({ method: "POST" })
       context.claims.email as string | undefined,
     );
     const job = (await airtableGet(`${TABLES.jobs}/${data.jobId}`)) as AirtableRecord<JobFields>;
+    const previousStatus = job.fields.Status ?? null;
+    const autoNextActionNeeded =
+      data.status !== undefined && data.status !== previousStatus
+        ? getAutoNextActionNeeded(data.status)
+        : undefined;
     if (!isAdmin) {
       const allowed =
         partner && job.fields["Assigned Accountant"]?.includes(partner.airtable_accountant_id);
@@ -213,9 +229,19 @@ export const updateJob = createServerFn({ method: "POST" })
           );
         }
       }
+      if (
+        data.status !== undefined &&
+        data.status !== previousStatus &&
+        !isPartnerAllowedJobStatus(data.status)
+      ) {
+        throw new Error("Partners can only set status to Pending, In Progress, or Delivered.");
+      }
     }
     const fields: Record<string, unknown> = {};
     if (data.status) fields["Status"] = data.status;
+    if (autoNextActionNeeded !== undefined) {
+      fields["Next Action Needed"] = autoNextActionNeeded;
+    }
     if (data.partnerProgressNotes !== undefined) {
       // Use the dedicated Airtable field on write; legacy Notes is read-only fallback.
       fields["Partner Progress Notes"] = data.partnerProgressNotes;
@@ -227,7 +253,7 @@ export const updateJob = createServerFn({ method: "POST" })
       if (data.clientVisibleNote !== undefined) {
         fields["Client Visible Note"] = data.clientVisibleNote;
       }
-      if (data.nextActionNeeded !== undefined) {
+      if (data.nextActionNeeded !== undefined && autoNextActionNeeded === undefined) {
         fields["Next Action Needed"] = data.nextActionNeeded;
       }
       if (data.slaDeadline !== undefined) fields["SLA Deadline"] = data.slaDeadline ?? null;
@@ -244,7 +270,6 @@ export const updateJob = createServerFn({ method: "POST" })
         fields["Assigned Accountant"] = data.accountantId ? [data.accountantId] : [];
     }
     if (Object.keys(fields).length === 0) return { ok: true };
-    const previousStatus = job.fields.Status ?? null;
     const previousPartnerProgressNotes = getPartnerProgressNotes(job);
     await airtablePatch(TABLES.jobs, data.jobId, fields);
 
@@ -294,7 +319,11 @@ export const updateJob = createServerFn({ method: "POST" })
       const fieldChangeMap: Array<[string, unknown, unknown]> = [
         ["SLA deadline", job.fields["SLA Deadline"], data.slaDeadline],
         ["Date sent", job.fields["Date Sent"], data.dateSent],
-        ["Next action needed", job.fields["Next Action Needed"], data.nextActionNeeded],
+        [
+          "Next action needed",
+          job.fields["Next Action Needed"],
+          autoNextActionNeeded === undefined ? data.nextActionNeeded : undefined,
+        ],
         ["Client fee", job.fields["Client Fee (\u20ac)"], data.clientFee],
         ["Accountant fee", job.fields["Accountant Fee (\u20ac)"], data.accountantFee],
         ["Tier", job.fields.Tier?.[0], data.tier],

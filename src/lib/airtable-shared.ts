@@ -11,11 +11,16 @@ export const JOB_STATUSES = [
 
 export type JobStatus = (typeof JOB_STATUSES)[number];
 
+export const PARTNER_ALLOWED_JOB_STATUSES = ["Pending", "In Progress", "Delivered"] as const;
+
+export type PartnerAllowedJobStatus = (typeof PARTNER_ALLOWED_JOB_STATUSES)[number];
+
 export const NEXT_ACTION_OPTIONS = ["Admin", "Partner", "Client", "AADE", "None"] as const;
 
 export type NextActionNeeded = (typeof NEXT_ACTION_OPTIONS)[number];
 
 const JOB_STATUS_SET = new Set<string>(JOB_STATUSES);
+const PARTNER_ALLOWED_JOB_STATUS_SET = new Set<string>(PARTNER_ALLOWED_JOB_STATUSES);
 const NEXT_ACTION_SET = new Set<string>(NEXT_ACTION_OPTIONS);
 const OVERDUE_ELIGIBLE_JOB_STATUS_SET = new Set<string>([
   "To Assign",
@@ -43,6 +48,12 @@ export const STATUS_PROGRESS: Record<string, number> = {
 
 export function isJobStatus(status?: string | null): status is JobStatus {
   return typeof status === "string" && JOB_STATUS_SET.has(status);
+}
+
+export function isPartnerAllowedJobStatus(
+  status?: string | null,
+): status is PartnerAllowedJobStatus {
+  return typeof status === "string" && PARTNER_ALLOWED_JOB_STATUS_SET.has(status);
 }
 
 export function isNextActionNeeded(value?: string | null): value is NextActionNeeded {
