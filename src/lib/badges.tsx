@@ -38,6 +38,8 @@ const NEXT_ACTION_STYLES: Record<string, string> = {
   None: "border-slate-300 bg-slate-200 text-slate-800 hover:bg-slate-200 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-100",
 };
 
+const NEXT_ACTION_UNSET_STYLE = NEXT_ACTION_STYLES.None;
+
 export function StatusBadge({ status, className }: { status?: string | null; className?: string }) {
   const key = status ?? "—";
   const style =
@@ -53,13 +55,28 @@ export function TierBadge({ tier, className }: { tier?: string | null; className
 
 export function NextActionBadge({
   value,
+  showUnset = false,
+  labelPrefix,
   className,
 }: {
   value?: string | null;
+  showUnset?: boolean;
+  labelPrefix?: string;
   className?: string;
 }) {
-  if (!value) return <span className="text-muted-foreground">—</span>;
+  if (!value) {
+    if (!showUnset) return <span className="text-muted-foreground">—</span>;
+    return (
+      <Badge className={cn("font-medium", NEXT_ACTION_UNSET_STYLE, className)}>
+        {labelPrefix ? `${labelPrefix} Not set` : "Not set"}
+      </Badge>
+    );
+  }
   const style =
     NEXT_ACTION_STYLES[value] || "border-border bg-muted text-muted-foreground hover:bg-muted";
-  return <Badge className={cn("font-medium", style, className)}>{value}</Badge>;
+  return (
+    <Badge className={cn("font-medium", style, className)}>
+      {labelPrefix ? `${labelPrefix} ${value}` : value}
+    </Badge>
+  );
 }

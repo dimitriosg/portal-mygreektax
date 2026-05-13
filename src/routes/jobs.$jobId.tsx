@@ -272,9 +272,10 @@ function JobDetail() {
           <h1 className="text-2xl font-semibold tracking-tight">{j["Job Code"]}</h1>
           <p className="text-sm text-muted-foreground">{j["Service Name"]?.[0] ?? "—"}</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <TierBadge tier={j.Tier?.[0]} />
           <StatusBadge status={j.Status} />
+          <NextActionBadge value={j["Next Action Needed"]} labelPrefix="Next:" showUnset />
         </div>
       </div>
 
