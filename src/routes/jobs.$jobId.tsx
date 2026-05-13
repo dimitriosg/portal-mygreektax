@@ -90,7 +90,6 @@ function JobDetail() {
     }
   }, [error, eventsQ.error, historyQ.error, navigate, requestsQ.error, trackingQ.error]);
 
-  const [reqField, setReqField] = useState<"sla_deadline" | "status" | "notes">("sla_deadline");
   const [reqValue, setReqValue] = useState("");
   const [reqReason, setReqReason] = useState("");
   const handleMutationError = (error: unknown) => {
@@ -104,7 +103,12 @@ function JobDetail() {
   const submitRequest = useMutation({
     mutationFn: () =>
       requestChangeFn({
-        data: { jobId, field: reqField, requestedValue: reqValue, reason: reqReason || undefined },
+        data: {
+          jobId,
+          field: "sla_deadline",
+          requestedValue: reqValue,
+          reason: reqReason || undefined,
+        },
       }),
     onSuccess: () => {
       toast.success("Change request submitted for admin approval");
@@ -289,6 +293,12 @@ function JobDetail() {
           <CardTitle className="text-base">Update progress</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          {!isAdmin && (
+            <p className="text-sm text-muted-foreground">
+              Update the job status and your progress notes here. Use the admin-approved change
+              request card below when the SLA deadline needs approval.
+            </p>
+          )}
           <div>
             <label className="text-sm font-medium">Status</label>
             <select
@@ -304,7 +314,9 @@ function JobDetail() {
             </select>
           </div>
           <div>
-            <label className="text-sm font-medium">Notes</label>
+            <label className="text-sm font-medium">
+              {isAdmin ? "Notes" : "Partner / progress notes"}
+            </label>
             <Textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
@@ -314,7 +326,7 @@ function JobDetail() {
           </div>
           <div className="flex flex-wrap gap-2">
             <Button onClick={() => save.mutate()} disabled={save.isPending}>
-              {save.isPending ? "Saving…" : "Save changes"}
+              {save.isPending ? "Saving…" : isAdmin ? "Save changes" : "Save progress update"}
             </Button>
             {isAdmin && (
               <Button
@@ -492,55 +504,22 @@ function JobDetail() {
       {!isAdmin && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Request a change</CardTitle>
+            <CardTitle className="text-base">Request admin-approved change</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
-            <p className="text-xs text-muted-foreground">
-              Only admins can change job data. Submit a request and an admin will approve or reject
-              it.
+            <p className="text-sm text-muted-foreground">
+              Use this to request SLA deadline changes. Status and progress notes should be updated
+              in the Update progress card.
             </p>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-              <select
-                value={reqField}
-                onChange={(e) => {
-                  setReqField(e.target.value as "sla_deadline" | "status" | "notes");
-                  setReqValue("");
-                }}
-                className="rounded border border-input bg-background px-2 py-2 text-sm"
-              >
-                <option value="sla_deadline">SLA deadline</option>
-                <option value="status">Status</option>
-                <option value="notes">Notes</option>
-              </select>
-              {reqField === "status" ? (
-                <select
-                  value={reqValue}
-                  onChange={(e) => setReqValue(e.target.value)}
-                  className="rounded border border-input bg-background px-2 py-2 text-sm sm:col-span-2"
-                >
-                  <option value="">— Select status —</option>
-                  {JOB_STATUSES.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
-              ) : reqField === "sla_deadline" ? (
-                <input
-                  type="date"
-                  value={reqValue}
-                  onChange={(e) => setReqValue(e.target.value)}
-                  className="rounded border border-input bg-background px-2 py-2 text-sm sm:col-span-2"
-                />
-              ) : (
-                <Textarea
-                  value={reqValue}
-                  onChange={(e) => setReqValue(e.target.value)}
-                  rows={2}
-                  className="sm:col-span-2"
-                  placeholder="New notes"
-                />
-              )}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Requested SLA deadline</label>
+              {/* TODO: Add more admin-owned change-request fields here when they are wired end-to-end. */}
+              <input
+                type="date"
+                value={reqValue}
+                onChange={(e) => setReqValue(e.target.value)}
+                className="w-full rounded border border-input bg-background px-2 py-2 text-sm"
+              />
             </div>
             <Textarea
               value={reqReason}
@@ -562,7 +541,9 @@ function JobDetail() {
       {(requestsQ.data?.requests.length ?? 0) > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Change requests</CardTitle>
+            <CardTitle className="text-base">
+              {isAdmin ? "Change requests" : "Your admin-approved change requests"}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <ol className="space-y-3 text-sm">
