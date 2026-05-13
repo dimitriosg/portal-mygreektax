@@ -13,6 +13,7 @@ import { linkPartnerProfile, getMyContext } from "@/lib/auth.functions";
 import { getErrorMessage } from "@/lib/auth-errors";
 import { recordPartnerLogin } from "@/lib/activity.functions";
 import { track } from "@/lib/analytics";
+import { debugError, debugLog } from "@/lib/debug";
 import { toast } from "sonner";
 
 type AccessType = "admin" | "partner" | "unauthorized";
@@ -144,7 +145,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const result = await getMyContext();
       if (!isAuthAccessContext(result)) {
-        console.error("[auth] refresh failed: invalid access context", {
+        debugError("[auth] refresh failed: invalid access context", {
           hasContext: result != null,
           resultType: typeof result,
         });
@@ -182,7 +183,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // ignore
       }
     } catch (error) {
-      console.error("[auth] refresh failed", error);
+      debugError("[auth] refresh failed", error);
       applyVerificationFailedState(getSafeVerificationErrorMessage(error));
     }
   }, [applyVerificationFailedState]);
@@ -192,7 +193,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const sessionKey = getSessionBootstrapKey(nextSession);
       const inFlightBootstrap = bootstrapPromisesRef.current.get(sessionKey);
       if (inFlightBootstrap) {
-        console.info("[auth] bootstrap:deduped", {
+        debugLog("[auth] bootstrap:deduped", {
           userId: nextSession.user.id,
           runPostLoginSetup,
         });
@@ -201,7 +202,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       if (completedBootstrapKeyRef.current === sessionKey) {
-        console.info("[auth] bootstrap:skipped completed session", {
+        debugLog("[auth] bootstrap:skipped completed session", {
           userId: nextSession.user.id,
           runPostLoginSetup,
         });
@@ -210,7 +211,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const bootstrapPromise = (async () => {
         setSessionReady(false);
-        console.info("[auth] bootstrap:start", {
+        debugLog("[auth] bootstrap:start", {
           userId: nextSession.user.id,
           runPostLoginSetup,
         });
@@ -227,7 +228,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
 
           if (!token) {
-            console.error("[auth] bootstrap failed: no access token available");
+            debugError("[auth] bootstrap failed: no access token available");
             applyVerificationFailedState();
             setSessionReady(true);
             return;
@@ -237,7 +238,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             try {
               await linkPartnerProfile();
             } catch (error) {
-              console.error("[auth] linkPartnerProfile failed", {
+              debugError("[auth] linkPartnerProfile failed", {
                 userId: nextSession.user.id,
                 error,
               });
@@ -247,11 +248,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           await refresh();
           setSessionReady(true);
           completedBootstrapKeyRef.current = sessionKey;
-          console.info("[auth] bootstrap:complete", {
+          debugLog("[auth] bootstrap:complete", {
             userId: nextSession.user.id,
           });
         } catch (e) {
-          console.error("[auth] bootstrap failed", e);
+          debugError("[auth] bootstrap failed", e);
           applyVerificationFailedState(getSafeVerificationErrorMessage(e));
           setSessionReady(true);
         } finally {
@@ -276,7 +277,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (event === "SIGNED_IN" && s) {
         if (!initialSessionResolvedRef.current) {
           pendingSignInSessionRef.current = s;
-          console.info("[auth] defer SIGNED_IN bootstrap until initial session resolves", {
+          debugLog("[auth] defer SIGNED_IN bootstrap until initial session resolves", {
             userId: s.user.id,
           });
           return;
@@ -285,7 +286,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else if (event === "TOKEN_REFRESHED" && s) {
         setSessionReady(true);
         refresh().catch((error) => {
-          console.error("[auth] refresh after TOKEN_REFRESHED failed", error);
+          debugError("[auth] refresh after TOKEN_REFRESHED failed", error);
         });
       } else if (!s) {
         completedBootstrapKeyRef.current = null;
@@ -336,7 +337,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSessionReady(data.session !== null);
       })
       .catch((error) => {
-        console.error("[auth] getSession failed", error);
+        debugError("[auth] getSession failed", error);
         initialSessionResolvedRef.current = true;
         pendingSignInSessionRef.current = null;
         setSession(null);

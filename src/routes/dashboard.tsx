@@ -16,6 +16,7 @@ import {
   describeSupabaseToken,
   getSupabaseProjectHost,
 } from "@/integrations/supabase/auth-diagnostics";
+import { createErrorReferenceId, debugError, debugLog, isDebugEnabled } from "@/lib/debug";
 import { formatDate } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -53,10 +54,13 @@ export const Route = createFileRoute("/dashboard")({
 function DashboardErrorComponent({ error, reset }: { error: unknown; reset: () => void }) {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const errorReferenceId = useMemo(() => createErrorReferenceId("dashboard-route"), []);
+  const showErrorDetails = isDebugEnabled();
   const errorDetails =
     error instanceof Error ? (error.stack ?? error.message) : getErrorMessage(error);
 
-  console.error("[dashboard-route-error]", {
+  debugError("[dashboard-route-error]", {
+    referenceId: errorReferenceId,
     message: getErrorMessage(error),
     stack: error instanceof Error ? error.stack : undefined,
     cause: error instanceof Error ? error.cause : undefined,
@@ -67,12 +71,15 @@ function DashboardErrorComponent({ error, reset }: { error: unknown; reset: () =
     <div className="mx-auto max-w-3xl px-4 py-8">
       <h1 className="text-xl font-semibold tracking-tight">Dashboard didn&apos;t load</h1>
       <p className="mt-2 text-sm text-muted-foreground">
-        A post-login route error occurred. You can retry or return to sign in.
+        Something went wrong while loading the dashboard. You can retry or return to sign in.
       </p>
-      <details className="mt-4 rounded-md border border-border bg-muted/30 p-3 text-left text-xs text-muted-foreground">
-        <summary className="cursor-pointer font-medium text-foreground">Error details</summary>
-        <pre className="mt-2 whitespace-pre-wrap break-words">{errorDetails}</pre>
-      </details>
+      <p className="mt-2 text-xs text-muted-foreground">Reference ID: {errorReferenceId}</p>
+      {showErrorDetails && (
+        <details className="mt-4 rounded-md border border-border bg-muted/30 p-3 text-left text-xs text-muted-foreground">
+          <summary className="cursor-pointer font-medium text-foreground">Error details</summary>
+          <pre className="mt-2 whitespace-pre-wrap break-words">{errorDetails}</pre>
+        </details>
+      )}
       <div className="mt-6 flex flex-wrap gap-2">
         <Button onClick={reset}>Try again</Button>
         <Button variant="outline" onClick={() => navigate({ to: "/login", replace: true })}>
@@ -106,7 +113,7 @@ function Dashboard() {
   const lastProcessedQueryErrorRef = useRef<unknown>(null);
   const [filter, setFilter] = useState<string>("all");
   const [sortBy, setSortBy] = useState<string>("manual");
-  const [showAuthDebugPanel, setShowAuthDebugPanel] = useState(false);
+  const showAuthDebugPanel = isDebugEnabled();
   const clientTokenDiagnostics = useMemo(
     () => describeSupabaseToken(session?.access_token),
     [session?.access_token],
@@ -123,14 +130,6 @@ function Dashboard() {
     }
     if (!sessionReady) return;
   }, [loading, sessionReady, user, navigate]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const host = window.location.host;
-    const isPreviewWorkerHost =
-      host.endsWith(".workers.dev") && host.includes("-portal-mygreektax.");
-    setShowAuthDebugPanel(import.meta.env.DEV || isPreviewWorkerHost);
-  }, []);
 
   const fetchJobs = useServerFn(listJobs);
   const fetchAccountants = useServerFn(listAccountants);
@@ -185,12 +184,20 @@ function Dashboard() {
     () => queryErrors.find((err) => err != null && isRequireSupabaseAuthMessage(err)),
     [queryErrors],
   );
+  const queryErrorReferenceId = useMemo(
+    () => (queryError ? createErrorReferenceId("dashboard-query") : null),
+    [queryError],
+  );
+  const serverFunctionErrorReferenceId = useMemo(
+    () => (serverFunctionAuthError ? createErrorReferenceId("dashboard-server-auth") : null),
+    [serverFunctionAuthError],
+  );
   const isLoadingJobs =
     isAuthBootstrapping ||
     (shouldFetchJobs && (isLoading || orderQ.isLoading || (!!isRealAdmin && accQ.isLoading)));
 
   useEffect(() => {
-    console.info("[dashboard] auth gate", {
+    debugLog("[dashboard] auth gate", {
       userId: user?.id ?? null,
       loading,
       sessionReady,
@@ -224,7 +231,7 @@ function Dashboard() {
     lastProcessedAuthErrorRef.current = authError;
 
     if (authError) {
-      console.error("[dashboard] auth error", {
+      debugError("[dashboard] auth error", {
         message: getErrorMessage(authError),
         error: authError,
         pathname,
@@ -246,7 +253,7 @@ function Dashboard() {
     if (lastProcessedQueryErrorRef.current === queryError) return;
     lastProcessedQueryErrorRef.current = queryError;
 
-    console.error("[dashboard] query error", {
+    debugError("[dashboard] query error", {
       jobs: error && !isAuthSessionError(error) ? getErrorMessage(error) : null,
       accountants:
         accQ.error && !isAuthSessionError(accQ.error) ? getErrorMessage(accQ.error) : null,
@@ -397,7 +404,14 @@ function Dashboard() {
               <p className="text-sm text-muted-foreground">
                 Could not load dashboard data. Please try again.
               </p>
-              <p className="text-sm text-destructive">{getErrorMessage(queryError)}</p>
+              {queryErrorReferenceId && (
+                <p className="text-xs text-muted-foreground">
+                  Reference ID: {queryErrorReferenceId}
+                </p>
+              )}
+              {showAuthDebugPanel && (
+                <p className="text-sm text-destructive">{getErrorMessage(queryError)}</p>
+              )}
               <div className="flex flex-wrap gap-2">
                 <Button
                   onClick={() => {
@@ -432,7 +446,9 @@ function Dashboard() {
                 : isPartner
                   ? "Showing jobs assigned to you"
                   : accessStatus === "verification_failed"
-                    ? (accessError ?? "Could not verify your portal access")
+                    ? showAuthDebugPanel
+                      ? (accessError ?? "Could not verify your portal access")
+                      : "Could not verify your portal access"
                     : accessType === "unauthorized"
                       ? "Your account is not linked to an admin or accountant profile yet"
                       : "Checking your portal access"}
@@ -553,7 +569,10 @@ function Dashboard() {
         <Card className="mt-8 border-destructive/40">
           <CardContent className="py-6 text-sm text-muted-foreground">
             <p>
-              {accessError ?? "Could not verify portal access. Please contact the administrator."}
+              {showAuthDebugPanel
+                ? (accessError ??
+                  "Could not verify portal access. Please contact the administrator.")
+                : "Could not verify portal access. Please contact the administrator."}
             </p>
             {showAuthDebugPanel && (
               <dl className="mt-4 grid gap-1 text-xs">
@@ -594,7 +613,16 @@ function Dashboard() {
       {!isLoadingJobs && hasPortalAccess && serverFunctionAuthError && (
         <Card className="mt-8 border-destructive/40">
           <CardContent className="py-6 text-sm text-muted-foreground">
-            <p>{getErrorMessage(serverFunctionAuthError)}</p>
+            <p>
+              {showAuthDebugPanel
+                ? getErrorMessage(serverFunctionAuthError)
+                : "Could not verify your session. Please sign in again or try again shortly."}
+            </p>
+            {!showAuthDebugPanel && serverFunctionErrorReferenceId && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Reference ID: {serverFunctionErrorReferenceId}
+              </p>
+            )}
             {showAuthDebugPanel && (
               <dl className="mt-4 grid gap-1 text-xs">
                 <div className="flex gap-2">

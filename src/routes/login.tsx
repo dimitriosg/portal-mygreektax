@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/lib/auth-context";
+import { debugLog } from "@/lib/debug";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/login")({ component: LoginPage });
@@ -18,7 +19,7 @@ function LoginPage() {
 
   useEffect(() => {
     if (user && sessionReady) {
-      console.info("[login] redirecting after auth bootstrap", { userId: user.id });
+      debugLog("[login] redirecting after auth bootstrap", { userId: user.id });
       setLoading(false);
       navigate({ to: "/dashboard", replace: true });
     }
@@ -32,7 +33,7 @@ function LoginPage() {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
       signInAccepted = true;
-      console.info("[login] sign-in accepted, waiting for auth bootstrap");
+      debugLog("[login] sign-in accepted, waiting for auth bootstrap");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Something went wrong");
       return;
