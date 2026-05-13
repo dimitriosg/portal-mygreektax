@@ -1,5 +1,5 @@
 import { createMiddleware } from "@tanstack/react-start";
-import { debugLog, debugWarn } from "@/lib/debug";
+import { debugError, debugLog } from "@/lib/debug";
 import { supabase } from "./client";
 import { describeSupabaseToken, getSupabaseProjectHost } from "./auth-diagnostics";
 
@@ -70,7 +70,7 @@ export const attachSupabaseAuth = createMiddleware({ type: "function" }).client(
     // immediately on the client side. Forwarding without an Authorization header
     // would result in a guaranteed 401 from the server and pollutes the console.
     if (!token) {
-      debugWarn("[attachSupabaseAuth] aborting request: no access token", {
+      debugError("[attachSupabaseAuth] aborting request: no access token", {
         hasSession: !!session,
         hasAccessToken: false,
         refreshAttempted,
@@ -80,7 +80,7 @@ export const attachSupabaseAuth = createMiddleware({ type: "function" }).client(
     }
 
     if (!tokenDiagnostics.isLikelyJwt) {
-      debugWarn("[attachSupabaseAuth] aborting request: invalid session token shape", {
+      debugError("[attachSupabaseAuth] aborting request: invalid session token shape", {
         hasSession: !!session,
         hasAccessToken: true,
         tokenLength: tokenDiagnostics.length,
