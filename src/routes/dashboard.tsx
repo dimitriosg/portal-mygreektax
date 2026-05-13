@@ -21,7 +21,7 @@ import { formatDate } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { StatusBadge, TierBadge } from "@/lib/badges";
-import { JOB_STATUSES } from "@/lib/airtable-shared";
+import { getJobStatusSortOrder, JOB_STATUSES } from "@/lib/airtable-shared";
 import {
   DndContext,
   closestCenter,
@@ -328,7 +328,12 @@ function Dashboard() {
     const arr = [...jobs];
     const cmp = (a: string | undefined, b: string | undefined) => (a ?? "").localeCompare(b ?? "");
     if (sortBy === "code") arr.sort((a, b) => cmp(a.fields["Job Code"], b.fields["Job Code"]));
-    else if (sortBy === "status") arr.sort((a, b) => cmp(a.fields.Status, b.fields.Status));
+    else if (sortBy === "status")
+      arr.sort(
+        (a, b) =>
+          getJobStatusSortOrder(a.fields.Status) - getJobStatusSortOrder(b.fields.Status) ||
+          cmp(a.fields.Status, b.fields.Status),
+      );
     else if (sortBy === "tier") arr.sort((a, b) => cmp(a.fields.Tier?.[0], b.fields.Tier?.[0]));
     else if (sortBy === "sla")
       arr.sort((a, b) => cmp(a.fields["SLA Deadline"], b.fields["SLA Deadline"]));

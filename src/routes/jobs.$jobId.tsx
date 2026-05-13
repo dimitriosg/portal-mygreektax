@@ -15,7 +15,7 @@ import {
   cancelChangeRequest,
   decideChangeRequest,
 } from "@/lib/jobs.functions";
-import { JOB_STATUSES } from "@/lib/airtable-shared";
+import { isJobStatus, JOB_STATUSES } from "@/lib/airtable-shared";
 import { useAuth } from "@/lib/auth-context";
 import { getErrorMessage, isAuthSessionError } from "@/lib/auth-errors";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -159,7 +159,8 @@ function JobDetail() {
   }, [data]);
 
   const save = useMutation({
-    mutationFn: () => updateFn({ data: { jobId, status: status || undefined, notes } }),
+    mutationFn: () =>
+      updateFn({ data: { jobId, status: isJobStatus(status) ? status : undefined, notes } }),
     onSuccess: () => {
       toast.success("Job updated");
       const previous = data?.job?.fields.Status ?? "";
@@ -224,6 +225,7 @@ function JobDetail() {
   if (!data) return null;
 
   const j = data.job.fields;
+  const hasLegacyStatus = !!status && !isJobStatus(status);
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8 space-y-6">
@@ -306,6 +308,11 @@ function JobDetail() {
               onChange={(e) => setStatus(e.target.value)}
               className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
             >
+              {hasLegacyStatus && (
+                <option value={status} disabled>
+                  Legacy status: {status}
+                </option>
+              )}
               {JOB_STATUSES.map((s) => (
                 <option key={s} value={s}>
                   {s}

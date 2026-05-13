@@ -10,6 +10,7 @@ import { Check, Calendar, Clock, ShieldCheck, MessageSquare } from "lucide-react
 import logo from "@/assets/mygreektax-mark.svg";
 import { formatDate } from "@/lib/utils";
 import { cn } from "@/lib/utils";
+import { hasJobProgressStage, isOverdueEligibleStatus, JOB_STATUSES } from "@/lib/airtable-shared";
 import { track } from "@/lib/analytics";
 
 export const Route = createFileRoute("/track/$token")({
@@ -22,19 +23,14 @@ export const Route = createFileRoute("/track/$token")({
   }),
 });
 
-const STAGES = [
-  "To Assign",
-  "Pending",
-  "Paid",
-  "In Progress",
-  "Delivered",
-  "Invoiced",
-  "Completed",
-];
+const STAGES = JOB_STATUSES;
 
 function getRemaining(sla: string | null | undefined, status: string) {
   if (!sla) return null;
   if (status === "Completed") return { label: "Completed", tone: "success" as const };
+  if (status === "Cancelled / NMF") {
+    return { label: "Cancelled / NMF", tone: "neutral" as const };
+  }
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(sla);
   const due = m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : new Date(sla);
   if (isNaN(due.getTime())) return null;
@@ -42,6 +38,9 @@ function getRemaining(sla: string | null | undefined, status: string) {
   today.setHours(0, 0, 0, 0);
   due.setHours(0, 0, 0, 0);
   const days = Math.round((due.getTime() - today.getTime()) / 86400000);
+  if (!isOverdueEligibleStatus(status)) {
+    return { label: status, tone: "neutral" as const };
+  }
   if (days < 0)
     return {
       label: `${Math.abs(days)} day${Math.abs(days) === 1 ? "" : "s"} overdue`,
@@ -54,6 +53,7 @@ function getRemaining(sla: string | null | undefined, status: string) {
 
 function statusTone(status: string) {
   if (status === "Completed" || status === "Paid") return "success";
+  if (status === "Cancelled / NMF") return "danger";
   if (status === "Pending" || status === "To Assign") return "warning";
   return "brand";
 }
@@ -151,7 +151,9 @@ type TrackData = {
 };
 
 function TrackContent({ data }: { data: TrackData }) {
-  const currentIndex = STAGES.indexOf(data.status);
+  const currentIndex = hasJobProgressStage(data.status)
+    ? STAGES.findIndex((stage) => stage === data.status)
+    : -1;
   const remaining = getRemaining(data.sla, data.status);
   const tone = statusTone(data.status);
 
@@ -189,6 +191,7 @@ function TrackContent({ data }: { data: TrackData }) {
                     "inline-flex h-2.5 w-2.5 rounded-full",
                     tone === "success" && "bg-success",
                     tone === "warning" && "bg-warning",
+                    tone === "danger" && "bg-destructive",
                     tone === "brand" && "bg-brand",
                   )}
                 />
@@ -229,6 +232,7 @@ function TrackContent({ data }: { data: TrackData }) {
             value={remaining?.label ?? "—"}
             valueClassName={cn(
               remaining?.tone === "danger" && "text-destructive",
+              remaining?.tone === "neutral" && "text-muted-foreground",
               remaining?.tone === "warning" && "text-warning",
               remaining?.tone === "success" && "text-success",
             )}

@@ -16,6 +16,7 @@ import { Sun, Moon } from "lucide-react";
 import appCss from "../styles.css?url";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
+import { isOverdueEligibleStatus } from "@/lib/airtable-shared";
 import { getErrorMessage, isAuthSessionError } from "@/lib/auth-errors";
 import { createErrorReferenceId, debugError, isDebugEnabled } from "@/lib/debug";
 import { listJobs } from "@/lib/jobs.functions";
@@ -274,7 +275,8 @@ function AppShell() {
   const overdueJobsCount = useMemo(
     () =>
       overdueJobs.filter(
-        (job) => job.fields.Status !== "Completed" && isPastDueDate(job.fields["SLA Deadline"]),
+        (job) =>
+          isOverdueEligibleStatus(job.fields.Status) && isPastDueDate(job.fields["SLA Deadline"]),
       ).length,
     [overdueJobs],
   );

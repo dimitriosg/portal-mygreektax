@@ -2,14 +2,21 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
 const STATUS_STYLES: Record<string, string> = {
-  "To Assign": "bg-slate-200 text-slate-800 hover:bg-slate-200",
-  Sent: "bg-blue-100 text-blue-800 hover:bg-blue-100",
-  "In Progress": "bg-amber-100 text-amber-900 hover:bg-amber-100",
-  Pending: "bg-orange-100 text-orange-900 hover:bg-orange-100",
-  Delivered: "bg-indigo-100 text-indigo-800 hover:bg-indigo-100",
-  Invoiced: "bg-purple-100 text-purple-800 hover:bg-purple-100",
-  Paid: "bg-teal-100 text-teal-900 hover:bg-teal-100",
-  Completed: "bg-green-100 text-green-800 hover:bg-green-100",
+  "To Assign":
+    "border-slate-300 bg-slate-100 text-slate-800 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800/70 dark:text-slate-100",
+  Pending:
+    "border-orange-300 bg-orange-100 text-orange-900 hover:bg-orange-100 dark:border-orange-800 dark:bg-orange-950/60 dark:text-orange-100",
+  Paid: "border-teal-300 bg-teal-100 text-teal-900 hover:bg-teal-100 dark:border-teal-800 dark:bg-teal-950/60 dark:text-teal-100",
+  "In Progress":
+    "border-amber-300 bg-amber-100 text-amber-900 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/60 dark:text-amber-100",
+  Delivered:
+    "border-indigo-300 bg-indigo-100 text-indigo-800 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-100",
+  Invoiced:
+    "border-purple-300 bg-purple-100 text-purple-800 hover:bg-purple-100 dark:border-purple-800 dark:bg-purple-950/60 dark:text-purple-100",
+  Completed:
+    "border-green-300 bg-green-100 text-green-800 hover:bg-green-100 dark:border-green-800 dark:bg-green-950/60 dark:text-green-100",
+  "Cancelled / NMF":
+    "border-destructive/30 bg-destructive/10 text-destructive hover:bg-destructive/10 dark:border-destructive/40 dark:bg-destructive/15 dark:text-destructive",
 };
 
 const TIER_STYLES: Record<string, string> = {
