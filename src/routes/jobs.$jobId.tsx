@@ -314,7 +314,9 @@ function JobDetail() {
             </select>
           </div>
           <div>
-            <label className="text-sm font-medium">{isAdmin ? "Notes" : "Partner / progress notes"}</label>
+            <label className="text-sm font-medium">
+              {isAdmin ? "Notes" : "Partner / progress notes"}
+            </label>
             <Textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
