@@ -9,7 +9,7 @@ import {
   Section,
   Text,
 } from "@react-email/components";
-import type { TemplateEntry } from "./registry";
+import type { TemplateData, TemplateEntry } from "./registry";
 
 const SITE_NAME = "My Greek Tax";
 
@@ -51,12 +51,10 @@ const ActivitySummaryEmail = ({
           {period === "weekly" ? "Weekly portal activity" : "Daily portal activity"}
         </Heading>
         <Text style={subtitle}>{rangeLabel}</Text>
-        {recipientName ? (
-          <Text style={text}>Hi {recipientName},</Text>
-        ) : null}
+        {recipientName ? <Text style={text}>Hi {recipientName},</Text> : null}
         <Text style={text}>
-          Here's a summary of partner and customer activity on the {SITE_NAME} portal
-          for the period above.
+          Here's a summary of partner and customer activity on the {SITE_NAME} portal for the period
+          above.
         </Text>
 
         {totals.length > 0 ? (
@@ -95,8 +93,7 @@ const ActivitySummaryEmail = ({
 
         <Hr style={hr} />
         <Text style={footer}>
-          You're receiving this because you have admin access to {SITE_NAME}'s
-          partner portal.
+          You're receiving this because you have admin access to {SITE_NAME}'s partner portal.
         </Text>
       </Container>
     </Body>
@@ -105,7 +102,7 @@ const ActivitySummaryEmail = ({
 
 export const template = {
   component: ActivitySummaryEmail,
-  subject: (data: Record<string, any>) => {
+  subject: (data: TemplateData) => {
     const period = (data.period as string) ?? "daily";
     const range = (data.rangeLabel as string) ?? "";
     return period === "weekly"
@@ -149,7 +146,12 @@ const h1 = { fontSize: "22px", fontWeight: 700, color: "#0b1220", margin: "0 0 4
 const h2 = { fontSize: "15px", fontWeight: 600, color: "#0b1220", margin: "0 0 8px" };
 const subtitle = { fontSize: "13px", color: "#6b7280", margin: "0 0 20px" };
 const text = { fontSize: "14px", color: "#374151", lineHeight: "1.6", margin: "0 0 16px" };
-const empty = { fontSize: "14px", color: "#6b7280", fontStyle: "italic" as const, margin: "16px 0" };
+const empty = {
+  fontSize: "14px",
+  color: "#6b7280",
+  fontStyle: "italic" as const,
+  margin: "16px 0",
+};
 const muted = { fontSize: "13px", color: "#9ca3af", margin: "0 0 8px" };
 const totalsBox = {
   backgroundColor: "#f3f4f6",
@@ -176,7 +178,12 @@ const rowText = {
   paddingLeft: "12px",
   borderLeft: "2px solid #e5e7eb",
 };
-const rowWhen = { color: "#6b7280", fontSize: "11px", textTransform: "uppercase" as const, letterSpacing: "0.04em" };
+const rowWhen = {
+  color: "#6b7280",
+  fontSize: "11px",
+  textTransform: "uppercase" as const,
+  letterSpacing: "0.04em",
+};
 const rowActor = { fontWeight: 600, color: "#0b1220" };
 const hr = { borderColor: "#e5e7eb", margin: "28px 0" };
 const footer = { fontSize: "12px", color: "#9ca3af", margin: 0 };

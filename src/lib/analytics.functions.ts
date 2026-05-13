@@ -133,10 +133,7 @@ export const getPlausibleStats = createServerFn({ method: "GET" })
       return {
         ...EMPTY,
         enabled: Boolean(process.env.PLAUSIBLE_API_KEY),
-        error:
-          err instanceof Error
-            ? err.message
-            : "Could not load analytics from Plausible.",
+        error: err instanceof Error ? err.message : "Could not load analytics from Plausible.",
       };
     }
   });

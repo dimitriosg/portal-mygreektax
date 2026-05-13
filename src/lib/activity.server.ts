@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import type { Json } from "@/integrations/supabase/types";
 
 export type ActivityEventType =
   | "partner_invite_accepted"
@@ -6,6 +7,8 @@ export type ActivityEventType =
   | "partner_disabled"
   | "partner_enabled"
   | "job_created"
+  | "job_change_request_created"
+  | "job_change_request_decided"
   | "job_status_changed"
   | "tracking_link_created"
   | "tracking_link_opened"
@@ -17,7 +20,7 @@ export type ActivityEventInput = {
   actorEmail?: string | null;
   actorName?: string | null;
   subjectLabel?: string | null;
-  metadata?: Record<string, unknown>;
+  metadata?: Json;
 };
 
 /**
@@ -26,7 +29,7 @@ export type ActivityEventInput = {
  */
 export async function logActivityEvent(input: ActivityEventInput): Promise<void> {
   try {
-    await supabaseAdmin.from("activity_events" as any).insert({
+    await supabaseAdmin.from("activity_events").insert({
       event_type: input.eventType,
       actor_user_id: input.actorUserId ?? null,
       actor_email: input.actorEmail?.toLowerCase() ?? null,

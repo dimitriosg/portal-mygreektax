@@ -11,14 +11,12 @@ export const Route = createFileRoute("/")({
       { title: "MyGreekTax · Partner Workspace" },
       {
         name: "description",
-        content:
-          "Dedicated partner workspace for MyGreekTax accountants and admins.",
+        content: "Dedicated partner workspace for MyGreekTax accountants and admins.",
       },
       { property: "og:title", content: "MyGreekTax · Partner Workspace" },
       {
         property: "og:description",
-        content:
-          "Dedicated partner workspace for MyGreekTax accountants and admins.",
+        content: "Dedicated partner workspace for MyGreekTax accountants and admins.",
       },
     ],
   }),

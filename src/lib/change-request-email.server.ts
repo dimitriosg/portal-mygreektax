@@ -17,13 +17,13 @@ async function enqueue(opts: {
   templateName: string;
 }) {
   const messageId = crypto.randomUUID();
-  await supabaseAdmin.from("email_send_log" as any).insert({
+  await supabaseAdmin.from("email_send_log").insert({
     message_id: messageId,
     template_name: opts.templateName,
     recipient_email: opts.to,
     status: "pending",
   });
-  const { error } = await supabaseAdmin.rpc("enqueue_email" as any, {
+  const { error } = await supabaseAdmin.rpc("enqueue_email", {
     queue_name: "transactional_emails",
     payload: {
       message_id: messageId,
@@ -38,7 +38,7 @@ async function enqueue(opts: {
       idempotency_key: messageId,
       queued_at: new Date().toISOString(),
     },
-  } as any);
+  });
   if (error) {
     console.error("[change-request-email] enqueue failed", error);
   }
@@ -55,7 +55,7 @@ export async function enqueueChangeRequestAdminEmail(params: {
 }) {
   const reviewUrl = `${SITE_URL}/admin/change-requests`;
   const props = { ...params, reviewUrl };
-  const element = React.createElement(adminTemplate.component, props);
+  const element = React.createElement(adminTemplate.component, props as never);
   const html = await render(element);
   const text = await render(element, { plainText: true });
   const subject =
@@ -80,7 +80,7 @@ export async function enqueueChangeRequestDecisionEmail(params: {
   decisionNote: string | null;
 }) {
   const props = { ...params, jobUrl: `${SITE_URL}/dashboard` };
-  const element = React.createElement(decisionTemplate.component, props);
+  const element = React.createElement(decisionTemplate.component, props as never);
   const html = await render(element);
   const text = await render(element, { plainText: true });
   const subject =

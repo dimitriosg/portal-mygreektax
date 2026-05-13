@@ -6,6 +6,7 @@ import type {
   ActivitySummaryRow,
 } from "./email-templates/activity-summary";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import type { Database } from "@/integrations/supabase/types";
 import { listAdminEmails } from "./access-context.server";
 
 const SENDER_DOMAIN = "notify.portal.mygreektax.eu";
@@ -13,10 +14,15 @@ const FROM_DOMAIN = "portal.mygreektax.eu";
 const SITE_NAME = "My Greek Tax";
 const TZ = "Europe/Athens";
 
+type ActivityEventRow = Database["public"]["Tables"]["activity_events"]["Row"];
+type ActivityEventMetadata = Record<string, string | number | null | undefined>;
+
 function genToken(): string {
   const bytes = new Uint8Array(32);
   crypto.getRandomValues(bytes);
-  return Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 function formatAthens(date: Date, opts: Intl.DateTimeFormatOptions): string {
@@ -53,7 +59,12 @@ export function computeRange(period: SummaryPeriod, now: Date = new Date()) {
   if (period === "daily") {
     const start = new Date(todayAthensMidnightUtc - 86400000);
     const end = new Date(todayAthensMidnightUtc);
-    const label = formatAthens(start, { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+    const label = formatAthens(start, {
+      weekday: "short",
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
     return { start, end, label };
   }
 
@@ -87,8 +98,8 @@ const TYPE_TITLES: Record<string, string> = {
   tracking_link_extended: "Tracking links extended (admin)",
 };
 
-function describeRow(ev: any): ActivitySummaryRow {
-  const md = (ev.metadata ?? {}) as Record<string, any>;
+function describeRow(ev: ActivityEventRow): ActivitySummaryRow {
+  const md = (ev.metadata ?? {}) as ActivityEventMetadata;
   const when = formatAthens(new Date(ev.occurred_at), {
     weekday: "short",
     day: "numeric",
@@ -99,7 +110,10 @@ function describeRow(ev: any): ActivitySummaryRow {
   });
   const actorName = ev.actor_name ?? ev.actor_email ?? "Unknown";
   const actorEmail = ev.actor_email ? ` (${ev.actor_email})` : "";
-  const actor = ev.event_type === "tracking_link_opened" ? `Customer${actorEmail}` : `${actorName}${actorEmail}`;
+  const actor =
+    ev.event_type === "tracking_link_opened"
+      ? `Customer${actorEmail}`
+      : `${actorName}${actorEmail}`;
 
   let description: string;
   switch (ev.event_type) {
@@ -139,15 +153,15 @@ function describeRow(ev: any): ActivitySummaryRow {
 export async function buildSummary(period: SummaryPeriod) {
   const { start, end, label } = computeRange(period);
   const { data: events, error } = await supabaseAdmin
-    .from("activity_events" as any)
+    .from("activity_events")
     .select("*")
     .gte("occurred_at", start.toISOString())
     .lt("occurred_at", end.toISOString())
     .order("occurred_at", { ascending: true });
   if (error) throw new Error(`Failed to load activity events: ${error.message}`);
 
-  const grouped: Record<string, any[]> = {};
-  for (const ev of (events ?? []) as any[]) {
+  const grouped: Record<string, ActivityEventRow[]> = {};
+  for (const ev of events ?? []) {
     (grouped[ev.event_type] ||= []).push(ev);
   }
 
@@ -178,7 +192,7 @@ export async function buildSummary(period: SummaryPeriod) {
 async function enqueueOne(recipient: string, summary: Awaited<ReturnType<typeof buildSummary>>) {
   const normalized = recipient.toLowerCase();
   const { data: suppressed } = await supabaseAdmin
-    .from("suppressed_emails" as any)
+    .from("suppressed_emails")
     .select("id")
     .eq("email", normalized)
     .maybeSingle();
@@ -187,17 +201,21 @@ async function enqueueOne(recipient: string, summary: Awaited<ReturnType<typeof 
   // Get/create unsubscribe token.
   let unsubscribeToken: string | null = null;
   const { data: existing } = await supabaseAdmin
-    .from("email_unsubscribe_tokens" as any)
+    .from("email_unsubscribe_tokens")
     .select("token, used_at")
     .eq("email", normalized)
     .maybeSingle();
-  if (existing && !(existing as any).used_at) {
-    unsubscribeToken = (existing as any).token;
+  if (existing && !existing.used_at) {
+    unsubscribeToken = existing.token;
   } else if (!existing) {
     unsubscribeToken = genToken();
-    await supabaseAdmin
-      .from("email_unsubscribe_tokens" as any)
-      .upsert({ token: unsubscribeToken, email: normalized }, { onConflict: "email", ignoreDuplicates: true } as any);
+    await supabaseAdmin.from("email_unsubscribe_tokens").upsert(
+      { token: unsubscribeToken, email: normalized },
+      {
+        onConflict: "email",
+        ignoreDuplicates: true,
+      },
+    );
   }
 
   const props = {
@@ -206,26 +224,26 @@ async function enqueueOne(recipient: string, summary: Awaited<ReturnType<typeof 
     totals: summary.totals,
     sections: summary.sections,
   };
-  const element = React.createElement(activitySummaryTemplate.component, props);
+  const element = React.createElement(activitySummaryTemplate.component, props as never);
   const html = await render(element);
   const text = await render(element, { plainText: true });
 
   const subject =
     typeof activitySummaryTemplate.subject === "function"
-      ? (activitySummaryTemplate.subject as (d: any) => string)(props)
-      : (activitySummaryTemplate.subject as string);
+      ? activitySummaryTemplate.subject(props)
+      : activitySummaryTemplate.subject;
 
   const messageId = crypto.randomUUID();
   const idem = `activity-summary-${summary.period}-${summary.rangeLabel}-${normalized}`;
 
-  await supabaseAdmin.from("email_send_log" as any).insert({
+  await supabaseAdmin.from("email_send_log").insert({
     message_id: messageId,
     template_name: "activity-summary",
     recipient_email: recipient,
     status: "pending",
   });
 
-  const { error: enqueueError } = await supabaseAdmin.rpc("enqueue_email" as any, {
+  const { error: enqueueError } = await supabaseAdmin.rpc("enqueue_email", {
     queue_name: "transactional_emails",
     payload: {
       message_id: messageId,
@@ -241,10 +259,10 @@ async function enqueueOne(recipient: string, summary: Awaited<ReturnType<typeof 
       unsubscribe_token: unsubscribeToken,
       queued_at: new Date().toISOString(),
     },
-  } as any);
+  });
 
   if (enqueueError) {
-    await supabaseAdmin.from("email_send_log" as any).insert({
+    await supabaseAdmin.from("email_send_log").insert({
       message_id: messageId,
       template_name: "activity-summary",
       recipient_email: recipient,
@@ -259,15 +277,24 @@ async function enqueueOne(recipient: string, summary: Awaited<ReturnType<typeof 
 export async function sendSummaryToAdmins(period: SummaryPeriod) {
   const summary = await buildSummary(period);
   const admins = await listAdminEmails();
-  const results: Record<string, any> = {};
+  const results: Record<string, Awaited<ReturnType<typeof enqueueOne>>> = {};
   for (const email of admins) {
     results[email] = await enqueueOne(email, summary);
   }
-  return { period, range: summary.rangeLabel, totalEvents: summary.totalEvents, recipients: admins.length, results };
+  return {
+    period,
+    range: summary.rangeLabel,
+    totalEvents: summary.totalEvents,
+    recipients: admins.length,
+    results,
+  };
 }
 
 /** Returns true if the current Athens local time matches `hour` (and optional weekday). */
-export function isAthensTimeMatch(hour: number, weekday?: "Mon" | "Tue" | "Wed" | "Thu" | "Fri" | "Sat" | "Sun"): boolean {
+export function isAthensTimeMatch(
+  hour: number,
+  weekday?: "Mon" | "Tue" | "Wed" | "Thu" | "Fri" | "Sat" | "Sun",
+): boolean {
   const now = new Date();
   const h = parseInt(
     new Intl.DateTimeFormat("en-GB", { timeZone: TZ, hour: "2-digit", hour12: false }).format(now),

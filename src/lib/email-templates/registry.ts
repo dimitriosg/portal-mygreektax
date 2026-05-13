@@ -1,14 +1,16 @@
-import type { ComponentType } from 'react'
+import type { ComponentType } from "react";
 import { template as partnerInvite } from "./partner-invite";
 import { template as activitySummary } from "./activity-summary";
 
+export type TemplateData = Record<string, unknown>;
+
 export interface TemplateEntry {
-  component: ComponentType<any>
-  subject: string | ((data: Record<string, any>) => string)
-  displayName?: string
-  previewData?: Record<string, any>
+  component: ComponentType<never>;
+  subject: string | ((data: TemplateData) => string);
+  displayName?: string;
+  previewData?: TemplateData;
   /** Fixed recipient — overrides caller-provided recipientEmail when set. */
-  to?: string
+  to?: string;
 }
 
 /**
@@ -22,4 +24,4 @@ export interface TemplateEntry {
 export const TEMPLATES: Record<string, TemplateEntry> = {
   "partner-invite": partnerInvite,
   "activity-summary": activitySummary,
-}
+};

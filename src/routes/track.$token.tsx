@@ -42,7 +42,11 @@ function getRemaining(sla: string | null | undefined, status: string) {
   today.setHours(0, 0, 0, 0);
   due.setHours(0, 0, 0, 0);
   const days = Math.round((due.getTime() - today.getTime()) / 86400000);
-  if (days < 0) return { label: `${Math.abs(days)} day${Math.abs(days) === 1 ? "" : "s"} overdue`, tone: "danger" as const };
+  if (days < 0)
+    return {
+      label: `${Math.abs(days)} day${Math.abs(days) === 1 ? "" : "s"} overdue`,
+      tone: "danger" as const,
+    };
   if (days === 0) return { label: "Due today", tone: "warning" as const };
   if (days === 1) return { label: "Due tomorrow", tone: "warning" as const };
   return { label: `${days} days remaining`, tone: "default" as const };
@@ -127,7 +131,8 @@ function ErrorState() {
       <CardContent className="py-10 text-center">
         <h1 className="text-xl font-semibold">Link not available</h1>
         <p className="mx-auto mt-2 max-w-sm text-sm text-muted-foreground">
-          This tracking link is invalid or has expired. Please contact your accountant for a new link.
+          This tracking link is invalid or has expired. Please contact your accountant for a new
+          link.
         </p>
       </CardContent>
     </Card>
@@ -187,7 +192,9 @@ function TrackContent({ data }: { data: TrackData }) {
                     tone === "brand" && "bg-brand",
                   )}
                 />
-                <span className="font-serif text-2xl font-medium tracking-tight">{data.status}</span>
+                <span className="font-serif text-2xl font-medium tracking-tight">
+                  {data.status}
+                </span>
               </div>
             </div>
             <div className="text-right">
@@ -296,8 +303,7 @@ function Stepper({ currentIndex, progress }: { currentIndex: number; progress: n
                   className={cn(
                     "relative z-10 flex h-6 w-6 items-center justify-center rounded-full border-2 text-[10px] font-semibold transition-all",
                     done && "border-brand bg-brand text-brand-foreground",
-                    current &&
-                      "border-brand bg-background text-brand ring-4 ring-brand/15",
+                    current && "border-brand bg-background text-brand ring-4 ring-brand/15",
                     !done && !current && "border-border bg-background text-muted-foreground",
                   )}
                 >

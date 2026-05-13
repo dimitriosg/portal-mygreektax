@@ -77,7 +77,9 @@ export const listPartnerInvites = createServerFn({ method: "GET" })
     await assertAdmin(context.userId, context.claims.email as string | undefined);
     const { data, error } = await supabaseAdmin
       .from("partner_invites")
-      .select("id, email, first_name, last_name, airtable_accountant_id, created_at, expires_at, consumed_at")
+      .select(
+        "id, email, first_name, last_name, airtable_accountant_id, created_at, expires_at, consumed_at",
+      )
       .order("created_at", { ascending: false });
     if (error) {
       console.error("[listPartnerInvites] error:", error);
@@ -137,12 +139,12 @@ export const listPartnerProfilesAdmin = createServerFn({ method: "GET" })
     const lastSeen = new Map<string, string>();
     if (ids.length) {
       const { data: events } = await supabaseAdmin
-        .from("activity_events" as any)
+        .from("activity_events")
         .select("actor_user_id, occurred_at")
         .eq("event_type", "partner_login")
         .in("actor_user_id", ids)
         .order("occurred_at", { ascending: false });
-      for (const ev of (events ?? []) as any[]) {
+      for (const ev of events ?? []) {
         if (ev.actor_user_id && !lastSeen.has(ev.actor_user_id)) {
           lastSeen.set(ev.actor_user_id, ev.occurred_at);
         }
@@ -158,9 +160,7 @@ export const listPartnerProfilesAdmin = createServerFn({ method: "GET" })
 
 export const setPartnerDisabled = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
-  .inputValidator((d) =>
-    z.object({ userId: z.string().uuid(), disabled: z.boolean() }).parse(d),
-  )
+  .inputValidator((d) => z.object({ userId: z.string().uuid(), disabled: z.boolean() }).parse(d))
   .handler(async ({ data, context }) => {
     await assertAdmin(context.userId, context.claims.email as string | undefined);
     const { data: profile, error: pErr } = await supabaseAdmin
@@ -193,7 +193,7 @@ export const setPartnerDisabled = createServerFn({ method: "POST" })
     try {
       const { logActivityEvent } = await import("./activity.server");
       await logActivityEvent({
-        eventType: (data.disabled ? "partner_disabled" : "partner_enabled") as any,
+        eventType: data.disabled ? "partner_disabled" : "partner_enabled",
         actorUserId: context.userId,
         actorEmail: (context.claims.email as string | undefined) ?? null,
         subjectLabel: profile.full_name ?? profile.email,
@@ -264,23 +264,18 @@ export const acceptPartnerInvite = createServerFn({ method: "POST" })
     if (!userId) throw new Error("Could not create your account.");
 
     // Link partner profile (best effort)
-    await supabaseAdmin
-      .from("partner_profiles")
-      .upsert(
-        {
-          user_id: userId,
-          email: invite.email,
-          full_name: fullName,
-          airtable_accountant_id: invite.airtable_accountant_id ?? "",
-        },
-        { onConflict: "user_id" },
-      );
+    await supabaseAdmin.from("partner_profiles").upsert(
+      {
+        user_id: userId,
+        email: invite.email,
+        full_name: fullName,
+        airtable_accountant_id: invite.airtable_accountant_id ?? "",
+      },
+      { onConflict: "user_id" },
+    );
 
     // Assign partner role
-    await supabaseAdmin
-      .from("user_roles")
-      .insert({ user_id: userId, role: "partner" })
-      .select();
+    await supabaseAdmin.from("user_roles").insert({ user_id: userId, role: "partner" }).select();
 
     // Mark invite consumed atomically
     const { error: consumeErr } = await supabaseAdmin

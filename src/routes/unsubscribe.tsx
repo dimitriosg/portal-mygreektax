@@ -85,17 +85,13 @@ function UnsubscribePage() {
               </Button>
             </>
           )}
-          {state === "submitting" && (
-            <p className="text-sm text-muted-foreground">Processing…</p>
-          )}
+          {state === "submitting" && <p className="text-sm text-muted-foreground">Processing…</p>}
           {state === "done" && (
             <p className="text-sm text-foreground">
               You've been unsubscribed. Sorry to see you go.
             </p>
           )}
-          {state === "error" && (
-            <p className="text-sm text-destructive">{error}</p>
-          )}
+          {state === "error" && <p className="text-sm text-destructive">{error}</p>}
         </CardContent>
       </Card>
     </div>
