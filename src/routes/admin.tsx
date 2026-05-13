@@ -14,7 +14,7 @@ import {
 import { useAuth } from "@/lib/auth-context";
 import { getErrorMessage, isAuthSessionError } from "@/lib/auth-errors";
 import { Card, CardContent } from "@/components/ui/card";
-import { StatusBadge, TierBadge } from "@/lib/badges";
+import { NextActionBadge, StatusBadge, TierBadge } from "@/lib/badges";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -538,7 +538,7 @@ function AdminPage() {
           </div>
         </div>
         <div className="overflow-x-auto rounded-lg border border-border">
-          <table className="w-full min-w-[640px] text-sm">
+          <table className="w-full min-w-[760px] text-sm">
             <thead className="bg-muted/50 text-left">
               <tr>
                 <th className="px-3 py-2">Job</th>
@@ -546,6 +546,7 @@ function AdminPage() {
                 <th className="px-3 py-2">Service</th>
                 <th className="px-3 py-2">Tier</th>
                 <th className="px-3 py-2">Status</th>
+                <th className="px-3 py-2">Next action</th>
                 <th className="px-3 py-2">SLA</th>
                 <th className="px-3 py-2">Assigned to</th>
                 <th className="px-3 py-2">Client link</th>
@@ -585,6 +586,9 @@ function AdminPage() {
                       </td>
                       <td className="px-3 py-2">
                         <StatusBadge status={job.fields.Status} />
+                      </td>
+                      <td className="px-3 py-2">
+                        <NextActionBadge value={job.fields["Next Action Needed"]} />
                       </td>
                       <td className="px-3 py-2 text-muted-foreground">
                         {formatDate(job.fields["SLA Deadline"])}

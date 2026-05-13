@@ -20,7 +20,7 @@ import { createErrorReferenceId, debugError, debugLog, isDebugEnabled } from "@/
 import { formatDate } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { StatusBadge, TierBadge } from "@/lib/badges";
+import { NextActionBadge, StatusBadge, TierBadge } from "@/lib/badges";
 import { getJobStatusSortOrder, JOB_STATUSES } from "@/lib/airtable-shared";
 import {
   DndContext,
@@ -709,6 +709,7 @@ type JobLite = {
     "Service Name"?: string[];
     Tier?: string[];
     Status?: string;
+    "Next Action Needed"?: string;
     Client?: string[];
     "Client Code"?: string[];
     "SLA Deadline"?: string;
@@ -758,6 +759,10 @@ function JobCardInner({
             )}
           </span>
           <span>SLA: {formatDate(job.fields["SLA Deadline"])}</span>
+          <span className="inline-flex items-center gap-1">
+            Next:{" "}
+            <NextActionBadge value={job.fields["Next Action Needed"]} className="align-middle" />
+          </span>
           <span>
             {isAdmin && !asPartner
               ? `Client fee: \u20ac${job.fields["Client Fee (\u20ac)"] ?? "—"}`

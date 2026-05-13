@@ -156,6 +156,7 @@ export type AirtableRecord<T = Record<string, unknown>> = {
 export type JobFields = {
   "Job Code"?: string;
   Status?: string;
+  "Next Action Needed"?: string;
   Client?: string[];
   "Assigned Accountant"?: string[];
   "Service Catalog"?: string[];

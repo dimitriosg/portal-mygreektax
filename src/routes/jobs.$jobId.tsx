@@ -15,13 +15,18 @@ import {
   cancelChangeRequest,
   decideChangeRequest,
 } from "@/lib/jobs.functions";
-import { isJobStatus, JOB_STATUSES } from "@/lib/airtable-shared";
+import {
+  isJobStatus,
+  isNextActionNeeded,
+  JOB_STATUSES,
+  NEXT_ACTION_OPTIONS,
+} from "@/lib/airtable-shared";
 import { useAuth } from "@/lib/auth-context";
 import { getErrorMessage, isAuthSessionError } from "@/lib/auth-errors";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { StatusBadge, TierBadge } from "@/lib/badges";
+import { NextActionBadge, StatusBadge, TierBadge } from "@/lib/badges";
 import { toast } from "sonner";
 import { formatDate, formatDateTime } from "@/lib/utils";
 import { track } from "@/lib/analytics";
@@ -152,6 +157,7 @@ function JobDetail() {
   const [partnerProgressNotes, setPartnerProgressNotes] = useState<string>("");
   const [adminInternalNotes, setAdminInternalNotes] = useState<string>("");
   const [clientVisibleNote, setClientVisibleNote] = useState<string>("");
+  const [nextActionNeeded, setNextActionNeeded] = useState<string>("");
 
   useEffect(() => {
     if (data?.job) {
@@ -164,6 +170,7 @@ function JobDetail() {
       );
       setAdminInternalNotes(data.job.fields["Admin Internal Notes"] ?? "");
       setClientVisibleNote(data.job.fields["Client Visible Note"] ?? "");
+      setNextActionNeeded(data.job.fields["Next Action Needed"] ?? "");
     }
   }, [data]);
 
@@ -178,6 +185,9 @@ function JobDetail() {
             ? {
                 adminInternalNotes,
                 clientVisibleNote,
+                nextActionNeeded: isNextActionNeeded(nextActionNeeded)
+                  ? nextActionNeeded
+                  : undefined,
               }
             : {}),
         },
@@ -247,6 +257,7 @@ function JobDetail() {
 
   const j = data.job.fields;
   const hasLegacyStatus = !!status && !isJobStatus(status);
+  const hasLegacyNextAction = !!nextActionNeeded && !isNextActionNeeded(nextActionNeeded);
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8 space-y-6">
@@ -308,6 +319,12 @@ function JobDetail() {
               <TierBadge tier={j.Tier?.[0]} />
             </div>
           </div>
+          <div>
+            <div className="text-muted-foreground">Next action needed</div>
+            <div>
+              <NextActionBadge value={j["Next Action Needed"]} />
+            </div>
+          </div>
         </CardContent>
       </Card>
 
@@ -341,6 +358,28 @@ function JobDetail() {
               ))}
             </select>
           </div>
+          {isAdmin && (
+            <div>
+              <label className="text-sm font-medium">Next action needed</label>
+              <select
+                value={nextActionNeeded}
+                onChange={(e) => setNextActionNeeded(e.target.value)}
+                className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              >
+                <option value="">Not set</option>
+                {hasLegacyNextAction && (
+                  <option value={nextActionNeeded} disabled>
+                    Legacy value: {nextActionNeeded}
+                  </option>
+                )}
+                {NEXT_ACTION_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div>
             <label className="text-sm font-medium">Partner / progress notes</label>
             <Textarea

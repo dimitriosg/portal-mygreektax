@@ -15,7 +15,7 @@ import {
   type ClientFields,
   type AccountantFields,
 } from "./airtable.server";
-import { JOB_STATUSES, STATUS_PROGRESS } from "./airtable-shared";
+import { JOB_STATUSES, NEXT_ACTION_OPTIONS, STATUS_PROGRESS } from "./airtable-shared";
 import { logActivityEvent } from "./activity.server";
 import { requireAdminAccess, requireVerifiedAccess } from "./access-context.server";
 
@@ -163,6 +163,7 @@ export const updateJob = createServerFn({ method: "POST" })
       adminInternalNotes?: string;
       partnerProgressNotes?: string;
       clientVisibleNote?: string;
+      nextActionNeeded?: string;
       slaDeadline?: string | null;
       dateSent?: string | null;
       clientFee?: number | null;
@@ -180,6 +181,7 @@ export const updateJob = createServerFn({ method: "POST" })
           adminInternalNotes: z.string().max(5000).optional(),
           partnerProgressNotes: z.string().max(5000).optional(),
           clientVisibleNote: z.string().max(5000).optional(),
+          nextActionNeeded: z.enum(NEXT_ACTION_OPTIONS).optional(),
           slaDeadline: z.string().max(30).nullable().optional(),
           dateSent: z.string().max(30).nullable().optional(),
           clientFee: z.number().min(0).max(1_000_000).nullable().optional(),
@@ -224,6 +226,9 @@ export const updateJob = createServerFn({ method: "POST" })
       }
       if (data.clientVisibleNote !== undefined) {
         fields["Client Visible Note"] = data.clientVisibleNote;
+      }
+      if (data.nextActionNeeded !== undefined) {
+        fields["Next Action Needed"] = data.nextActionNeeded;
       }
       if (data.slaDeadline !== undefined) fields["SLA Deadline"] = data.slaDeadline ?? null;
       if (data.dateSent !== undefined) fields["Date Sent"] = data.dateSent ?? null;
@@ -289,6 +294,7 @@ export const updateJob = createServerFn({ method: "POST" })
       const fieldChangeMap: Array<[string, unknown, unknown]> = [
         ["SLA deadline", job.fields["SLA Deadline"], data.slaDeadline],
         ["Date sent", job.fields["Date Sent"], data.dateSent],
+        ["Next action needed", job.fields["Next Action Needed"], data.nextActionNeeded],
         ["Client fee", job.fields["Client Fee (\u20ac)"], data.clientFee],
         ["Accountant fee", job.fields["Accountant Fee (\u20ac)"], data.accountantFee],
         ["Tier", job.fields.Tier?.[0], data.tier],
