@@ -6,11 +6,6 @@ Required environment variables:
   SUPABASE_SERVICE_ROLE_KEY
   SUPABASE_URL (or VITE_SUPABASE_URL)`;
 
-function fail(message) {
-  console.error(message);
-  process.exitCode = 1;
-}
-
 function parseArgs(argv) {
   const options = {
     email: null,
@@ -74,7 +69,7 @@ async function findUserByEmail(supabase, email) {
       return match;
     }
 
-    if (!data.nextPage || data.users.length === 0 || page >= data.lastPage) {
+    if (!data.nextPage || data.users.length === 0) {
       return null;
     }
 
@@ -145,5 +140,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  fail(error instanceof Error ? error.message : "Unknown error.");
+  console.error(error instanceof Error ? error.message : "Unknown error.");
+  process.exitCode = 1;
 });
