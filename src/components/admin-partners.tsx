@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
+import { supabase } from "@/integrations/supabase/client";
 import {
   createPartnerInvite,
   listPartnerInvites,
@@ -84,6 +85,10 @@ function openInviteEmailDraft(invite: IssuedInvite) {
   window.location.href = buildInviteMailto(invite);
   track("partner_invite_email_draft_opened");
   toast.success("Email draft opened");
+}
+
+function getRecoveryRedirectUrl() {
+  return `${window.location.origin}/login?mode=recovery`;
 }
 
 export function PartnersSection({
@@ -181,6 +186,18 @@ export function PartnersSection({
       toast.success("Invite link copied");
     } catch {
       toast.message("Copy failed", { description: url });
+    }
+  };
+
+  const sendRecoveryLink = async (email: string) => {
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: getRecoveryRedirectUrl(),
+      });
+      if (error) throw error;
+      toast.success("Recovery link sent.");
+    } catch {
+      toast.error("Could not send a recovery link right now.");
     }
   };
 
@@ -401,7 +418,12 @@ export function PartnersSection({
                                 <MoreHorizontal className="h-4 w-4" />
                               </Button>
                             </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
+                             <DropdownMenuContent align="end">
+                              {!isDisabled && (
+                                <DropdownMenuItem onClick={() => void sendRecoveryLink(p.email)}>
+                                  Send recovery link
+                                </DropdownMenuItem>
+                              )}
                               <DropdownMenuItem
                                 onClick={() =>
                                   setConfirm({
