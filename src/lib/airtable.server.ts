@@ -80,15 +80,15 @@ export async function airtableListAll<T = Record<string, unknown>>(
   table: string,
   query?: AirtableQuery,
 ) {
-  const baseQuery = query ? { ...query } : {};
+  const querySnapshot = query ? { ...query } : {};
   const records: AirtableRecord<T>[] = [];
   let offset: string | undefined;
 
   do {
-    const page = (await airtableGet(
-      table,
-      offset ? { ...baseQuery, offset } : { ...baseQuery },
-    )) as {
+    const page = (await airtableGet(table, {
+      ...querySnapshot,
+      ...(offset ? { offset } : {}),
+    })) as {
       records?: AirtableRecord<T>[];
       offset?: string;
     };
