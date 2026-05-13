@@ -276,7 +276,9 @@ function JobDetail() {
   if (!data) return null;
 
   const j = data.job.fields;
-  const availableStatuses = (isAdmin ? JOB_STATUSES : PARTNER_ALLOWED_JOB_STATUSES) as readonly string[];
+  const availableStatuses = (
+    isAdmin ? JOB_STATUSES : PARTNER_ALLOWED_JOB_STATUSES
+  ) as readonly string[];
   const hasLegacyStatus = !!status && !isJobStatus(status);
   const hasUnavailableStatus = !!status && !hasLegacyStatus && !availableStatuses.includes(status);
   const hasLegacyNextAction = !!nextActionNeeded && !isNextActionNeeded(nextActionNeeded);
