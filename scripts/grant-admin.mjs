@@ -5,8 +5,8 @@ const USAGE = `Usage: node scripts/grant-admin.mjs --email admin@example.com
 Required environment variables:
   SUPABASE_SERVICE_ROLE_KEY
   SUPABASE_URL (or VITE_SUPABASE_URL)`;
-const AUTH_USER_PAGE_SIZE = 200;
-const MAX_AUTH_USER_PAGES = 1000;
+const AUTH_USER_PAGE_SIZE = 1000;
+const MAX_AUTH_USER_PAGES = 100;
 
 function parseArgs(argv) {
   const options = {
@@ -81,11 +81,11 @@ async function findUserByEmail(supabase, email) {
       return match;
     }
 
-    if (!data.nextPage) {
+    if (users.length < AUTH_USER_PAGE_SIZE) {
       return null;
     }
 
-    page = data.nextPage;
+    page += 1;
   }
 
   throw new Error("Exceeded maximum pagination limit while searching auth users.");
