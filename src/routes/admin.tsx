@@ -27,7 +27,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { JOB_STATUSES } from "@/lib/airtable-shared";
+import { isOverdueEligibleStatus, JOB_STATUSES } from "@/lib/airtable-shared";
 import { toast } from "sonner";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
@@ -41,7 +41,17 @@ import { track } from "@/lib/analytics";
 export const Route = createFileRoute("/admin")({ component: AdminPage });
 
 // Column widths for the 8-column table skeleton (tailwind w-* classes)
-const SKELETON_COL_WIDTHS = ["w-16", "w-24", "w-28", "w-12", "w-20", "w-16", "w-20", "w-24"];
+const SKELETON_COL_WIDTHS = [
+  "w-16",
+  "w-24",
+  "w-28",
+  "w-12",
+  "w-20",
+  "w-16",
+  "w-20",
+  "w-24",
+  "w-16",
+];
 
 function AdminTableSkeleton() {
   return (
@@ -273,7 +283,7 @@ function AdminPage() {
   }, {});
   const overdue = jobs.filter((j) => {
     const sla = j.fields["SLA Deadline"];
-    return sla && new Date(sla) < new Date() && j.fields.Status !== "Completed";
+    return sla && new Date(sla) < new Date() && isOverdueEligibleStatus(j.fields.Status);
   }).length;
 
   return (
@@ -539,6 +549,7 @@ function AdminPage() {
                 <th className="px-3 py-2">SLA</th>
                 <th className="px-3 py-2">Assigned to</th>
                 <th className="px-3 py-2">Client link</th>
+                <th className="px-3 py-2">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -602,6 +613,13 @@ function AdminPage() {
                           disabled={makeLink.isPending}
                         >
                           Copy tracking link
+                        </Button>
+                      </td>
+                      <td className="px-3 py-2">
+                        <Button size="sm" asChild>
+                          <Link to="/jobs/$jobId" params={{ jobId: job.id }}>
+                            Open
+                          </Link>
                         </Button>
                       </td>
                     </tr>
