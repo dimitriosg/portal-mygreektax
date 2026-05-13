@@ -467,7 +467,11 @@ function JobDetail() {
             <p className="text-sm text-muted-foreground">
               The partner has delivered this job. Review the work before marking it completed.
             </p>
-            <Button onClick={() => markCompleted.mutate()} disabled={markCompleted.isPending}>
+            <Button
+              aria-label="Mark job as completed"
+              onClick={() => markCompleted.mutate()}
+              disabled={markCompleted.isPending}
+            >
               {markCompleted.isPending ? "Marking…" : "Mark as completed"}
             </Button>
           </CardContent>
