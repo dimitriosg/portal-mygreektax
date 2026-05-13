@@ -54,8 +54,8 @@ function getPublicTrackingStatus(status: string): PublicTrackingStatus {
   return PUBLIC_TRACKING_STATUS_MAP[status] ?? "Pending";
 }
 
-function getPublicTrackingProgress(status: PublicTrackingStatus) {
-  return status === "Cancelled" ? 0 : PUBLIC_TRACKING_PROGRESS[status];
+function getPublicTrackingProgress(status: PublicTrackingStage) {
+  return PUBLIC_TRACKING_PROGRESS[status];
 }
 
 function isPublicTrackingCancelled(status: PublicTrackingStatus) {
@@ -183,7 +183,7 @@ type TrackData = {
 function TrackContent({ data }: { data: TrackData }) {
   const publicStatus = getPublicTrackingStatus(data.status);
   const isCancelled = isPublicTrackingCancelled(publicStatus);
-  const publicProgress = getPublicTrackingProgress(publicStatus);
+  const publicProgress = isCancelled ? 0 : getPublicTrackingProgress(publicStatus);
   const currentIndex = isCancelled
     ? -1
     : PUBLIC_TRACKING_STAGES.findIndex((stage) => stage === publicStatus);
