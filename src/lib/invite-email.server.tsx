@@ -25,88 +25,79 @@ export async function enqueuePartnerInviteEmail(params: {
 
   // Refuse if email is suppressed.
   const { data: suppressed } = await supabaseAdmin
-    .from("suppressed_emails" as any)
+    .from("suppressed_emails")
     .select("id")
     .eq("email", normalized)
     .maybeSingle();
   if (suppressed) {
-    throw new Error(
-      "This email address has unsubscribed or bounced and cannot be emailed.",
-    );
+    throw new Error("This email address has unsubscribed or bounced and cannot be emailed.");
   }
 
   // Get or create unsubscribe token (one per address).
   let unsubscribeToken: string | null = null;
   const { data: existing } = await supabaseAdmin
-    .from("email_unsubscribe_tokens" as any)
+    .from("email_unsubscribe_tokens")
     .select("token, used_at")
     .eq("email", normalized)
     .maybeSingle();
-  if (existing && !(existing as any).used_at) {
-    unsubscribeToken = (existing as any).token;
+  if (existing && !existing.used_at) {
+    unsubscribeToken = existing.token;
   } else if (!existing) {
     unsubscribeToken = generateToken();
-    await supabaseAdmin
-      .from("email_unsubscribe_tokens" as any)
-      .upsert(
-        { token: unsubscribeToken, email: normalized },
-        { onConflict: "email", ignoreDuplicates: true } as any,
-      );
+    await supabaseAdmin.from("email_unsubscribe_tokens").upsert(
+      { token: unsubscribeToken, email: normalized },
+      {
+        onConflict: "email",
+        ignoreDuplicates: true,
+      },
+    );
     const { data: stored } = await supabaseAdmin
-      .from("email_unsubscribe_tokens" as any)
+      .from("email_unsubscribe_tokens")
       .select("token")
       .eq("email", normalized)
       .maybeSingle();
-    unsubscribeToken = (stored as any)?.token ?? unsubscribeToken;
+    unsubscribeToken = stored?.token ?? unsubscribeToken;
   }
 
   // Render the template.
   const element = React.createElement(partnerInviteTemplate.component, {
     firstName,
     inviteUrl,
-  });
+  } as never);
   const html = await render(element);
   const text = await render(element, { plainText: true });
 
   const messageId = crypto.randomUUID();
 
   // Append pending log row.
-  await supabaseAdmin.from("email_send_log" as any).insert({
+  await supabaseAdmin.from("email_send_log").insert({
     message_id: messageId,
     template_name: "partner-invite",
     recipient_email: email,
     status: "pending",
   });
 
-  const { error: enqueueError } = await supabaseAdmin.rpc(
-    "enqueue_email" as any,
-    {
-      queue_name: "transactional_emails",
-      payload: {
-        message_id: messageId,
-        to: email,
-        from: `${SITE_NAME} <noreply@${FROM_DOMAIN}>`,
-        sender_domain: SENDER_DOMAIN,
-        subject:
-          typeof partnerInviteTemplate.subject === "function"
-            ? (partnerInviteTemplate.subject as (d: any) => string)({
-                firstName,
-                inviteUrl,
-              })
-            : (partnerInviteTemplate.subject as string),
-        html,
-        text,
-        purpose: "transactional",
-        label: "partner-invite",
-        idempotency_key: messageId,
-        unsubscribe_token: unsubscribeToken,
-        queued_at: new Date().toISOString(),
-      },
-    } as any,
-  );
+  const subject = partnerInviteTemplate.subject;
+  const { error: enqueueError } = await supabaseAdmin.rpc("enqueue_email", {
+    queue_name: "transactional_emails",
+    payload: {
+      message_id: messageId,
+      to: email,
+      from: `${SITE_NAME} <noreply@${FROM_DOMAIN}>`,
+      sender_domain: SENDER_DOMAIN,
+      subject,
+      html,
+      text,
+      purpose: "transactional",
+      label: "partner-invite",
+      idempotency_key: messageId,
+      unsubscribe_token: unsubscribeToken,
+      queued_at: new Date().toISOString(),
+    },
+  });
 
   if (enqueueError) {
-    await supabaseAdmin.from("email_send_log" as any).insert({
+    await supabaseAdmin.from("email_send_log").insert({
       message_id: messageId,
       template_name: "partner-invite",
       recipient_email: email,

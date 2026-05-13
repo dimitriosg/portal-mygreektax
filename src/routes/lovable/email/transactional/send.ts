@@ -245,7 +245,7 @@ export const Route = createFileRoute("/lovable/email/transactional/send")({
         }
 
         // 4. Render React Email template to HTML and plain text
-        const element = React.createElement(template.component, templateData);
+        const element = React.createElement(template.component, templateData as never);
         const html = await render(element);
         const plainText = await render(element, { plainText: true });
 

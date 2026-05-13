@@ -182,7 +182,7 @@ export const updateJob = createServerFn({ method: "POST" })
       // Partners may only update Status and Notes directly. Other fields require admin approval.
       const partnerFields = new Set(["jobId", "status", "notes"]);
       for (const k of Object.keys(data)) {
-        if (!partnerFields.has(k) && (data as any)[k] !== undefined) {
+        if (!partnerFields.has(k) && data[k as keyof typeof data] !== undefined) {
           throw new Error(
             "Partners can only update status and notes directly. Submit a change request for other fields.",
           );
@@ -1003,7 +1003,7 @@ export const requestJobChange = createServerFn({ method: "POST" })
 
     // Block duplicate pending request for same field.
     const { data: existing } = await supabaseAdmin
-      .from("job_change_requests" as any)
+      .from("job_change_requests")
       .select("id")
       .eq("airtable_job_id", data.jobId)
       .eq("field_name", data.field)
@@ -1013,7 +1013,7 @@ export const requestJobChange = createServerFn({ method: "POST" })
 
     const actor = await getActorIdentity(userId);
     const { data: inserted, error } = await supabaseAdmin
-      .from("job_change_requests" as any)
+      .from("job_change_requests")
       .insert({
         airtable_job_id: data.jobId,
         job_code: job.fields["Job Code"] ?? null,
@@ -1030,7 +1030,7 @@ export const requestJobChange = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
 
     await logActivityEvent({
-      eventType: "job_change_request_created" as any,
+      eventType: "job_change_request_created",
       actorUserId: userId,
       actorEmail: actor.email,
       actorName: actor.name,
@@ -1067,7 +1067,7 @@ export const cancelChangeRequest = createServerFn({ method: "POST" })
   .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { error } = await supabaseAdmin
-      .from("job_change_requests" as any)
+      .from("job_change_requests")
       .update({ status: "cancelled", decided_at: new Date().toISOString() })
       .eq("id", data.id)
       .eq("requested_by", context.userId)
@@ -1094,7 +1094,7 @@ export const decideChangeRequest = createServerFn({ method: "POST" })
     });
 
     const { data: req, error: readErr } = await supabaseAdmin
-      .from("job_change_requests" as any)
+      .from("job_change_requests")
       .select("*")
       .eq("id", data.id)
       .maybeSingle();
@@ -1135,7 +1135,7 @@ export const decideChangeRequest = createServerFn({ method: "POST" })
     }
 
     const { error: updErr } = await supabaseAdmin
-      .from("job_change_requests" as any)
+      .from("job_change_requests")
       .update({
         status: data.decision,
         decided_by: context.userId,
@@ -1147,7 +1147,7 @@ export const decideChangeRequest = createServerFn({ method: "POST" })
 
     const actor = await getActorIdentity(context.userId);
     await logActivityEvent({
-      eventType: "job_change_request_decided" as any,
+      eventType: "job_change_request_decided",
       actorUserId: context.userId,
       actorEmail: actor.email,
       actorName: actor.name,
@@ -1196,7 +1196,7 @@ export const listJobChangeRequests = createServerFn({ method: "GET" })
       // Partners only see their own requests for this job.
       if (!partner) return { requests: [] as unknown as JobChangeRequestRow[] };
       const { data: rows } = await supabaseAdmin
-        .from("job_change_requests" as any)
+        .from("job_change_requests")
         .select("*")
         .eq("airtable_job_id", data.jobId)
         .eq("requested_by", userId)
@@ -1204,7 +1204,7 @@ export const listJobChangeRequests = createServerFn({ method: "GET" })
       return { requests: (rows ?? []) as unknown as JobChangeRequestRow[] };
     }
     const { data: rows } = await supabaseAdmin
-      .from("job_change_requests" as any)
+      .from("job_change_requests")
       .select("*")
       .eq("airtable_job_id", data.jobId)
       .order("created_at", { ascending: false });
@@ -1226,7 +1226,7 @@ export const listChangeRequests = createServerFn({ method: "GET" })
       email: context.claims.email as string | undefined,
     });
     let q = supabaseAdmin
-      .from("job_change_requests" as any)
+      .from("job_change_requests")
       .select("*")
       .order("created_at", { ascending: false })
       .limit(500);
@@ -1245,7 +1245,7 @@ export const getPendingRequestCount = createServerFn({ method: "GET" })
     );
     if (!isAdmin) return { count: 0 };
     const { count } = await supabaseAdmin
-      .from("job_change_requests" as any)
+      .from("job_change_requests")
       .select("*", { count: "exact", head: true })
       .eq("status", "pending");
     return { count: count ?? 0 };

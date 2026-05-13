@@ -22,7 +22,8 @@ const TIER_STYLES: Record<string, string> = {
 
 export function StatusBadge({ status, className }: { status?: string | null; className?: string }) {
   const key = status ?? "—";
-  const style = (status && STATUS_STYLES[status]) || "bg-muted text-muted-foreground hover:bg-muted";
+  const style =
+    (status && STATUS_STYLES[status]) || "bg-muted text-muted-foreground hover:bg-muted";
   return <Badge className={cn("font-medium", style, className)}>{key}</Badge>;
 }
 

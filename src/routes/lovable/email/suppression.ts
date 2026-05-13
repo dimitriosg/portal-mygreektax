@@ -1,7 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { WebhookError, verifyWebhookRequest } from "@lovable.dev/webhooks-js";
 import { createFileRoute } from "@tanstack/react-router";
-import type { Database } from "@/integrations/supabase/types";
+import type { Database, Json } from "@/integrations/supabase/types";
 
 // Suppression event payload sent by the Go API when Mailgun reports
 // a bounce, complaint, or unsubscribe.
@@ -9,7 +9,7 @@ interface SuppressionPayload {
   email: string;
   reason: "bounce" | "complaint" | "unsubscribe";
   message_id?: string;
-  metadata?: Record<string, unknown>;
+  metadata?: Json;
   is_retry: boolean;
   retry_count: number;
 }

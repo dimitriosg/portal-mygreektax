@@ -10,10 +10,12 @@ const DEFAULT_AUTH_TTL_MINUTES = 15;
 const DEFAULT_TRANSACTIONAL_TTL_MINUTES = 60;
 
 type SupabaseClient = ReturnType<typeof createClient<Database>>;
-type QueueMessage = Database["public"]["Functions"]["read_email_batch"]["Returns"][number];
+type QueueMessage = Database["public"]["Functions"]["read_email_batch"]["Returns"][number] & {
+  enqueued_at?: string;
+};
 type QueuePayload = {
-  from?: string;
-  html?: string;
+  from: string;
+  html: string;
   idempotency_key?: string;
   label?: string;
   message_id?: string;
@@ -21,8 +23,8 @@ type QueuePayload = {
   queued_at?: string;
   run_id?: string;
   sender_domain?: string;
-  subject?: string;
-  text?: string;
+  subject: string;
+  text: string;
   to: string;
   unsubscribe_token?: string;
 };
@@ -187,7 +189,7 @@ export const Route = createFileRoute("/lovable/email/queue/process")({
           }
 
           for (let i = 0; i < messages.length; i++) {
-            const msg = messages[i];
+            const msg = messages[i] as QueueMessage;
             const payload = parseQueuePayload(msg.message);
             const failedAttempts =
               payload?.message_id && typeof payload.message_id === "string"

@@ -278,9 +278,7 @@ export function PartnersSection({
             <Button variant="outline" onClick={() => issued && copyLink(issued.url)}>
               Copy link
             </Button>
-            <Button onClick={() => issued && openInviteEmailDraft(issued)}>
-              Open email draft
-            </Button>
+            <Button onClick={() => issued && openInviteEmailDraft(issued)}>Open email draft</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
