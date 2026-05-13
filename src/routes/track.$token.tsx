@@ -3,13 +3,12 @@ import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
 import { getClientTracking } from "@/lib/jobs.functions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Check, Calendar, Clock, ShieldCheck, MessageSquare } from "lucide-react";
+import { AlertCircle, Calendar, Check, Clock, MessageSquare, ShieldCheck } from "lucide-react";
 import logo from "@/assets/mygreektax-mark.svg";
 import { formatDate } from "@/lib/utils";
 import { cn } from "@/lib/utils";
-import { hasJobProgressStage, isOverdueEligibleStatus, JOB_STATUSES } from "@/lib/airtable-shared";
+import { isOverdueEligibleStatus } from "@/lib/airtable-shared";
 
 export const Route = createFileRoute("/track/$token")({
   component: TrackPage,
@@ -21,13 +20,53 @@ export const Route = createFileRoute("/track/$token")({
   }),
 });
 
-const STAGES = JOB_STATUSES;
+const PUBLIC_TRACKING_STAGES = [
+  "Pending",
+  "Paid",
+  "In Progress",
+  "Delivered",
+  "Completed",
+] as const;
+
+type PublicTrackingStage = (typeof PUBLIC_TRACKING_STAGES)[number];
+type PublicTrackingStatus = PublicTrackingStage | "Cancelled";
+
+const PUBLIC_TRACKING_STATUS_MAP: Record<string, PublicTrackingStatus> = {
+  "To Assign": "Pending",
+  Pending: "Pending",
+  Paid: "Paid",
+  "In Progress": "In Progress",
+  Delivered: "Delivered",
+  Invoiced: "Delivered",
+  Completed: "Completed",
+  "Cancelled / NMF": "Cancelled",
+};
+
+const PUBLIC_TRACKING_PROGRESS: Record<PublicTrackingStage, number> = {
+  Pending: 10,
+  Paid: 35,
+  "In Progress": 60,
+  Delivered: 85,
+  Completed: 100,
+};
+
+function getPublicTrackingStatus(status: string): PublicTrackingStatus {
+  return PUBLIC_TRACKING_STATUS_MAP[status] ?? "Pending";
+}
+
+function getPublicTrackingProgress(status: PublicTrackingStatus) {
+  return status === "Cancelled" ? 0 : PUBLIC_TRACKING_PROGRESS[status];
+}
+
+function isPublicTrackingCancelled(status: PublicTrackingStatus) {
+  return status === "Cancelled";
+}
 
 function getRemaining(sla: string | null | undefined, status: string) {
   if (!sla) return null;
   if (status === "Completed") return { label: "Completed", tone: "success" as const };
-  if (status === "Cancelled / NMF") {
-    return { label: "Cancelled / NMF", tone: "neutral" as const };
+  if (status === "Cancelled") {
+    return { label: "Cancelled", tone: "neutral" as const };
   }
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(sla);
   const due = m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : new Date(sla);
@@ -51,8 +90,8 @@ function getRemaining(sla: string | null | undefined, status: string) {
 
 function statusTone(status: string) {
   if (status === "Completed" || status === "Paid") return "success";
-  if (status === "Cancelled / NMF") return "danger";
-  if (status === "Pending" || status === "To Assign") return "warning";
+  if (status === "Cancelled") return "danger";
+  if (status === "Pending") return "warning";
   return "brand";
 }
 
@@ -142,11 +181,14 @@ type TrackData = {
 };
 
 function TrackContent({ data }: { data: TrackData }) {
-  const currentIndex = hasJobProgressStage(data.status)
-    ? STAGES.findIndex((stage) => stage === data.status)
-    : -1;
-  const remaining = getRemaining(data.sla, data.status);
-  const tone = statusTone(data.status);
+  const publicStatus = getPublicTrackingStatus(data.status);
+  const isCancelled = isPublicTrackingCancelled(publicStatus);
+  const publicProgress = getPublicTrackingProgress(publicStatus);
+  const currentIndex = isCancelled
+    ? -1
+    : PUBLIC_TRACKING_STAGES.findIndex((stage) => stage === publicStatus);
+  const remaining = getRemaining(data.sla, publicStatus);
+  const tone = statusTone(publicStatus);
 
   return (
     <div className="space-y-6">
@@ -166,43 +208,68 @@ function TrackContent({ data }: { data: TrackData }) {
       </section>
 
       {/* Progress card */}
-      <Card
-        className="border-border/60 overflow-hidden"
-        style={{ boxShadow: "var(--shadow-soft)" }}
-      >
-        <CardContent className="space-y-6 p-5 sm:p-7">
-          <div className="flex items-end justify-between gap-4">
-            <div>
-              <div className="text-xs uppercase tracking-wider text-muted-foreground">
-                Current status
-              </div>
-              <div className="mt-1.5 flex items-center gap-2.5">
-                <span
-                  className={cn(
-                    "inline-flex h-2.5 w-2.5 rounded-full",
-                    tone === "success" && "bg-success",
-                    tone === "warning" && "bg-warning",
-                    tone === "danger" && "bg-destructive",
-                    tone === "brand" && "bg-brand",
-                  )}
-                />
-                <span className="font-serif text-2xl font-medium tracking-tight">
-                  {data.status}
-                </span>
+      {isCancelled ? (
+        <Card
+          className="overflow-hidden border-border/60"
+          style={{ boxShadow: "var(--shadow-soft)" }}
+        >
+          <CardContent className="space-y-4 p-5 sm:p-7">
+            <div className="text-xs uppercase tracking-wider text-muted-foreground">
+              Current status
+            </div>
+            <div className="flex items-start gap-3 rounded-xl border border-destructive/20 bg-destructive/5 p-4">
+              <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-destructive" />
+              <div className="space-y-1">
+                <div className="font-serif text-2xl font-medium tracking-tight">
+                  {publicStatus}
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  This service request has been cancelled. Please contact MyGreekTax if you need
+                  any help.
+                </p>
               </div>
             </div>
-            <div className="text-right">
-              <div className="font-serif text-3xl font-medium tabular-nums tracking-tight">
-                {data.progress}
-                <span className="text-base text-muted-foreground">%</span>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card
+          className="overflow-hidden border-border/60"
+          style={{ boxShadow: "var(--shadow-soft)" }}
+        >
+          <CardContent className="space-y-6 p-5 sm:p-7">
+            <div className="flex items-end justify-between gap-4">
+              <div>
+                <div className="text-xs uppercase tracking-wider text-muted-foreground">
+                  Current status
+                </div>
+                <div className="mt-1.5 flex items-center gap-2.5">
+                  <span
+                    className={cn(
+                      "inline-flex h-2.5 w-2.5 rounded-full",
+                      tone === "success" && "bg-success",
+                      tone === "warning" && "bg-warning",
+                      tone === "danger" && "bg-destructive",
+                      tone === "brand" && "bg-brand",
+                    )}
+                  />
+                  <span className="font-serif text-2xl font-medium tracking-tight">
+                    {publicStatus}
+                  </span>
+                </div>
               </div>
-              <div className="text-xs text-muted-foreground">complete</div>
+              <div className="text-right">
+                <div className="font-serif text-3xl font-medium tabular-nums tracking-tight">
+                  {publicProgress}
+                  <span className="text-base text-muted-foreground">%</span>
+                </div>
+                <div className="text-xs text-muted-foreground">complete</div>
+              </div>
             </div>
-          </div>
 
-          <Stepper currentIndex={currentIndex} progress={data.progress} />
-        </CardContent>
-      </Card>
+            <Stepper currentIndex={currentIndex} progress={publicProgress} />
+          </CardContent>
+        </Card>
+      )}
 
       {/* Dates */}
       <Card className="border-border/60" style={{ boxShadow: "var(--shadow-soft)" }}>
@@ -289,7 +356,7 @@ function Stepper({ currentIndex, progress }: { currentIndex: number; progress: n
   const fillPct =
     currentIndex < 0
       ? Math.min(progress, 8)
-      : Math.min(100, (currentIndex / (STAGES.length - 1)) * 100 + 6);
+      : Math.min(100, (currentIndex / (PUBLIC_TRACKING_STAGES.length - 1)) * 100 + 6);
 
   return (
     <div>
@@ -302,7 +369,7 @@ function Stepper({ currentIndex, progress }: { currentIndex: number; progress: n
           style={{ width: `calc((100% - 1.5rem) * ${fillPct} / 100)` }}
         />
         <ol className="relative flex items-start justify-between gap-1">
-          {STAGES.map((s, i) => {
+          {PUBLIC_TRACKING_STAGES.map((s, i) => {
             const done = i < currentIndex;
             const current = i === currentIndex;
             return (
