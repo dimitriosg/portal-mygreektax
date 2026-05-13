@@ -213,10 +213,10 @@ export const updateJob = createServerFn({ method: "POST" })
     );
     const job = (await airtableGet(`${TABLES.jobs}/${data.jobId}`)) as AirtableRecord<JobFields>;
     const previousStatus = job.fields.Status ?? null;
-    const autoNextActionNeeded =
-      data.status !== undefined && data.status !== previousStatus
-        ? getAutoNextActionNeeded(data.status)
-        : undefined;
+    const didStatusChange = data.status !== undefined && data.status !== previousStatus;
+    const autoNextActionNeeded = didStatusChange ? getAutoNextActionNeeded(data.status) : undefined;
+    const manualNextActionNeeded =
+      isAdmin && autoNextActionNeeded === undefined ? data.nextActionNeeded : undefined;
     if (!isAdmin) {
       const allowed =
         partner && job.fields["Assigned Accountant"]?.includes(partner.airtable_accountant_id);
@@ -253,8 +253,8 @@ export const updateJob = createServerFn({ method: "POST" })
       if (data.clientVisibleNote !== undefined) {
         fields["Client Visible Note"] = data.clientVisibleNote;
       }
-      if (data.nextActionNeeded !== undefined && autoNextActionNeeded === undefined) {
-        fields["Next Action Needed"] = data.nextActionNeeded;
+      if (manualNextActionNeeded !== undefined) {
+        fields["Next Action Needed"] = manualNextActionNeeded;
       }
       if (data.slaDeadline !== undefined) fields["SLA Deadline"] = data.slaDeadline ?? null;
       if (data.dateSent !== undefined) fields["Date Sent"] = data.dateSent ?? null;
@@ -319,11 +319,7 @@ export const updateJob = createServerFn({ method: "POST" })
       const fieldChangeMap: Array<[string, unknown, unknown]> = [
         ["SLA deadline", job.fields["SLA Deadline"], data.slaDeadline],
         ["Date sent", job.fields["Date Sent"], data.dateSent],
-        [
-          "Next action needed",
-          job.fields["Next Action Needed"],
-          autoNextActionNeeded === undefined ? data.nextActionNeeded : undefined,
-        ],
+        ["Next action needed", job.fields["Next Action Needed"], manualNextActionNeeded],
         ["Client fee", job.fields["Client Fee (\u20ac)"], data.clientFee],
         ["Accountant fee", job.fields["Accountant Fee (\u20ac)"], data.accountantFee],
         ["Tier", job.fields.Tier?.[0], data.tier],
