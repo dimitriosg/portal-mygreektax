@@ -5,6 +5,8 @@ const USAGE = `Usage: node scripts/grant-admin.mjs --email admin@example.com
 Required environment variables:
   SUPABASE_SERVICE_ROLE_KEY
   SUPABASE_URL (or VITE_SUPABASE_URL)`;
+const AUTH_USER_PAGE_SIZE = 200;
+const MAX_AUTH_USER_PAGES = 1000;
 
 function parseArgs(argv) {
   const options = {
@@ -55,14 +57,19 @@ function getUserEmails(user) {
 }
 
 async function findUserByEmail(supabase, email) {
-  const perPage = 200;
-  const maxPages = 1000;
+  let page = 1;
+  let pagesScanned = 0;
 
-  for (let page = 1; page <= maxPages; ) {
-    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage });
+  while (pagesScanned < MAX_AUTH_USER_PAGES) {
+    const { data, error } = await supabase.auth.admin.listUsers({
+      page,
+      perPage: AUTH_USER_PAGE_SIZE,
+    });
     if (error) {
       throw new Error(`Failed to list auth users: ${error.message}`);
     }
+
+    pagesScanned += 1;
 
     const users = data.users ?? [];
     if (users.length === 0) {
