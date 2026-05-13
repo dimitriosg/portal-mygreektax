@@ -9,6 +9,7 @@ A private partner portal for **MyGreekTax** — a Greek tax services platform. A
 ## Features
 
 ### Partner View
+
 - View and manage assigned tax jobs
 - Drag-and-drop manual job ordering (persisted server-side)
 - Overdue jobs badge on nav (red count of jobs past SLA deadline)
@@ -17,12 +18,14 @@ A private partner portal for **MyGreekTax** — a Greek tax services platform. A
 - Job detail view with history timeline
 
 ### Admin View
+
 - Full job table with filters (status, service type, tier, partner)
 - Skeleton loading states for smooth UX
 - Impersonate any partner to see their exact view
 - Analytics via Plausible
 
 ### General
+
 - Supabase authentication (email/password)
 - Dark mode toggle
 - Responsive layout (mobile-friendly nav)
@@ -31,17 +34,17 @@ A private partner portal for **MyGreekTax** — a Greek tax services platform. A
 
 ## Tech Stack
 
-| Layer | Technology |
-|---|---|
-| Framework | [TanStack Start](https://tanstack.com/start) + [TanStack Router](https://tanstack.com/router) |
-| UI | [React](https://react.dev) + [shadcn/ui](https://ui.shadcn.com) + [Tailwind CSS v4](https://tailwindcss.com) |
-| Server State | [TanStack Query](https://tanstack.com/query) |
-| Auth | [Supabase](https://supabase.com) |
-| Data | [Airtable](https://airtable.com) (job records) |
-| Drag & Drop | [@dnd-kit](https://dndkit.com) |
-| Runtime | [Cloudflare Workers](https://workers.cloudflare.com) via [Wrangler](https://developers.cloudflare.com/workers/wrangler/) |
-| Analytics | [Plausible](https://plausible.io) |
-| Built with | [Lovable](https://lovable.dev) + GitHub Copilot |
+| Layer        | Technology                                                                                                               |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| Framework    | [TanStack Start](https://tanstack.com/start) + [TanStack Router](https://tanstack.com/router)                            |
+| UI           | [React](https://react.dev) + [shadcn/ui](https://ui.shadcn.com) + [Tailwind CSS v4](https://tailwindcss.com)             |
+| Server State | [TanStack Query](https://tanstack.com/query)                                                                             |
+| Auth         | [Supabase](https://supabase.com)                                                                                         |
+| Data         | [Airtable](https://airtable.com) (job records)                                                                           |
+| Drag & Drop  | [@dnd-kit](https://dndkit.com)                                                                                           |
+| Runtime      | [Cloudflare Workers](https://workers.cloudflare.com) via [Wrangler](https://developers.cloudflare.com/workers/wrangler/) |
+| Analytics    | [Plausible](https://plausible.io)                                                                                        |
+| Built with   | [Lovable](https://lovable.dev) + GitHub Copilot                                                                          |
 
 ---
 
@@ -97,6 +100,11 @@ SUPABASE_PUBLISHABLE_KEY=your-supabase-publishable-key
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
 AIRTABLE_API_KEY=your-airtable-api-key
+AIRTABLE_BASE_ID=your-airtable-base-id
+AIRTABLE_TABLE_JOBS=your-airtable-jobs-table-id
+AIRTABLE_TABLE_CLIENTS=your-airtable-clients-table-id
+AIRTABLE_TABLE_SERVICE_CATALOG=your-airtable-service-catalog-table-id
+AIRTABLE_TABLE_ACCOUNTANTS=your-airtable-accountants-table-id
 PLAUSIBLE_API_KEY=your-plausible-api-key
 ```
 
@@ -106,9 +114,11 @@ PLAUSIBLE_API_KEY=your-plausible-api-key
 - `SUPABASE_URL` is optional; server code falls back to `VITE_SUPABASE_URL` when it is not set.
 - `SUPABASE_SERVICE_ROLE_KEY` is required for server-side admin operations.
 - `AIRTABLE_API_KEY` is required for Airtable API access.
+- `AIRTABLE_BASE_ID` configures the Airtable base ID at runtime.
+- `AIRTABLE_TABLE_JOBS`, `AIRTABLE_TABLE_CLIENTS`, `AIRTABLE_TABLE_SERVICE_CATALOG`, and `AIRTABLE_TABLE_ACCOUNTANTS` configure the Airtable table IDs at runtime.
 - `PLAUSIBLE_API_KEY` is optional and only needed for the analytics panel.
 
-`AIRTABLE_BASE_ID` and Airtable table IDs are not currently loaded from runtime environment variables in this codebase.
+Set the production Airtable base ID in Cloudflare Workers Variables and keep `AIRTABLE_API_KEY` in Cloudflare Workers Secrets. Production should also set the Airtable table IDs via Cloudflare Workers Variables, while the current hardcoded IDs remain only as temporary backward-compatible fallbacks during rollout.
 
 ### Deploy
 
