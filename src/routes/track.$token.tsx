@@ -151,7 +151,8 @@ type TrackData = {
 };
 
 function TrackContent({ data }: { data: TrackData }) {
-  const currentIndex = data.status === "Cancelled / NMF" ? -1 : STAGES.indexOf(data.status);
+  const currentIndex =
+    data.status === "Cancelled / NMF" ? -1 : STAGES.findIndex((stage) => stage === data.status);
   const remaining = getRemaining(data.sla, data.status);
   const tone = statusTone(data.status);
 
