@@ -1,7 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getRequestHeader } from "@tanstack/react-start/server";
 import { z } from "zod";
-import { UAParser } from "ua-parser-js";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
@@ -639,38 +638,14 @@ export const getClientTracking = createServerFn({ method: "GET" })
     )) as AirtableRecord<ClientFields>;
     const status = job.fields.Status ?? "Pending";
 
-    // --- Capture open analytics (best-effort, never breaks the page) ---
+    // --- Capture minimal open analytics (best-effort, never breaks the page) ---
     try {
-      const ip =
-        getRequestHeader("cf-connecting-ip") ??
-        getRequestHeader("x-forwarded-for")?.split(",")[0]?.trim() ??
-        null;
       const country = getRequestHeader("cf-ipcountry") ?? null;
-      const city = getRequestHeader("cf-ipcity") ?? null;
-      const userAgent = getRequestHeader("user-agent") ?? null;
-      const referrer = getRequestHeader("referer") ?? null;
-      let device: string | null = null;
-      let browser: string | null = null;
-      let os: string | null = null;
-      if (userAgent) {
-        const ua = new UAParser(userAgent).getResult();
-        device = ua.device.type ?? "desktop";
-        browser = [ua.browser.name, ua.browser.version].filter(Boolean).join(" ") || null;
-        os = [ua.os.name, ua.os.version].filter(Boolean).join(" ") || null;
-      }
 
       await supabaseAdmin.from("tracking_link_opens").insert({
         token: data.token,
-        ip,
         country,
-        city,
-        user_agent: userAgent,
-        device,
-        browser,
-        os,
-        referrer,
         airtable_job_id: row.airtable_job_id,
-        client_email: row.client_email,
       });
 
       const now = new Date().toISOString();
@@ -680,9 +655,9 @@ export const getClientTracking = createServerFn({ method: "GET" })
           open_count: (row.open_count ?? 0) + 1,
           last_opened_at: now,
           first_opened_at: row.first_opened_at ?? now,
-          last_ip: ip,
           last_country: country,
-          last_user_agent: userAgent,
+          last_ip: null,
+          last_user_agent: null,
         })
         .eq("token", data.token);
     } catch (e) {
@@ -723,8 +698,6 @@ export type TrackingLinkSummary = {
   first_opened_at: string | null;
   last_opened_at: string | null;
   last_country: string | null;
-  last_ip: string | null;
-  last_user_agent: string | null;
   jobCode: string | null;
   clientName: string | null;
   status: string | null;
@@ -733,14 +706,7 @@ export type TrackingLinkSummary = {
 export type TrackingOpenRow = {
   id: string;
   opened_at: string;
-  ip: string | null;
   country: string | null;
-  city: string | null;
-  user_agent: string | null;
-  device: string | null;
-  browser: string | null;
-  os: string | null;
-  referrer: string | null;
 };
 
 export const getJobTrackingStats = createServerFn({ method: "GET" })
@@ -763,7 +729,7 @@ export const getJobTrackingStats = createServerFn({ method: "GET" })
 
     const { data: opens } = await supabaseAdmin
       .from("tracking_link_opens")
-      .select("id, opened_at, ip, country, city, user_agent, device, browser, os, referrer")
+      .select("id, opened_at, country")
       .eq("token", token.token)
       .order("opened_at", { ascending: false })
       .limit(20);
@@ -778,8 +744,6 @@ export const getJobTrackingStats = createServerFn({ method: "GET" })
         first_opened_at: token.first_opened_at,
         last_opened_at: token.last_opened_at,
         last_country: token.last_country,
-        last_ip: token.last_ip,
-        last_user_agent: token.last_user_agent,
       },
       opens: (opens ?? []) as TrackingOpenRow[],
     };
@@ -929,8 +893,6 @@ export const listTrackingLinks = createServerFn({ method: "GET" })
           first_opened_at: r.first_opened_at,
           last_opened_at: r.last_opened_at,
           last_country: r.last_country,
-          last_ip: r.last_ip,
-          last_user_agent: r.last_user_agent,
           jobCode,
           clientName,
           status,
@@ -953,7 +915,7 @@ export const getTrackingLinkOpens = createServerFn({ method: "GET" })
     });
     const { data: opens, error } = await supabaseAdmin
       .from("tracking_link_opens")
-      .select("id, opened_at, ip, country, city, user_agent, device, browser, os, referrer")
+      .select("id, opened_at, country")
       .eq("token", data.token)
       .order("opened_at", { ascending: false })
       .limit(200);

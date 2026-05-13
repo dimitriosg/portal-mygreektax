@@ -1,7 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useRef } from "react";
 import { getClientTracking } from "@/lib/jobs.functions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -11,7 +10,6 @@ import logo from "@/assets/mygreektax-mark.svg";
 import { formatDate } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { hasJobProgressStage, isOverdueEligibleStatus, JOB_STATUSES } from "@/lib/airtable-shared";
-import { track } from "@/lib/analytics";
 
 export const Route = createFileRoute("/track/$token")({
   component: TrackPage,
@@ -65,13 +63,6 @@ function TrackPage() {
     queryKey: ["track", token],
     queryFn: () => fetchTracking({ data: { token } }),
   });
-
-  const tracked = useRef(false);
-  useEffect(() => {
-    if (tracked.current || !data) return;
-    tracked.current = true;
-    track("tracking_link_opened", { status: data.status ?? "unknown" });
-  }, [data]);
 
   return (
     <div className="min-h-screen" style={{ background: "var(--gradient-hero)" }}>
@@ -237,6 +228,19 @@ function TrackContent({ data }: { data: TrackData }) {
               remaining?.tone === "success" && "text-success",
             )}
           />
+        </CardContent>
+      </Card>
+
+      <Card
+        className="border-border/60 bg-background/85"
+        style={{ boxShadow: "var(--shadow-soft)" }}
+      >
+        <CardContent className="flex items-start gap-3 p-4 text-sm text-muted-foreground">
+          <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-brand" />
+          <p>
+            This secure link records basic access information to help MyGreekTax confirm delivery
+            and protect client service records.
+          </p>
         </CardContent>
       </Card>
 

@@ -485,9 +485,6 @@ function JobDetail() {
                         <tr>
                           <th className="px-2 py-1.5">When</th>
                           <th className="px-2 py-1.5">Country</th>
-                          <th className="px-2 py-1.5">Device</th>
-                          <th className="px-2 py-1.5">Browser</th>
-                          <th className="px-2 py-1.5">IP</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -497,9 +494,6 @@ function JobDetail() {
                               {formatDateTime(o.opened_at)}
                             </td>
                             <td className="px-2 py-1.5">{o.country ?? "—"}</td>
-                            <td className="px-2 py-1.5">{o.device ?? "—"}</td>
-                            <td className="px-2 py-1.5">{o.browser ?? "—"}</td>
-                            <td className="px-2 py-1.5 font-mono text-[11px]">{o.ip ?? "—"}</td>
                           </tr>
                         ))}
                       </tbody>

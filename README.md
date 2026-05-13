@@ -30,6 +30,12 @@ A private partner portal for **MyGreekTax** — a Greek tax services platform. A
 - Dark mode toggle
 - Responsive layout (mobile-friendly nav)
 
+### Tracking link privacy
+
+- Public tracking pages show a short privacy notice and only render client-visible updates.
+- Tracking opens keep basic access records only (`opened_at` and country in app UI); IP, user agent, device, browser, city, and referrer details are cleared and no longer collected for new opens.
+- Clean up old tracking opens with `select public.cleanup_tracking_link_opens();` (default 180-day retention).
+
 ---
 
 ## Tech Stack
