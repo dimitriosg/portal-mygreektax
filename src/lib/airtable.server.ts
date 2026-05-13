@@ -80,7 +80,14 @@ export async function airtableListAll<T = Record<string, unknown>>(
   table: string,
   query?: AirtableQuery,
 ) {
-  const querySnapshot = query ? { ...query } : {};
+  const querySnapshot = query
+    ? Object.fromEntries(
+        Object.entries(query).map(([key, value]) => [
+          key,
+          Array.isArray(value) ? [...value] : value,
+        ]),
+      )
+    : {};
   const records: AirtableRecord<T>[] = [];
   let offset: string | undefined;
 

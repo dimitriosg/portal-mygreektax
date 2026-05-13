@@ -118,7 +118,11 @@ PLAUSIBLE_API_KEY=your-plausible-api-key
 - `AIRTABLE_TABLE_JOBS`, `AIRTABLE_TABLE_CLIENTS`, `AIRTABLE_TABLE_SERVICE_CATALOG`, and `AIRTABLE_TABLE_ACCOUNTANTS` configure the Airtable table IDs at runtime.
 - `PLAUSIBLE_API_KEY` is optional and only needed for the analytics panel.
 
-Set the production Airtable base ID in Cloudflare Workers Variables and keep `AIRTABLE_API_KEY` in Cloudflare Workers Secrets. Production should also set the Airtable table IDs via Cloudflare Workers Variables, while the current hardcoded IDs remain only as temporary backward-compatible fallbacks during rollout.
+For production:
+
+- Set `AIRTABLE_BASE_ID` and the Airtable table IDs in Cloudflare Workers Variables.
+- Store `AIRTABLE_API_KEY` in Cloudflare Workers Secrets.
+- Treat the current hardcoded Airtable IDs only as temporary backward-compatible fallbacks during rollout.
 
 ### Deploy
 
