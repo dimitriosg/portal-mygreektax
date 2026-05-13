@@ -20,6 +20,7 @@ import {
   isNextActionNeeded,
   JOB_STATUSES,
   NEXT_ACTION_OPTIONS,
+  PARTNER_ALLOWED_JOB_STATUSES,
 } from "@/lib/airtable-shared";
 import { useAuth } from "@/lib/auth-context";
 import { getErrorMessage, isAuthSessionError } from "@/lib/auth-errors";
@@ -174,12 +175,19 @@ function JobDetail() {
     }
   }, [data]);
 
+  const previousStatus = data?.job?.fields.Status ?? "";
+  const invalidateJobQueries = () => {
+    qc.invalidateQueries({ queryKey: ["job", jobId] });
+    qc.invalidateQueries({ queryKey: ["jobs"] });
+    qc.invalidateQueries({ queryKey: ["job-events", jobId] });
+  };
+
   const save = useMutation({
     mutationFn: () =>
       updateFn({
         data: {
           jobId,
-          status: isJobStatus(status) ? status : undefined,
+          status: status !== previousStatus && isJobStatus(status) ? status : undefined,
           partnerProgressNotes,
           ...(isAdmin
             ? {
@@ -194,13 +202,25 @@ function JobDetail() {
       }),
     onSuccess: () => {
       toast.success("Job updated");
-      const previous = data?.job?.fields.Status ?? "";
-      if (status && status !== previous) {
-        track("job_status_changed", { from: previous || "unknown", to: status });
+      if (status && status !== previousStatus) {
+        track("job_status_changed", { from: previousStatus || "unknown", to: status });
       }
-      qc.invalidateQueries({ queryKey: ["job", jobId] });
-      qc.invalidateQueries({ queryKey: ["jobs"] });
-      qc.invalidateQueries({ queryKey: ["job-events", jobId] });
+      invalidateJobQueries();
+    },
+    onError: handleMutationError,
+  });
+  const markCompleted = useMutation({
+    mutationFn: () =>
+      updateFn({
+        data: {
+          jobId,
+          status: "Completed",
+        },
+      }),
+    onSuccess: () => {
+      toast.success("Job marked as completed");
+      track("job_status_changed", { from: previousStatus || "unknown", to: "Completed" });
+      invalidateJobQueries();
     },
     onError: handleMutationError,
   });
@@ -256,7 +276,11 @@ function JobDetail() {
   if (!data) return null;
 
   const j = data.job.fields;
+  const availableStatuses = (
+    isAdmin ? JOB_STATUSES : PARTNER_ALLOWED_JOB_STATUSES
+  ) as readonly string[];
   const hasLegacyStatus = !!status && !isJobStatus(status);
+  const hasUnavailableStatus = !!status && !hasLegacyStatus && !availableStatuses.includes(status);
   const hasLegacyNextAction = !!nextActionNeeded && !isNextActionNeeded(nextActionNeeded);
 
   return (
@@ -352,7 +376,12 @@ function JobDetail() {
                   Legacy status: {status}
                 </option>
               )}
-              {JOB_STATUSES.map((s) => (
+              {hasUnavailableStatus && (
+                <option value={status} disabled>
+                  Current status: {status}
+                </option>
+              )}
+              {availableStatuses.map((s) => (
                 <option key={s} value={s}>
                   {s}
                 </option>
@@ -428,6 +457,26 @@ function JobDetail() {
           </div>
         </CardContent>
       </Card>
+
+      {isAdmin && j.Status === "Delivered" && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Admin review required</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              The partner has delivered this job. Review the work before marking it completed.
+            </p>
+            <Button
+              aria-label="Mark job as completed"
+              onClick={() => markCompleted.mutate()}
+              disabled={markCompleted.isPending}
+            >
+              {markCompleted.isPending ? "Marking…" : "Mark as completed"}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
