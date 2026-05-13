@@ -5,6 +5,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  GENERIC_RECOVERY_SUCCESS_MESSAGE,
+  getRecoveryRedirectUrl,
+  MIN_PASSWORD_LENGTH,
+} from "@/lib/auth-recovery";
 import { useAuth } from "@/lib/auth-context";
 import { debugLog } from "@/lib/debug";
 import { toast } from "sonner";
@@ -12,14 +17,6 @@ import { toast } from "sonner";
 const searchSchema = z.object({
   mode: z.enum(["recovery"]).optional(),
 });
-
-const GENERIC_RECOVERY_SUCCESS_MESSAGE =
-  "If this email is authorized, you will receive an access link shortly.";
-
-function getRecoveryRedirectUrl() {
-  if (typeof window === "undefined") return undefined;
-  return `${window.location.origin}/login?mode=recovery`;
-}
 
 export const Route = createFileRoute("/login")({
   validateSearch: (search) => searchSchema.parse(search),
@@ -86,7 +83,7 @@ function LoginPage() {
       toast.error(
         err instanceof Error
           ? "Could not send a recovery email right now. Please try again shortly."
-          : "Something went wrong",
+          : "Could not send a recovery email right now. Please try again shortly.",
       );
     } finally {
       setRecoveryRequestLoading(false);
@@ -95,8 +92,8 @@ function LoginPage() {
 
   const submitPasswordReset = async (e: FormEvent) => {
     e.preventDefault();
-    if (nextPassword.length < 12) {
-      toast.error("Password must be at least 12 characters.");
+    if (nextPassword.length < MIN_PASSWORD_LENGTH) {
+      toast.error(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
       return;
     }
     if (nextPassword !== confirmPassword) {
@@ -146,12 +143,14 @@ function LoginPage() {
                 id="next-password"
                 type="password"
                 required
-                minLength={12}
+                minLength={MIN_PASSWORD_LENGTH}
                 autoComplete="new-password"
                 value={nextPassword}
                 onChange={(e) => setNextPassword(e.target.value)}
               />
-              <p className="text-xs text-muted-foreground">At least 12 characters.</p>
+              <p className="text-xs text-muted-foreground">
+                At least {MIN_PASSWORD_LENGTH} characters.
+              </p>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="confirm-password">Confirm new password</Label>
@@ -159,7 +158,7 @@ function LoginPage() {
                 id="confirm-password"
                 type="password"
                 required
-                minLength={12}
+                minLength={MIN_PASSWORD_LENGTH}
                 autoComplete="new-password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}

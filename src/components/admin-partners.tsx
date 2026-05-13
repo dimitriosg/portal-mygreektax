@@ -3,6 +3,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
+import { GENERIC_RECOVERY_SUCCESS_MESSAGE, getRecoveryRedirectUrl } from "@/lib/auth-recovery";
 import {
   createPartnerInvite,
   listPartnerInvites,
@@ -85,10 +86,6 @@ function openInviteEmailDraft(invite: IssuedInvite) {
   window.location.href = buildInviteMailto(invite);
   track("partner_invite_email_draft_opened");
   toast.success("Email draft opened");
-}
-
-function getRecoveryRedirectUrl() {
-  return `${window.location.origin}/login?mode=recovery`;
 }
 
 export function PartnersSection({
@@ -195,9 +192,9 @@ export function PartnersSection({
         redirectTo: getRecoveryRedirectUrl(),
       });
       if (error) throw error;
-      toast.success("Recovery link sent.");
+      toast.success(GENERIC_RECOVERY_SUCCESS_MESSAGE);
     } catch {
-      toast.error("Could not send a recovery link right now.");
+      toast.error("Could not process the recovery request right now. Please try again shortly.");
     }
   };
 
