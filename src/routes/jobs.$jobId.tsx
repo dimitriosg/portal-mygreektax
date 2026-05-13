@@ -149,18 +149,36 @@ function JobDetail() {
   });
 
   const [status, setStatus] = useState<string>("");
-  const [notes, setNotes] = useState<string>("");
+  const [partnerProgressNotes, setPartnerProgressNotes] = useState<string>("");
+  const [adminInternalNotes, setAdminInternalNotes] = useState<string>("");
+  const [clientVisibleNote, setClientVisibleNote] = useState<string>("");
 
   useEffect(() => {
     if (data?.job) {
       setStatus(data.job.fields.Status ?? "");
-      setNotes(data.job.fields.Notes ?? "");
+      setPartnerProgressNotes(
+        data.job.fields["Partner Progress Notes"] || data.job.fields.Notes || "",
+      );
+      setAdminInternalNotes(data.job.fields["Admin Internal Notes"] ?? "");
+      setClientVisibleNote(data.job.fields["Client Visible Note"] ?? "");
     }
   }, [data]);
 
   const save = useMutation({
     mutationFn: () =>
-      updateFn({ data: { jobId, status: isJobStatus(status) ? status : undefined, notes } }),
+      updateFn({
+        data: {
+          jobId,
+          status: isJobStatus(status) ? status : undefined,
+          partnerProgressNotes,
+          ...(isAdmin
+            ? {
+                adminInternalNotes,
+                clientVisibleNote,
+              }
+            : {}),
+        },
+      }),
     onSuccess: () => {
       toast.success("Job updated");
       const previous = data?.job?.fields.Status ?? "";
@@ -321,16 +339,36 @@ function JobDetail() {
             </select>
           </div>
           <div>
-            <label className="text-sm font-medium">
-              {isAdmin ? "Notes" : "Partner / progress notes"}
-            </label>
+            <label className="text-sm font-medium">Partner / progress notes</label>
             <Textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
+              value={partnerProgressNotes}
+              onChange={(e) => setPartnerProgressNotes(e.target.value)}
               rows={5}
               className="mt-1"
             />
           </div>
+          {isAdmin && (
+            <>
+              <div>
+                <label className="text-sm font-medium">Admin internal notes</label>
+                <Textarea
+                  value={adminInternalNotes}
+                  onChange={(e) => setAdminInternalNotes(e.target.value)}
+                  rows={4}
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Client-visible note</label>
+                <Textarea
+                  value={clientVisibleNote}
+                  onChange={(e) => setClientVisibleNote(e.target.value)}
+                  rows={4}
+                  className="mt-1"
+                />
+              </div>
+            </>
+          )}
           <div className="flex flex-wrap gap-2">
             <Button onClick={() => save.mutate()} disabled={save.isPending}>
               {save.isPending ? "Saving…" : isAdmin ? "Save changes" : "Save progress update"}

@@ -147,7 +147,7 @@ type TrackData = {
   progress: number;
   sla: string | null;
   dateSent: string | null;
-  notes: string;
+  clientVisibleNote: string;
 };
 
 function TrackContent({ data }: { data: TrackData }) {
@@ -240,17 +240,17 @@ function TrackContent({ data }: { data: TrackData }) {
         </CardContent>
       </Card>
 
-      {/* Notes */}
-      {data.notes && (
+      {/* Client-visible note only */}
+      {data.clientVisibleNote && (
         <Card className="border-border/60" style={{ boxShadow: "var(--shadow-soft)" }}>
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 font-serif text-base font-medium">
               <MessageSquare className="h-4 w-4 text-brand" />
-              Latest update from your accountant
+              Latest update from MyGreekTax
             </CardTitle>
           </CardHeader>
           <CardContent className="whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">
-            {data.notes}
+            {data.clientVisibleNote}
           </CardContent>
         </Card>
       )}

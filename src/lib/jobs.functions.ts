@@ -44,6 +44,14 @@ function escapeFormula(s: string) {
   return s.replace(/'/g, "\\'");
 }
 
+function getPartnerProgressNotes(job: Pick<AirtableRecord<JobFields>, "fields">) {
+  const partnerProgressNotes = job.fields["Partner Progress Notes"];
+  if (typeof partnerProgressNotes === "string" && partnerProgressNotes.trim() !== "") {
+    return partnerProgressNotes;
+  }
+  return job.fields.Notes ?? "";
+}
+
 export const listJobs = createServerFn({ method: "GET" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((d?: { asAccountantId?: string }) =>
@@ -131,7 +139,18 @@ export const getJob = createServerFn({ method: "GET" })
             },
           } as AirtableRecord<ClientFields>)
         : null;
-    return { job, client: safeClient, accountant, isAdmin };
+    const safeJob = isAdmin
+      ? job
+      : ({
+          ...job,
+          fields: {
+            ...job.fields,
+            // Keep admin-only notes server-side so partners cannot accidentally read them.
+            "Admin Internal Notes": undefined,
+            "Client Visible Note": undefined,
+          },
+        } as AirtableRecord<JobFields>);
+    return { job: safeJob, client: safeClient, accountant, isAdmin };
   });
 
 export const updateJob = createServerFn({ method: "POST" })
@@ -140,7 +159,9 @@ export const updateJob = createServerFn({ method: "POST" })
     (d: {
       jobId: string;
       status?: string;
-      notes?: string;
+      adminInternalNotes?: string;
+      partnerProgressNotes?: string;
+      clientVisibleNote?: string;
       slaDeadline?: string | null;
       dateSent?: string | null;
       clientFee?: number | null;
@@ -155,7 +176,9 @@ export const updateJob = createServerFn({ method: "POST" })
         .object({
           jobId: z.string().min(1).max(50),
           status: z.enum(JOB_STATUSES).optional(),
-          notes: z.string().max(5000).optional(),
+          adminInternalNotes: z.string().max(5000).optional(),
+          partnerProgressNotes: z.string().max(5000).optional(),
+          clientVisibleNote: z.string().max(5000).optional(),
           slaDeadline: z.string().max(30).nullable().optional(),
           dateSent: z.string().max(30).nullable().optional(),
           clientFee: z.number().min(0).max(1_000_000).nullable().optional(),
@@ -179,20 +202,28 @@ export const updateJob = createServerFn({ method: "POST" })
       const allowed =
         partner && job.fields["Assigned Accountant"]?.includes(partner.airtable_accountant_id);
       if (!allowed) throw new Error("Forbidden");
-      // Partners may only update Status and Notes directly. Other fields require admin approval.
-      const partnerFields = new Set(["jobId", "status", "notes"]);
+      const partnerFields = new Set(["jobId", "status", "partnerProgressNotes"]);
       for (const k of Object.keys(data)) {
         if (!partnerFields.has(k) && data[k as keyof typeof data] !== undefined) {
           throw new Error(
-            "Partners can only update status and notes directly. Submit a change request for other fields.",
+            "Partners can only update status and partner progress notes directly. Submit a change request for other fields.",
           );
         }
       }
     }
     const fields: Record<string, unknown> = {};
     if (data.status) fields["Status"] = data.status;
-    if (data.notes !== undefined) fields["Notes"] = data.notes;
+    if (data.partnerProgressNotes !== undefined) {
+      // Use the dedicated Airtable field on write; legacy Notes is read-only fallback.
+      fields["Partner Progress Notes"] = data.partnerProgressNotes;
+    }
     if (isAdmin) {
+      if (data.adminInternalNotes !== undefined) {
+        fields["Admin Internal Notes"] = data.adminInternalNotes;
+      }
+      if (data.clientVisibleNote !== undefined) {
+        fields["Client Visible Note"] = data.clientVisibleNote;
+      }
       if (data.slaDeadline !== undefined) fields["SLA Deadline"] = data.slaDeadline ?? null;
       if (data.dateSent !== undefined) fields["Date Sent"] = data.dateSent ?? null;
       if (data.clientFee !== undefined) fields["Client Fee (\u20ac)"] = data.clientFee ?? null;
@@ -208,7 +239,7 @@ export const updateJob = createServerFn({ method: "POST" })
     }
     if (Object.keys(fields).length === 0) return { ok: true };
     const previousStatus = job.fields.Status ?? null;
-    const previousNotes = job.fields.Notes ?? "";
+    const previousPartnerProgressNotes = getPartnerProgressNotes(job);
     await airtablePatch(TABLES.jobs, data.jobId, fields);
 
     // Resolve actor identity
@@ -239,9 +270,9 @@ export const updateJob = createServerFn({ method: "POST" })
       });
     }
     if (
-      data.notes !== undefined &&
-      data.notes.trim() !== previousNotes.trim() &&
-      data.notes.trim() !== ""
+      data.partnerProgressNotes !== undefined &&
+      data.partnerProgressNotes.trim() !== previousPartnerProgressNotes.trim() &&
+      data.partnerProgressNotes.trim() !== ""
     ) {
       events.push({
         airtable_job_id: data.jobId,
@@ -249,7 +280,7 @@ export const updateJob = createServerFn({ method: "POST" })
         actor_email: actorEmail,
         actor_name: actorName,
         event_type: "comment",
-        comment: data.notes,
+        comment: data.partnerProgressNotes,
       });
     }
     // Log other admin field changes as comment-style events.
@@ -391,7 +422,7 @@ export const createJob = createServerFn({ method: "POST" })
       status?: string;
       slaDeadline?: string;
       dateSent?: string;
-      notes?: string;
+      partnerProgressNotes?: string;
     }) =>
       z
         .object({
@@ -401,7 +432,7 @@ export const createJob = createServerFn({ method: "POST" })
           status: z.enum(JOB_STATUSES).optional(),
           slaDeadline: z.string().max(30).optional(),
           dateSent: z.string().max(30).optional(),
-          notes: z.string().max(5000).optional(),
+          partnerProgressNotes: z.string().max(5000).optional(),
         })
         .parse(d),
   )
@@ -436,7 +467,7 @@ export const createJob = createServerFn({ method: "POST" })
     if (data.status) fields["Status"] = data.status;
     if (data.slaDeadline) fields["SLA Deadline"] = data.slaDeadline;
     if (data.dateSent) fields["Date Sent"] = data.dateSent;
-    if (data.notes) fields["Notes"] = data.notes;
+    if (data.partnerProgressNotes) fields["Partner Progress Notes"] = data.partnerProgressNotes;
     const record = await airtablePost(TABLES.jobs, fields);
     const actor = await getActorIdentity(context.userId);
     await logActivityEvent({
@@ -671,7 +702,7 @@ export const getClientTracking = createServerFn({ method: "GET" })
       progress: STATUS_PROGRESS[status] ?? 0,
       sla: job.fields["SLA Deadline"] ?? null,
       dateSent: job.fields["Date Sent"] ?? null,
-      notes: job.fields.Notes ?? "",
+      clientVisibleNote: job.fields["Client Visible Note"] ?? "",
     };
   });
 
@@ -960,7 +991,7 @@ function jobFieldCurrentValue(job: AirtableRecord<JobFields>, field: ChangeField
     case "status":
       return job.fields.Status ?? "";
     case "notes":
-      return job.fields.Notes ?? "";
+      return getPartnerProgressNotes(job);
   }
 }
 
@@ -1107,7 +1138,7 @@ export const decideChangeRequest = createServerFn({ method: "POST" })
       const update: Record<string, unknown> = {};
       if (r.field_name === "sla_deadline") update["SLA Deadline"] = r.requested_value || null;
       if (r.field_name === "status") update["Status"] = r.requested_value;
-      if (r.field_name === "notes") update["Notes"] = r.requested_value;
+      if (r.field_name === "notes") update["Partner Progress Notes"] = r.requested_value;
       await airtablePatch(TABLES.jobs, r.airtable_job_id, update);
 
       const actor = await getActorIdentity(context.userId);
@@ -1125,7 +1156,8 @@ export const decideChangeRequest = createServerFn({ method: "POST" })
           to_status: r.requested_value,
         });
       } else {
-        const label = r.field_name === "sla_deadline" ? "SLA deadline" : "Notes";
+        const label =
+          r.field_name === "sla_deadline" ? "SLA deadline" : "Partner / progress notes";
         await supabaseAdmin.from("job_events").insert({
           ...eventBase,
           event_type: "comment",
