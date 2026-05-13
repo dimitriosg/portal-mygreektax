@@ -122,6 +122,35 @@ Cloudflare Workers remains the production runtime, and the required production V
 
 ---
 
+## Admin recovery / break-glass procedure
+
+This procedure is only for trusted maintainers. Do not expose admin recovery through the public app, and do not commit production variables or secrets to git; production values remain in Cloudflare Workers and Supabase.
+
+The recovery script requires `SUPABASE_SERVICE_ROLE_KEY` plus `SUPABASE_URL` (or `VITE_SUPABASE_URL`) so it can look up an existing Supabase Auth user by email and grant that user the `admin` role in `public.user_roles`.
+
+```bash
+SUPABASE_URL=https://your-project.supabase.co \
+SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key \
+node scripts/grant-admin.mjs --email admin@example.com
+```
+
+You can also run the package script:
+
+```bash
+SUPABASE_URL=https://your-project.supabase.co \
+SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key \
+npm run admin:grant -- --email admin@example.com
+```
+
+If the user does not already exist in Supabase Auth, the script exits with an error and does not create the account automatically. Create the user manually in Supabase Auth first, then run the recovery command.
+
+Recommended operational backup:
+
+- Keep one secondary admin account controlled by the owner.
+- Do not expose admin recovery through the public app.
+
+---
+
 ## Deployment Architecture
 
 ```
