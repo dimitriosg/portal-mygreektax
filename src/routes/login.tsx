@@ -79,12 +79,8 @@ function LoginPage() {
       });
       if (error) throw error;
       setRecoveryRequestMessage(GENERIC_RECOVERY_SUCCESS_MESSAGE);
-    } catch (err) {
-      toast.error(
-        err instanceof Error
-          ? "Could not send a recovery email right now. Please try again shortly."
-          : "Could not send a recovery email right now. Please try again shortly.",
-      );
+    } catch {
+      toast.error("Could not send a recovery email right now. Please try again shortly.");
     } finally {
       setRecoveryRequestLoading(false);
     }
