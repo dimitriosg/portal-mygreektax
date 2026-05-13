@@ -506,8 +506,8 @@ function JobDetail() {
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             <p className="text-sm text-muted-foreground">
-              Use this when an admin-owned field needs correction. Status and progress notes should
-              be updated directly above; SLA deadline changes still require admin approval.
+              Use this to request SLA deadline changes. Status and progress notes should be updated
+              directly above.
             </p>
             <div className="space-y-2">
               <label className="text-sm font-medium">Requested SLA deadline</label>
