@@ -155,9 +155,12 @@ function JobDetail() {
 
   useEffect(() => {
     if (data?.job) {
+      const progressNotes = data.job.fields["Partner Progress Notes"];
       setStatus(data.job.fields.Status ?? "");
       setPartnerProgressNotes(
-        data.job.fields["Partner Progress Notes"] || data.job.fields.Notes || "",
+        progressNotes !== undefined && progressNotes !== ""
+          ? progressNotes
+          : (data.job.fields.Notes ?? ""),
       );
       setAdminInternalNotes(data.job.fields["Admin Internal Notes"] ?? "");
       setClientVisibleNote(data.job.fields["Client Visible Note"] ?? "");

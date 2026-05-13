@@ -139,17 +139,19 @@ export const getJob = createServerFn({ method: "GET" })
             },
           } as AirtableRecord<ClientFields>)
         : null;
-    const safeJob = isAdmin
-      ? job
-      : ({
-          ...job,
-          fields: {
-            ...job.fields,
-            // Keep admin-only notes server-side so partners cannot accidentally read them.
-            "Admin Internal Notes": undefined,
-            "Client Visible Note": undefined,
-          },
-        } as AirtableRecord<JobFields>);
+    const safeJob = (() => {
+      if (isAdmin) return job;
+      const {
+        "Admin Internal Notes": _adminInternalNotes,
+        "Client Visible Note": _clientVisibleNote,
+        ...partnerSafeFields
+      } = job.fields;
+      return {
+        ...job,
+        // Keep admin-only notes server-side so partners cannot accidentally read them.
+        fields: partnerSafeFields,
+      } as AirtableRecord<JobFields>;
+    })();
     return { job: safeJob, client: safeClient, accountant, isAdmin };
   });
 
