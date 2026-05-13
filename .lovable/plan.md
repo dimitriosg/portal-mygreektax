@@ -1,6 +1,6 @@
 ## Goal
 
-Give admins full edit power over any job field, and let partners propose changes to a narrow set of fields (SLA Deadline, Status, Notes) that only take effect after admin approval. Every request and decision is logged and surfaced in-app and over email.
+Give admins full edit power over any job field, let partners update progress directly (Status and Notes), and keep admin approval for admin-owned job changes such as SLA Deadline. Every request and decision is logged and surfaced in-app and over email.
 
 ## 1. Admin: full job edit
 
@@ -16,14 +16,14 @@ On the job page (`/jobs/$jobId`), when the viewer is admin, replace today's "Sta
 
 Backend: extend `updateJob` in `src/lib/jobs.functions.ts` to accept all the above fields, validate with Zod, write to Airtable, and write a `job_events` row per changed field (`event_type: "field_change"`, with `field_name`, `from_value`, `to_value` in metadata) so the existing History panel shows everything.
 
-Partners continue to see only the existing Status + Notes form (unchanged path through `updateJob`).
+Partners continue to use the existing Status + Notes form directly through `updateJob`.
 
 ## 2. Partner: change requests
 
 New table `job_change_requests`:
 
 - `airtable_job_id`, `requested_by` (uuid), `requester_email`, `requester_name`
-- `field_name` (`sla_deadline` | `status` | `notes`)
+- `field_name` (`sla_deadline` for now; later extend to other admin-owned fields such as client/service/accountant/fees when they are wired)
 - `current_value`, `requested_value` (text — dates serialised, status as enum string)
 - `reason` (text, optional, max 1000)
 - `status` (`pending` | `approved` | `rejected` | `cancelled`)
@@ -31,16 +31,16 @@ New table `job_change_requests`:
 - `created_at`
 - RLS: admins manage all; partners can `SELECT` and `INSERT` only their own rows where they are the assigned accountant on the job (enforced via a security-definer helper that checks the partner's `airtable_accountant_id` against the job — same pattern already used elsewhere). Partners cannot `UPDATE` once submitted (only `cancel` while still pending, via a dedicated server fn).
 
-On the job page, partner view gets a new **Request a change** card with:
+On the job page, partner view gets a new **Request admin-approved change** card with:
 
-- Field selector: SLA Deadline / Status / Notes
-- New value input (date / status select / textarea)
+- Clear copy that Status and Notes should be updated directly in **Update progress**
+- First version field input: SLA Deadline only
 - Optional reason
 - Submit → `requestJobChange` server fn
 
 Below it, a **Your requests** list showing pending/approved/rejected/cancelled with timestamps and admin's decision note. Partner can cancel a pending request.
 
-While a partner has a pending request for a given field, the inline Status/Notes form for that field is disabled with a tooltip "Pending approval".
+If future admin-owned fields gain inline editing surfaces, disable any conflicting direct-edit affordance while a request is pending.
 
 ## 3. Approval surface (both)
 
@@ -70,21 +70,22 @@ No daily digest changes — these are time-sensitive enough to warrant immediate
 - `supabase/migrations/<ts>_job_change_requests.sql` — table, RLS, helper fn, indexes
 - `src/routes/admin.change-requests.tsx` — admin review page
 - `src/components/job/admin-edit-panel.tsx` — full admin edit form (extracted to keep `jobs.$jobId.tsx` manageable)
-- `src/components/job/partner-request-panel.tsx` — partner submit + history
+- `src/components/job/partner-request-panel.tsx` — partner submit + history (SLA deadline first, later extend to more admin-owned fields)
 - `src/components/job/admin-pending-requests.tsx` — inline approval card
 - `src/lib/email-templates/partner-change-request.tsx` — admin notification email
 - `src/lib/email-templates/change-request-decision.tsx` — partner notification email
 
 **Edited**
 - `src/lib/jobs.functions.ts` — extend `updateJob`; add `requestJobChange`, `cancelChangeRequest`, `decideChangeRequest`, `listChangeRequests`, `listJobChangeRequests`, `getPendingRequestCount`
-- `src/routes/jobs.$jobId.tsx` — render new panels per role; disable conflicting fields when a partner has a pending request
+- `src/routes/jobs.$jobId.tsx` — render clarified partner/admin panels and keep admin approval actions on job-level change requests
 - `src/routes/admin.tsx` — Change requests link + badge
 - `src/lib/activity.server.ts` + `activity-summary.server.tsx` + `email-templates/registry.ts` — new event types and templates
 - `supabase/config.toml` — register new transactional templates if needed
 
 ## Out of scope
 
-- No partner ability to request changes to fees, client, service, tier, category, accountant, or date sent (admin-only).
+- No partner ability to request changes to progress fields that they already edit directly.
+- No partner ability to request changes to fees, client, service, tier, category, accountant, or date sent until those admin-owned fields are wired.
 - No bulk approve/reject.
 - No SMS/push notifications.
 - No edit-after-submit for partners (cancel + resubmit instead).
