@@ -86,27 +86,39 @@ bun run dev
 
 ### Environment Variables
 
-Create a `.env` file (never commit this) with:
+Production runtime variables and secrets live in the Cloudflare Workers dashboard. Do not commit `.env.production` or any real environment values to this repository.
+
+For local development, use a local `.env` file or `.dev.vars` (both ignored by git). `.env.example` documents the safe placeholder keys:
 
 ```env
-VITE_SUPABASE_URL=
-VITE_SUPABASE_ANON_KEY=
-SUPABASE_SERVICE_ROLE_KEY=
-AIRTABLE_API_KEY=
-AIRTABLE_BASE_ID=
-AIRTABLE_TABLE_NAME=
-PLAUSIBLE_DOMAIN=
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=your-supabase-publishable-key
+SUPABASE_PUBLISHABLE_KEY=your-supabase-publishable-key
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
+AIRTABLE_API_KEY=your-airtable-api-key
+PLAUSIBLE_API_KEY=your-plausible-api-key
 ```
 
-For production, add these as encrypted secrets in the Cloudflare Workers dashboard.
+- `VITE_SUPABASE_URL` is the client-side Supabase URL.
+- `VITE_SUPABASE_PUBLISHABLE_KEY` is the required client-side Supabase publishable key.
+- `SUPABASE_PUBLISHABLE_KEY` is an optional server-side alias for the publishable key when configured in Cloudflare.
+- `SUPABASE_URL` is optional; server code falls back to `VITE_SUPABASE_URL` when it is not set.
+- `SUPABASE_SERVICE_ROLE_KEY` is required for server-side admin operations.
+- `AIRTABLE_API_KEY` is required for Airtable API access.
+- `PLAUSIBLE_API_KEY` is optional and only needed for the analytics panel.
+
+`AIRTABLE_BASE_ID` and Airtable table IDs are not currently loaded from runtime environment variables in this codebase.
 
 ### Deploy
 
+There is no `deploy` script in `package.json`. To deploy manually after installing Wrangler CLI, run:
+
 ```bash
-bun run deploy
+wrangler deploy
 ```
 
-This runs `wrangler deploy` and pushes to Cloudflare Workers. Lovable also auto-deploys on every push to `main`.
+Cloudflare Workers remains the production runtime, and the required production Variables and Secrets should be managed in the Cloudflare dashboard.
 
 ---
 
@@ -143,4 +155,4 @@ Dark mode is supported via the `.dark` class toggled by the header button.
 
 ## ⚠️ Security Note
 
-Ensure `.env` is listed in `.gitignore` and never committed to the repository. All production secrets must be stored as Cloudflare Workers encrypted environment variables.
+Ensure `.env`, `.env.*`, `.dev.vars`, and `.wrangler/` stay ignored by git, while keeping `.env.example` safe to commit. All production secrets must be stored in Cloudflare Workers Variables and Secrets.
