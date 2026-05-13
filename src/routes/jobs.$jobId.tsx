@@ -90,7 +90,6 @@ function JobDetail() {
     }
   }, [error, eventsQ.error, historyQ.error, navigate, requestsQ.error, trackingQ.error]);
 
-  const reqField = "sla_deadline" as const;
   const [reqValue, setReqValue] = useState("");
   const [reqReason, setReqReason] = useState("");
   const handleMutationError = (error: unknown) => {
@@ -104,7 +103,12 @@ function JobDetail() {
   const submitRequest = useMutation({
     mutationFn: () =>
       requestChangeFn({
-        data: { jobId, field: reqField, requestedValue: reqValue, reason: reqReason || undefined },
+        data: {
+          jobId,
+          field: "sla_deadline",
+          requestedValue: reqValue,
+          reason: reqReason || undefined,
+        },
       }),
     onSuccess: () => {
       toast.success("Change request submitted for admin approval");
@@ -292,7 +296,7 @@ function JobDetail() {
           {!isAdmin && (
             <p className="text-sm text-muted-foreground">
               Update the job status and your progress notes here. Use the admin-approved change
-              request card below for SLA deadline changes or other admin-owned corrections.
+              request card below when the SLA deadline needs approval.
             </p>
           )}
           <div>
