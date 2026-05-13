@@ -231,12 +231,15 @@ function TrackContent({ data }: { data: TrackData }) {
         </CardContent>
       </Card>
 
-      <Card className="border-border/60 bg-background/85" style={{ boxShadow: "var(--shadow-soft)" }}>
+      <Card
+        className="border-border/60 bg-background/85"
+        style={{ boxShadow: "var(--shadow-soft)" }}
+      >
         <CardContent className="flex items-start gap-3 p-4 text-sm text-muted-foreground">
           <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-brand" />
           <p>
-            This secure link records basic access information to help MyGreekTax confirm
-            delivery and protect client service records.
+            This secure link records basic access information to help MyGreekTax confirm delivery
+            and protect client service records.
           </p>
         </CardContent>
       </Card>
