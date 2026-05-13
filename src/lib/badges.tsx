@@ -27,6 +27,19 @@ const TIER_STYLES: Record<string, string> = {
   Diamond: "bg-sky-100 text-sky-900 hover:bg-sky-100 border border-sky-300",
 };
 
+const NEXT_ACTION_STYLES: Record<string, string> = {
+  Admin:
+    "border-slate-300 bg-slate-100 text-slate-800 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800/70 dark:text-slate-100",
+  Partner:
+    "border-cyan-300 bg-cyan-100 text-cyan-900 hover:bg-cyan-100 dark:border-cyan-800 dark:bg-cyan-950/60 dark:text-cyan-100",
+  Client:
+    "border-amber-300 bg-amber-100 text-amber-900 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/60 dark:text-amber-100",
+  AADE: "border-indigo-300 bg-indigo-100 text-indigo-800 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-100",
+  None: "border-slate-300 bg-slate-200 text-slate-800 hover:bg-slate-200 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-100",
+};
+
+const NEXT_ACTION_UNSET_STYLE = NEXT_ACTION_STYLES.None;
+
 export function StatusBadge({ status, className }: { status?: string | null; className?: string }) {
   const key = status ?? "—";
   const style =
@@ -38,4 +51,32 @@ export function TierBadge({ tier, className }: { tier?: string | null; className
   if (!tier) return <span className="text-muted-foreground">—</span>;
   const style = TIER_STYLES[tier] || "bg-muted text-foreground hover:bg-muted border border-border";
   return <Badge className={cn("font-medium", style, className)}>{tier}</Badge>;
+}
+
+export function NextActionBadge({
+  value,
+  showUnset = false,
+  labelPrefix,
+  className,
+}: {
+  value?: string | null;
+  showUnset?: boolean;
+  labelPrefix?: string;
+  className?: string;
+}) {
+  if (!value) {
+    if (!showUnset) return <span className="text-muted-foreground">—</span>;
+    return (
+      <Badge className={cn("font-medium", NEXT_ACTION_UNSET_STYLE, className)}>
+        {labelPrefix ? `${labelPrefix} Not set` : "Not set"}
+      </Badge>
+    );
+  }
+  const style =
+    NEXT_ACTION_STYLES[value] || "border-border bg-muted text-muted-foreground hover:bg-muted";
+  return (
+    <Badge className={cn("font-medium", style, className)}>
+      {labelPrefix ? `${labelPrefix} ${value}` : value}
+    </Badge>
+  );
 }
