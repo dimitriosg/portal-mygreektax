@@ -93,6 +93,7 @@ For local development, use a local `.env` file or `.dev.vars` (both ignored by g
 ```env
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_PUBLISHABLE_KEY=your-supabase-publishable-key
+SUPABASE_PUBLISHABLE_KEY=your-supabase-publishable-key
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
 AIRTABLE_API_KEY=your-airtable-api-key
@@ -100,7 +101,8 @@ PLAUSIBLE_API_KEY=your-plausible-api-key
 ```
 
 - `VITE_SUPABASE_URL` is the client-side Supabase URL.
-- `VITE_SUPABASE_PUBLISHABLE_KEY` is the client-side Supabase publishable key.
+- `VITE_SUPABASE_PUBLISHABLE_KEY` is the required client-side Supabase publishable key.
+- `SUPABASE_PUBLISHABLE_KEY` is an optional server-side alias for the publishable key when configured in Cloudflare.
 - `SUPABASE_URL` is optional; server code falls back to `VITE_SUPABASE_URL` when it is not set.
 - `SUPABASE_SERVICE_ROLE_KEY` is required for server-side admin operations.
 - `AIRTABLE_API_KEY` is required for Airtable API access.
