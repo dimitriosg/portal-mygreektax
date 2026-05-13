@@ -220,12 +220,10 @@ function TrackContent({ data }: { data: TrackData }) {
             <div className="flex items-start gap-3 rounded-xl border border-destructive/20 bg-destructive/5 p-4">
               <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-destructive" />
               <div className="space-y-1">
-                <div className="font-serif text-2xl font-medium tracking-tight">
-                  {publicStatus}
-                </div>
+                <div className="font-serif text-2xl font-medium tracking-tight">{publicStatus}</div>
                 <p className="text-sm text-muted-foreground">
-                  This service request has been cancelled. Please contact MyGreekTax if you need
-                  any help.
+                  This service request has been cancelled. Please contact MyGreekTax if you need any
+                  help.
                 </p>
               </div>
             </div>
