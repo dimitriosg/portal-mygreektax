@@ -155,7 +155,7 @@ function AdminPage() {
     status: "To Assign" as (typeof JOB_STATUSES)[number],
     slaDeadline: "",
     dateSent: "",
-    notes: "",
+    partnerProgressNotes: "",
   });
 
   const createMut = useMutation({
@@ -177,7 +177,7 @@ function AdminPage() {
         status: "To Assign",
         slaDeadline: "",
         dateSent: "",
-        notes: "",
+        partnerProgressNotes: "",
       });
     },
     onError: handleMutationError,
@@ -394,10 +394,10 @@ function AdminPage() {
                     />
                   </div>
                   <div className="space-y-1">
-                    <Label>Notes</Label>
+                    <Label>Partner / progress notes</Label>
                     <Textarea
-                      value={form.notes}
-                      onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                      value={form.partnerProgressNotes}
+                      onChange={(e) => setForm({ ...form, partnerProgressNotes: e.target.value })}
                       rows={3}
                     />
                   </div>
@@ -416,7 +416,7 @@ function AdminPage() {
                         status: form.status,
                         slaDeadline: form.slaDeadline || undefined,
                         dateSent: form.dateSent || undefined,
-                        notes: form.notes || undefined,
+                        partnerProgressNotes: form.partnerProgressNotes || undefined,
                       })
                     }
                   >

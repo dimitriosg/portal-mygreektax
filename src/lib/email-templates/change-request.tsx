@@ -16,7 +16,7 @@ const SITE_NAME = "My Greek Tax";
 const FIELD_LABELS: Record<string, string> = {
   sla_deadline: "SLA deadline",
   status: "Status",
-  notes: "Notes",
+  notes: "Partner / progress notes",
 };
 
 export interface AdminProps {

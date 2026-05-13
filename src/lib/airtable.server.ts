@@ -168,6 +168,9 @@ export type JobFields = {
   "Accountant Fee (\u20ac)"?: number;
   "Client Fee (\u20ac)"?: number;
   "Base Client Price (\u20ac)"?: number[];
+  "Admin Internal Notes"?: string;
+  "Partner Progress Notes"?: string;
+  "Client Visible Note"?: string;
   Notes?: string;
   "Client Code"?: string[];
 };
