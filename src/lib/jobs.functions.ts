@@ -1156,8 +1156,7 @@ export const decideChangeRequest = createServerFn({ method: "POST" })
           to_status: r.requested_value,
         });
       } else {
-        const label =
-          r.field_name === "sla_deadline" ? "SLA deadline" : "Partner / progress notes";
+        const label = r.field_name === "sla_deadline" ? "SLA deadline" : "Partner / progress notes";
         await supabaseAdmin.from("job_events").insert({
           ...eventBase,
           event_type: "comment",

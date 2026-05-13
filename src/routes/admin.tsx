@@ -397,9 +397,7 @@ function AdminPage() {
                     <Label>Partner / progress notes</Label>
                     <Textarea
                       value={form.partnerProgressNotes}
-                      onChange={(e) =>
-                        setForm({ ...form, partnerProgressNotes: e.target.value })
-                      }
+                      onChange={(e) => setForm({ ...form, partnerProgressNotes: e.target.value })}
                       rows={3}
                     />
                   </div>
