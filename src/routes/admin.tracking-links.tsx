@@ -169,7 +169,7 @@ function TrackingLinksPage() {
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Customer IPs and approximate location are stored for fraud and abuse review.
+        Tracking opens keep only basic access details and should be cleaned up after 180 days.
       </p>
 
       <div className="overflow-x-auto rounded-lg border border-border">
@@ -342,12 +342,6 @@ function TrackingLinksPage() {
                       <tr>
                         <th className="px-2 py-1.5">When</th>
                         <th className="px-2 py-1.5">Country</th>
-                        <th className="px-2 py-1.5">City</th>
-                        <th className="px-2 py-1.5">Device</th>
-                        <th className="px-2 py-1.5">Browser</th>
-                        <th className="px-2 py-1.5">OS</th>
-                        <th className="px-2 py-1.5">IP</th>
-                        <th className="px-2 py-1.5">Referrer</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -357,17 +351,6 @@ function TrackingLinksPage() {
                             {formatDateTime(o.opened_at)}
                           </td>
                           <td className="px-2 py-1.5">{o.country ?? "—"}</td>
-                          <td className="px-2 py-1.5">{o.city ?? "—"}</td>
-                          <td className="px-2 py-1.5">{o.device ?? "—"}</td>
-                          <td className="px-2 py-1.5">{o.browser ?? "—"}</td>
-                          <td className="px-2 py-1.5">{o.os ?? "—"}</td>
-                          <td className="px-2 py-1.5 font-mono text-[11px]">{o.ip ?? "—"}</td>
-                          <td
-                            className="px-2 py-1.5 max-w-[160px] truncate"
-                            title={o.referrer ?? ""}
-                          >
-                            {o.referrer ?? "—"}
-                          </td>
                         </tr>
                       ))}
                     </tbody>
