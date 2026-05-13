@@ -5,8 +5,8 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { airtableGet, TABLES, type AirtableRecord, type AccountantFields } from "./airtable.server";
 import { resolveUserAccess } from "./access-context.server";
 
-// Called right after signup/signin. Checks if user's email matches an Accountant
-// in Airtable and, if so, creates partner_profile + partner role.
+// Called right after an invited user signs in. Checks if the user's email matches
+// an Accountant in Airtable and, if so, creates partner_profile + partner role.
 export const linkPartnerProfile = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .handler(async ({ context }) => {
@@ -96,28 +96,4 @@ export const getMyContext = createServerFn({ method: "GET" })
       userId: context.userId,
       email: context.claims.email as string | undefined,
     });
-  });
-
-export const claimFirstAdmin = createServerFn({ method: "POST" })
-  .middleware([attachSupabaseAuth, requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { count } = await supabaseAdmin
-      .from("user_roles")
-      .select("*", { count: "exact", head: true })
-      .eq("role", "admin");
-    if ((count ?? 0) > 0) return { promoted: false };
-
-    const { error } = await supabaseAdmin
-      .from("user_roles")
-      .insert({ user_id: context.userId, role: "admin" });
-    if (error?.code === "23505") {
-      console.info("[claimFirstAdmin] admin role already present", { userId: context.userId });
-      return { promoted: false };
-    }
-    if (error) {
-      console.error("[claimFirstAdmin] DB error:", error);
-      throw new Error("Could not complete setup. Please try again.");
-    }
-
-    return { promoted: true };
   });

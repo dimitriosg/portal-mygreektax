@@ -9,7 +9,7 @@ import {
 } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
-import { linkPartnerProfile, claimFirstAdmin, getMyContext } from "@/lib/auth.functions";
+import { linkPartnerProfile, getMyContext } from "@/lib/auth.functions";
 import { getErrorMessage } from "@/lib/auth-errors";
 import { recordPartnerLogin } from "@/lib/activity.functions";
 import { track } from "@/lib/analytics";
@@ -234,14 +234,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
 
           if (runPostLoginSetup) {
-            try {
-              await claimFirstAdmin();
-            } catch (error) {
-              console.error("[auth] claimFirstAdmin failed", {
-                userId: nextSession.user.id,
-                error,
-              });
-            }
             try {
               await linkPartnerProfile();
             } catch (error) {
