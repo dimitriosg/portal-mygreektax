@@ -8,7 +8,7 @@ import { AlertCircle, Calendar, Check, Clock, MessageSquare, ShieldCheck } from 
 import logo from "@/assets/mygreektax-mark.svg";
 import { formatDate } from "@/lib/utils";
 import { cn } from "@/lib/utils";
-import { isOverdueEligibleStatus } from "@/lib/airtable-shared";
+import { isJobStatus, isOverdueEligibleStatus, type JobStatus } from "@/lib/airtable-shared";
 
 export const Route = createFileRoute("/track/$token")({
   component: TrackPage,
@@ -31,7 +31,7 @@ const PUBLIC_TRACKING_STAGES = [
 type PublicTrackingStage = (typeof PUBLIC_TRACKING_STAGES)[number];
 type PublicTrackingStatus = PublicTrackingStage | "Cancelled";
 
-const PUBLIC_TRACKING_STATUS_MAP: Record<string, PublicTrackingStatus> = {
+const PUBLIC_TRACKING_STATUS_MAP: Record<JobStatus, PublicTrackingStatus> = {
   "To Assign": "Pending",
   Pending: "Pending",
   Paid: "Paid",
@@ -51,7 +51,7 @@ const PUBLIC_TRACKING_PROGRESS: Record<PublicTrackingStage, number> = {
 };
 
 function getPublicTrackingStatus(status: string): PublicTrackingStatus {
-  return PUBLIC_TRACKING_STATUS_MAP[status] ?? "Pending";
+  return isJobStatus(status) ? PUBLIC_TRACKING_STATUS_MAP[status] : "Pending";
 }
 
 function getPublicTrackingProgress(status: PublicTrackingStage) {
@@ -183,7 +183,9 @@ type TrackData = {
 function TrackContent({ data }: { data: TrackData }) {
   const publicStatus = getPublicTrackingStatus(data.status);
   const isCancelled = isPublicTrackingCancelled(publicStatus);
-  const publicProgress = isCancelled ? 0 : getPublicTrackingProgress(publicStatus);
+  const publicProgress = isCancelled
+    ? 0
+    : getPublicTrackingProgress(publicStatus as PublicTrackingStage);
   const currentIndex = isCancelled
     ? -1
     : PUBLIC_TRACKING_STAGES.findIndex((stage) => stage === publicStatus);
