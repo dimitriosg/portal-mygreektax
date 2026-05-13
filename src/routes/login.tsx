@@ -45,10 +45,10 @@ function LoginPage() {
 
   return (
     <div className="mx-auto max-w-sm px-4 py-16">
-      <h1 className="text-2xl font-semibold tracking-tight">Partner sign in</h1>
+      <h1 className="text-2xl font-semibold tracking-tight">Portal sign in</h1>
       <p className="mt-2 text-sm text-muted-foreground">
-        Access is by invitation only. Client tracking links open directly and do not require a
-        login.
+        Access is invite-only and managed by the MyGreekTax admin. If you need an account, please
+        contact your administrator. Client tracking links open directly and do not require a login.
       </p>
       <form onSubmit={submit} className="mt-6 space-y-4">
         <div className="space-y-1.5">
