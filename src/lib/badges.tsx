@@ -35,7 +35,7 @@ const NEXT_ACTION_STYLES: Record<string, string> = {
   Client:
     "border-amber-300 bg-amber-100 text-amber-900 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/60 dark:text-amber-100",
   AADE: "border-indigo-300 bg-indigo-100 text-indigo-800 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-100",
-  None: "border-border bg-muted text-muted-foreground hover:bg-muted",
+  None: "border-slate-300 bg-slate-200 text-slate-800 hover:bg-slate-200 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-100",
 };
 
 export function StatusBadge({ status, className }: { status?: string | null; className?: string }) {
