@@ -17,6 +17,7 @@ import appCss from "../styles.css?url";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
 import { getErrorMessage, isAuthSessionError } from "@/lib/auth-errors";
+import { createErrorReferenceId, debugError, isDebugEnabled } from "@/lib/debug";
 import { listJobs } from "@/lib/jobs.functions";
 
 function isPastDueDate(value: string | undefined) {
@@ -56,9 +57,12 @@ function NotFoundComponent() {
 
 function ErrorComponent({ error, reset }: { error: unknown; reset: () => void }) {
   const router = useRouter();
+  const errorReferenceId = useMemo(() => createErrorReferenceId("root"), []);
+  const showErrorDetails = isDebugEnabled();
   const errorDetails =
     error instanceof Error ? (error.stack ?? error.message) : getErrorMessage(error);
-  console.error("[root-route-error]", {
+  debugError("[root-route-error]", {
+    referenceId: errorReferenceId,
     name: error instanceof Error ? error.name : typeof error,
     message: getErrorMessage(error),
     stack: error instanceof Error ? error.stack : undefined,
@@ -75,10 +79,13 @@ function ErrorComponent({ error, reset }: { error: unknown; reset: () => void })
         <p className="mt-2 text-sm text-muted-foreground">
           Something went wrong on our end. You can try refreshing or head back home.
         </p>
-        <details className="mt-4 rounded-md border border-border bg-muted/30 p-3 text-left text-xs text-muted-foreground">
-          <summary className="cursor-pointer font-medium text-foreground">Error details</summary>
-          <pre className="mt-2 whitespace-pre-wrap break-words">{errorDetails}</pre>
-        </details>
+        <p className="mt-2 text-xs text-muted-foreground">Reference ID: {errorReferenceId}</p>
+        {showErrorDetails && (
+          <details className="mt-4 rounded-md border border-border bg-muted/30 p-3 text-left text-xs text-muted-foreground">
+            <summary className="cursor-pointer font-medium text-foreground">Error details</summary>
+            <pre className="mt-2 whitespace-pre-wrap break-words">{errorDetails}</pre>
+          </details>
+        )}
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           <button
             onClick={() => {
@@ -248,7 +255,7 @@ function AppShell() {
     if (lastProcessedOverdueJobsErrorRef.current === overdueJobsQuery.error) return;
     lastProcessedOverdueJobsErrorRef.current = overdueJobsQuery.error;
 
-    console.error("[app-shell] overdue jobs query error", {
+    debugError("[app-shell] overdue jobs query error", {
       message: getErrorMessage(overdueJobsQuery.error),
       error: overdueJobsQuery.error,
       userId: user?.id ?? null,

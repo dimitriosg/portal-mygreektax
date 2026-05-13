@@ -1,4 +1,5 @@
 import { createMiddleware } from "@tanstack/react-start";
+import { debugLog, debugWarn } from "@/lib/debug";
 import { supabase } from "./client";
 import { describeSupabaseToken, getSupabaseProjectHost } from "./auth-diagnostics";
 
@@ -35,7 +36,7 @@ export const attachSupabaseAuth = createMiddleware({ type: "function" }).client(
     let refreshAttempted = false;
     let tokenDiagnostics = describeSupabaseToken(token);
 
-    console.info("[attachSupabaseAuth] session lookup", {
+    debugLog("[attachSupabaseAuth] session lookup", {
       hasSession,
       hasAccessToken: !!token,
       tokenLength: tokenDiagnostics.length,
@@ -53,7 +54,7 @@ export const attachSupabaseAuth = createMiddleware({ type: "function" }).client(
       token = refreshed.session?.access_token;
       tokenDiagnostics = describeSupabaseToken(token);
 
-      console.info("[attachSupabaseAuth] refresh result", {
+      debugLog("[attachSupabaseAuth] refresh result", {
         hasSession: !!refreshed.session,
         hasAccessToken: !!token,
         tokenLength: tokenDiagnostics.length,
@@ -69,7 +70,7 @@ export const attachSupabaseAuth = createMiddleware({ type: "function" }).client(
     // immediately on the client side. Forwarding without an Authorization header
     // would result in a guaranteed 401 from the server and pollutes the console.
     if (!token) {
-      console.error("[attachSupabaseAuth] aborting request: no access token", {
+      debugWarn("[attachSupabaseAuth] aborting request: no access token", {
         hasSession: !!session,
         hasAccessToken: false,
         refreshAttempted,
@@ -79,7 +80,7 @@ export const attachSupabaseAuth = createMiddleware({ type: "function" }).client(
     }
 
     if (!tokenDiagnostics.isLikelyJwt) {
-      console.error("[attachSupabaseAuth] aborting request: invalid session token shape", {
+      debugWarn("[attachSupabaseAuth] aborting request: invalid session token shape", {
         hasSession: !!session,
         hasAccessToken: true,
         tokenLength: tokenDiagnostics.length,

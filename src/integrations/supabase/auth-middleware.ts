@@ -2,6 +2,7 @@
 import { createMiddleware } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
 import { createClient } from "@supabase/supabase-js";
+import { debugLog, debugWarn } from "@/lib/debug";
 import { describeSupabaseToken, getSupabaseProjectHost } from "./auth-diagnostics";
 import type { Database } from "./types";
 
@@ -41,13 +42,13 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
   try {
     const payloadPart = token.split(".")[1];
     if (!payloadPart) return null;
-    const padded = payloadPart.replace(/-/g, "+").replace(/_/g, "/").padEnd(
-      Math.ceil(payloadPart.length / 4) * 4,
-      "=",
-    );
+    const padded = payloadPart
+      .replace(/-/g, "+")
+      .replace(/_/g, "/")
+      .padEnd(Math.ceil(payloadPart.length / 4) * 4, "=");
     return JSON.parse(atob(padded)) as Record<string, unknown>;
   } catch (error) {
-    console.warn("[requireSupabaseAuth] could not decode JWT payload", {
+    debugWarn("[requireSupabaseAuth] could not decode JWT payload", {
       error: getSafeErrorDetail(error),
     });
     return null;
@@ -317,9 +318,9 @@ export const requireSupabaseAuth = createMiddleware({ type: "function" }).server
     const SUPABASE_PUBLISHABLE_KEY =
       process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
     const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    const projectHost = getSupabaseProjectHost(SUPABASE_URL);
+    const projectHost = getSupabaseProjectHost(SUPABASE_URL ?? undefined);
 
-    console.info("[requireSupabaseAuth] config", {
+    debugLog("[requireSupabaseAuth] config", {
       hasSupabaseUrl: !!SUPABASE_URL,
       supabaseUrlSource,
       hasSupabasePublishableKey: !!SUPABASE_PUBLISHABLE_KEY,
@@ -368,7 +369,7 @@ export const requireSupabaseAuth = createMiddleware({ type: "function" }).server
       supabaseUrlSource,
     };
 
-    console.info("[requireSupabaseAuth] request auth diagnostics", authDiagnostics);
+    debugLog("[requireSupabaseAuth] request auth diagnostics", authDiagnostics);
 
     if (!token) {
       logUnauthorized("no_token", authDiagnostics);
@@ -382,7 +383,7 @@ export const requireSupabaseAuth = createMiddleware({ type: "function" }).server
     }
 
     if (clientProjectHost && projectHost && clientProjectHost !== projectHost) {
-      console.warn("[requireSupabaseAuth] auth diagnostic", {
+      debugWarn("[requireSupabaseAuth] auth diagnostic", {
         reason: "project_host_mismatch",
         clientProjectHost,
         projectHost,
@@ -486,7 +487,7 @@ export const requireSupabaseAuth = createMiddleware({ type: "function" }).server
     const authDetail = getAuthAttemptHeaderValue(validationAttempts);
 
     if (!validatedUser?.id) {
-      console.warn("[requireSupabaseAuth] auth diagnostic", {
+      debugWarn("[requireSupabaseAuth] auth diagnostic", {
         reason: "get_user_failed",
         ...authDiagnostics,
         authDetail,
@@ -513,7 +514,7 @@ export const requireSupabaseAuth = createMiddleware({ type: "function" }).server
     }
 
     if (validationSource !== "publishable_get_user") {
-      console.warn("[requireSupabaseAuth] auth diagnostic", {
+      debugWarn("[requireSupabaseAuth] auth diagnostic", {
         reason:
           validationSource === "service_role_rest_user"
             ? "service_role_fallback_succeeded"
@@ -545,7 +546,7 @@ export const requireSupabaseAuth = createMiddleware({ type: "function" }).server
     const claimsSub = typeof claimsData?.claims?.sub === "string" ? claimsData.claims.sub : null;
 
     if (!claimsSub) {
-      console.warn("[requireSupabaseAuth] auth diagnostic", {
+      debugWarn("[requireSupabaseAuth] auth diagnostic", {
         reason: "get_claims_failed",
         ...authDiagnostics,
         errorMessage: claimsErrorMessage,
@@ -555,7 +556,7 @@ export const requireSupabaseAuth = createMiddleware({ type: "function" }).server
     }
 
     if (claimsSub && claimsSub !== validatedUser.id) {
-      console.warn("[requireSupabaseAuth] auth diagnostic", {
+      debugWarn("[requireSupabaseAuth] auth diagnostic", {
         reason: "claims_sub_mismatch",
         ...authDiagnostics,
         claimsSub,
