@@ -55,26 +55,33 @@ function getUserEmails(user) {
 }
 
 async function findUserByEmail(supabase, email) {
-  let page = 1;
   const perPage = 200;
+  const maxPages = 1000;
 
-  while (true) {
+  for (let page = 1; page <= maxPages; ) {
     const { data, error } = await supabase.auth.admin.listUsers({ page, perPage });
     if (error) {
       throw new Error(`Failed to list auth users: ${error.message}`);
     }
 
-    const match = (data.users ?? []).find((user) => getUserEmails(user).has(email));
+    const users = data.users ?? [];
+    if (users.length === 0) {
+      return null;
+    }
+
+    const match = users.find((user) => getUserEmails(user).has(email));
     if (match) {
       return match;
     }
 
-    if (!data.nextPage || data.users.length === 0) {
+    if (!data.nextPage) {
       return null;
     }
 
     page = data.nextPage;
   }
+
+  throw new Error("Exceeded maximum pagination limit while searching auth users.");
 }
 
 async function main() {
