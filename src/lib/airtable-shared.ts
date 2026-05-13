@@ -12,7 +12,15 @@ export const JOB_STATUSES = [
 export type JobStatus = (typeof JOB_STATUSES)[number];
 
 const JOB_STATUS_SET = new Set<string>(JOB_STATUSES);
-const NON_OVERDUE_JOB_STATUS_SET = new Set<string>(["Completed", "Cancelled / NMF"]);
+const OVERDUE_ELIGIBLE_JOB_STATUS_SET = new Set<string>([
+  "To Assign",
+  "Pending",
+  "Paid",
+  "In Progress",
+  "Delivered",
+  "Invoiced",
+  "Sent",
+]);
 const PROGRESS_STAGE_JOB_STATUS_SET = new Set<string>(
   JOB_STATUSES.filter((status) => status !== "Cancelled / NMF"),
 );
@@ -38,7 +46,7 @@ export function getJobStatusSortOrder(status?: string | null) {
 }
 
 export function isOverdueEligibleStatus(status?: string | null) {
-  return !NON_OVERDUE_JOB_STATUS_SET.has(status ?? "");
+  return OVERDUE_ELIGIBLE_JOB_STATUS_SET.has(status ?? "");
 }
 
 export function hasJobProgressStage(

@@ -225,7 +225,6 @@ function JobDetail() {
   if (!data) return null;
 
   const j = data.job.fields;
-  const selectedStatus = isJobStatus(status) ? status : "";
   const hasLegacyStatus = !!status && !isJobStatus(status);
 
   return (
@@ -305,12 +304,12 @@ function JobDetail() {
           <div>
             <label className="text-sm font-medium">Status</label>
             <select
-              value={selectedStatus}
+              value={status}
               onChange={(e) => setStatus(e.target.value)}
               className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
             >
               {hasLegacyStatus && (
-                <option value="" disabled>
+                <option value={status} disabled>
                   Legacy status: {status}
                 </option>
               )}
