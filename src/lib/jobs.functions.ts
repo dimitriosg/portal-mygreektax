@@ -7,6 +7,7 @@ import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middlewa
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
   airtableGet,
+  airtableListAll,
   airtablePatch,
   airtablePost,
   TABLES,
@@ -65,7 +66,7 @@ export const listJobs = createServerFn({ method: "GET" })
     const impersonateId = isAdmin ? data?.asAccountantId : undefined;
     const filterAccountantId =
       impersonateId ?? (!isAdmin && partner ? partner.airtable_accountant_id : undefined);
-    const data2 = await airtableGet(TABLES.jobs, { pageSize: "100" });
+    const data2 = await airtableListAll<JobFields>(TABLES.jobs, { pageSize: "100" });
     let jobs = data2.records as AirtableRecord<JobFields>[];
     if (filterAccountantId) {
       jobs = jobs.filter((j) => j.fields["Assigned Accountant"]?.includes(filterAccountantId));
@@ -333,7 +334,7 @@ export const listAccountants = createServerFn({ method: "GET" })
       userId: context.userId,
       email: context.claims.email as string | undefined,
     });
-    const data = await airtableGet(TABLES.accountants, { pageSize: "100" });
+    const data = await airtableListAll<AccountantFields>(TABLES.accountants, { pageSize: "100" });
     return { accountants: data.records as AirtableRecord<AccountantFields>[] };
   });
 
@@ -344,7 +345,7 @@ export const listClients = createServerFn({ method: "GET" })
       userId: context.userId,
       email: context.claims.email as string | undefined,
     });
-    const data = await airtableGet(TABLES.clients, { pageSize: "100" });
+    const data = await airtableListAll<ClientFields>(TABLES.clients, { pageSize: "100" });
     return { clients: data.records as AirtableRecord<ClientFields>[] };
   });
 
@@ -355,7 +356,7 @@ export const listServices = createServerFn({ method: "GET" })
       userId: context.userId,
       email: context.claims.email as string | undefined,
     });
-    const data = await airtableGet(TABLES.serviceCatalog, { pageSize: "100" });
+    const data = await airtableListAll(TABLES.serviceCatalog, { pageSize: "100" });
     const records = data.records as AirtableRecord<Record<string, unknown>>[];
     const asStr = (v: unknown): string => {
       if (v == null) return "";
@@ -412,23 +413,19 @@ export const createJob = createServerFn({ method: "POST" })
     // Compute next Job Code (e.g. JB105) by scanning all existing codes.
     let maxN = 0;
     let prefix = "JB";
-    let offset: string | undefined;
-    do {
-      const q: Record<string, string> = { pageSize: "100", "fields[]": "Job Code" };
-      if (offset) q.offset = offset;
-      const page = await airtableGet(TABLES.jobs, q);
-      const recs = (page.records ?? []) as AirtableRecord<JobFields>[];
-      for (const r of recs) {
-        const code = r.fields["Job Code"];
-        if (!code) continue;
-        const m = /^([A-Za-z]+)(\d+)$/.exec(code);
-        if (!m) continue;
-        prefix = m[1];
-        const n = parseInt(m[2], 10);
-        if (n > maxN) maxN = n;
-      }
-      offset = page.offset;
-    } while (offset);
+    const existingJobs = await airtableListAll<JobFields>(TABLES.jobs, {
+      pageSize: "100",
+      "fields[]": "Job Code",
+    });
+    for (const r of existingJobs.records) {
+      const code = r.fields["Job Code"];
+      if (!code) continue;
+      const m = /^([A-Za-z]+)(\d+)$/.exec(code);
+      if (!m) continue;
+      prefix = m[1];
+      const n = parseInt(m[2], 10);
+      if (n > maxN) maxN = n;
+    }
     const nextCode = `${prefix}${maxN + 1}`;
     const fields: Record<string, unknown> = {
       "Job Code": nextCode,

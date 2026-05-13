@@ -1,16 +1,28 @@
 // Server-only Airtable helpers.
 // This project uses the direct Airtable REST API only.
 const AIRTABLE_API_URL = "https://api.airtable.com";
-export const BASE_ID = "appBJ9yHC38YHvvSw";
-
-export const TABLES = {
+// Backward-compatibility fallback only. Cloudflare Workers Variables should be
+// the production source of truth for Airtable base and table IDs.
+const LEGACY_BASE_ID = "appBJ9yHC38YHvvSw";
+const LEGACY_TABLES = {
   jobs: "tblpH2ULYydRB3exW",
   clients: "tbl70xa6gossiWTMg",
   serviceCatalog: "tblMaCJtLqPXKv5XR",
   accountants: "tblwNZNcrnaJMaq1w",
 } as const;
 
+export const BASE_ID = process.env.AIRTABLE_BASE_ID || LEGACY_BASE_ID;
+
+export const TABLES = {
+  jobs: process.env.AIRTABLE_TABLE_JOBS || LEGACY_TABLES.jobs,
+  clients: process.env.AIRTABLE_TABLE_CLIENTS || LEGACY_TABLES.clients,
+  serviceCatalog: process.env.AIRTABLE_TABLE_SERVICE_CATALOG || LEGACY_TABLES.serviceCatalog,
+  accountants: process.env.AIRTABLE_TABLE_ACCOUNTANTS || LEGACY_TABLES.accountants,
+} as const;
+
 const GENERIC_ERROR = "Service temporarily unavailable. Please try again.";
+type AirtableQueryValue = string | string[] | undefined;
+export type AirtableQuery = Record<string, AirtableQueryValue>;
 
 function getAirtableHeaders(): Record<string, string> {
   const AIRTABLE_API_KEY = process.env.AIRTABLE_API_KEY;
@@ -25,20 +37,33 @@ function getAirtableHeaders(): Record<string, string> {
   };
 }
 
-function getAirtableUrl(path: string, query?: Record<string, string>) {
+function getAirtableUrl(path: string, query?: AirtableQuery) {
   const url = new URL(`${AIRTABLE_API_URL}/v0/${BASE_ID}/${path}`);
-  if (query) for (const [k, v] of Object.entries(query)) url.searchParams.set(k, v);
+  if (query) {
+    for (const [key, value] of Object.entries(query)) {
+      if (value === undefined) continue;
+      if (Array.isArray(value)) {
+        for (const item of value) url.searchParams.append(key, item);
+        continue;
+      }
+      url.searchParams.set(key, value);
+    }
+  }
   return url;
 }
 
 async function logAndThrow(method: string, path: string, res: Response): Promise<never> {
   let body = "";
-  try { body = await res.text(); } catch { /* ignore */ }
+  try {
+    body = await res.text();
+  } catch {
+    /* ignore */
+  }
   console.error(`[airtable] ${method} ${path} failed [${res.status}]: ${body}`);
   throw new Error(GENERIC_ERROR);
 }
 
-export async function airtableGet(path: string, query?: Record<string, string>) {
+export async function airtableGet(path: string, query?: AirtableQuery) {
   const url = getAirtableUrl(path, query);
   let res: Response;
   try {
@@ -51,7 +76,41 @@ export async function airtableGet(path: string, query?: Record<string, string>) 
   return res.json();
 }
 
-export async function airtablePatch(table: string, recordId: string, fields: Record<string, unknown>) {
+export async function airtableListAll<T = Record<string, unknown>>(
+  table: string,
+  query?: AirtableQuery,
+) {
+  const querySnapshot = query
+    ? Object.fromEntries(
+        Object.entries(query).map(([key, value]) => [
+          key,
+          Array.isArray(value) ? [...value] : value,
+        ]),
+      )
+    : {};
+  const records: AirtableRecord<T>[] = [];
+  let offset: string | undefined;
+
+  do {
+    const page = (await airtableGet(table, {
+      ...querySnapshot,
+      ...(offset ? { offset } : {}),
+    })) as {
+      records?: AirtableRecord<T>[];
+      offset?: string;
+    };
+    records.push(...(page.records ?? []));
+    offset = page.offset;
+  } while (offset);
+
+  return { records };
+}
+
+export async function airtablePatch(
+  table: string,
+  recordId: string,
+  fields: Record<string, unknown>,
+) {
   const url = getAirtableUrl(`${table}/${recordId}`);
   let res: Response;
   try {
@@ -82,7 +141,9 @@ export async function airtablePost(table: string, fields: Record<string, unknown
     throw new Error(GENERIC_ERROR);
   }
   if (!res.ok) await logAndThrow("POST", table, res);
-  const json = (await res.json()) as { records: Array<{ id: string; fields: Record<string, unknown> }> };
+  const json = (await res.json()) as {
+    records: Array<{ id: string; fields: Record<string, unknown> }>;
+  };
   return json.records[0];
 }
 
