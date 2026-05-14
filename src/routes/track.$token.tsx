@@ -6,6 +6,7 @@ import {
   type PublicTrackingData,
   type PublicTrackingErrorCode,
 } from "@/lib/jobs.functions";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AlertCircle, Calendar, Check, Clock, MessageSquare, ShieldCheck } from "lucide-react";
@@ -204,107 +205,129 @@ function TrackContent({ data }: { data: PublicTrackingData }) {
     <div className="space-y-6">
       {/* Greeting */}
       <section className="space-y-2">
-        <div className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-background/80 px-3 py-1 text-xs font-medium text-muted-foreground shadow-sm">
-          <span className="h-1.5 w-1.5 rounded-full bg-brand" />
-          {data.jobCode}
-        </div>
+        {data.jobCode && (
+          <div className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-background/80 px-3 py-1 text-xs font-medium text-muted-foreground shadow-sm">
+            <span className="h-1.5 w-1.5 rounded-full bg-brand" />
+            {data.jobCode}
+          </div>
+        )}
         <h1 className="font-serif text-3xl font-medium tracking-tight sm:text-[2.5rem] sm:leading-[1.1]">
           Hello <span className="italic">{data.clientName}</span>
         </h1>
         <p className="text-sm sm:text-base text-muted-foreground">
-          Here is the live status of{" "}
-          <span className="font-medium text-foreground">{data.serviceName}</span>.
+          {data.detailsLimited ? (
+            "Your secure tracking link is valid."
+          ) : (
+            <>
+              Here is the live status of{" "}
+              <span className="font-medium text-foreground">{data.serviceName}</span>.
+            </>
+          )}
         </p>
       </section>
 
-      {/* Progress card */}
-      {isCancelled ? (
-        <Card
-          className="overflow-hidden border-border/60"
-          style={{ boxShadow: "var(--shadow-soft)" }}
-        >
-          <CardContent className="space-y-4 p-5 sm:p-7">
-            <div className="text-xs uppercase tracking-wider text-muted-foreground">
-              Current status
-            </div>
-            <div className="flex items-start gap-3 rounded-xl border border-destructive/20 bg-destructive/5 p-4">
-              <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-destructive" />
-              <div className="space-y-1">
-                <div className="font-serif text-2xl font-medium tracking-tight">{publicStatus}</div>
-                <p className="text-sm text-muted-foreground">
-                  This service request has been cancelled. Please contact MyGreekTax if you need any
-                  help.
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card
-          className="overflow-hidden border-border/60"
-          style={{ boxShadow: "var(--shadow-soft)" }}
-        >
-          <CardContent className="space-y-6 p-5 sm:p-7">
-            <div className="flex items-end justify-between gap-4">
-              <div>
-                <div className="text-xs uppercase tracking-wider text-muted-foreground">
-                  Current status
-                </div>
-                <div className="mt-1.5 flex items-center gap-2.5">
-                  <span
-                    className={cn(
-                      "inline-flex h-2.5 w-2.5 rounded-full",
-                      tone === "success" && "bg-success",
-                      tone === "warning" && "bg-warning",
-                      tone === "danger" && "bg-destructive",
-                      tone === "brand" && "bg-brand",
-                    )}
-                  />
-                  <span className="font-serif text-2xl font-medium tracking-tight">
-                    {publicStatus}
-                  </span>
-                </div>
-              </div>
-              <div className="text-right">
-                <div className="font-serif text-3xl font-medium tabular-nums tracking-tight">
-                  {publicProgress}
-                  <span className="text-base text-muted-foreground">%</span>
-                </div>
-                <div className="text-xs text-muted-foreground">complete</div>
-              </div>
-            </div>
+      {data.detailsLimited && (
+        <Alert className="border-warning/40 bg-warning/5 text-foreground">
+          <AlertCircle className="h-4 w-4 text-warning" />
+          <AlertTitle>Live tracking details are temporarily unavailable</AlertTitle>
+          <AlertDescription>
+            Your secure link is valid, but we could not load the latest job details right now.
+            Please try again in a few minutes.
+          </AlertDescription>
+        </Alert>
+      )}
 
-            <Stepper currentIndex={currentIndex} progress={publicProgress} />
+      {!data.detailsLimited &&
+        (isCancelled ? (
+          <Card
+            className="overflow-hidden border-border/60"
+            style={{ boxShadow: "var(--shadow-soft)" }}
+          >
+            <CardContent className="space-y-4 p-5 sm:p-7">
+              <div className="text-xs uppercase tracking-wider text-muted-foreground">
+                Current status
+              </div>
+              <div className="flex items-start gap-3 rounded-xl border border-destructive/20 bg-destructive/5 p-4">
+                <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-destructive" />
+                <div className="space-y-1">
+                  <div className="font-serif text-2xl font-medium tracking-tight">
+                    {publicStatus}
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    This service request has been cancelled. Please contact MyGreekTax if you need
+                    any help.
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card
+            className="overflow-hidden border-border/60"
+            style={{ boxShadow: "var(--shadow-soft)" }}
+          >
+            <CardContent className="space-y-6 p-5 sm:p-7">
+              <div className="flex items-end justify-between gap-4">
+                <div>
+                  <div className="text-xs uppercase tracking-wider text-muted-foreground">
+                    Current status
+                  </div>
+                  <div className="mt-1.5 flex items-center gap-2.5">
+                    <span
+                      className={cn(
+                        "inline-flex h-2.5 w-2.5 rounded-full",
+                        tone === "success" && "bg-success",
+                        tone === "warning" && "bg-warning",
+                        tone === "danger" && "bg-destructive",
+                        tone === "brand" && "bg-brand",
+                      )}
+                    />
+                    <span className="font-serif text-2xl font-medium tracking-tight">
+                      {publicStatus}
+                    </span>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="font-serif text-3xl font-medium tabular-nums tracking-tight">
+                    {publicProgress}
+                    <span className="text-base text-muted-foreground">%</span>
+                  </div>
+                  <div className="text-xs text-muted-foreground">complete</div>
+                </div>
+              </div>
+
+              <Stepper currentIndex={currentIndex} progress={publicProgress} />
+            </CardContent>
+          </Card>
+        ))}
+
+      {!data.detailsLimited && (
+        <Card className="border-border/60" style={{ boxShadow: "var(--shadow-soft)" }}>
+          <CardContent className="grid grid-cols-1 divide-y divide-border/60 p-0 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+            <DateCell
+              icon={<Calendar className="h-4 w-4" />}
+              label="Started"
+              value={formatDate(data.dateSent)}
+            />
+            <DateCell
+              icon={<Clock className="h-4 w-4" />}
+              label="Expected by"
+              value={formatDate(data.sla)}
+            />
+            <DateCell
+              icon={<Clock className="h-4 w-4" />}
+              label="Time remaining"
+              value={remaining?.label ?? "—"}
+              valueClassName={cn(
+                remaining?.tone === "danger" && "text-destructive",
+                remaining?.tone === "neutral" && "text-muted-foreground",
+                remaining?.tone === "warning" && "text-warning",
+                remaining?.tone === "success" && "text-success",
+              )}
+            />
           </CardContent>
         </Card>
       )}
-
-      {/* Dates */}
-      <Card className="border-border/60" style={{ boxShadow: "var(--shadow-soft)" }}>
-        <CardContent className="grid grid-cols-1 divide-y divide-border/60 p-0 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
-          <DateCell
-            icon={<Calendar className="h-4 w-4" />}
-            label="Started"
-            value={formatDate(data.dateSent)}
-          />
-          <DateCell
-            icon={<Clock className="h-4 w-4" />}
-            label="Expected by"
-            value={formatDate(data.sla)}
-          />
-          <DateCell
-            icon={<Clock className="h-4 w-4" />}
-            label="Time remaining"
-            value={remaining?.label ?? "—"}
-            valueClassName={cn(
-              remaining?.tone === "danger" && "text-destructive",
-              remaining?.tone === "neutral" && "text-muted-foreground",
-              remaining?.tone === "warning" && "text-warning",
-              remaining?.tone === "success" && "text-success",
-            )}
-          />
-        </CardContent>
-      </Card>
 
       <Card
         className="border-border/60 bg-background/85"
@@ -320,7 +343,7 @@ function TrackContent({ data }: { data: PublicTrackingData }) {
       </Card>
 
       {/* Client-visible note only */}
-      {data.clientVisibleNote && (
+      {data.clientVisibleNote && !data.detailsLimited && (
         <Card className="border-border/60" style={{ boxShadow: "var(--shadow-soft)" }}>
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 font-serif text-base font-medium">

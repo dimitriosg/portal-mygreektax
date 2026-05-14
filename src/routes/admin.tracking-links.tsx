@@ -14,6 +14,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { TrackingLinkPreviewNotice } from "@/components/tracking-link-preview-notice";
 import { StatusBadge } from "@/lib/badges";
 import { formatDate, formatDateTime } from "@/lib/utils";
 import { toast } from "sonner";
@@ -150,6 +151,8 @@ function TrackingLinksPage() {
         <Stat label="Links opened" value={totals.opened} />
         <Stat label="Total opens" value={totals.opens} />
       </div>
+
+      <TrackingLinkPreviewNotice className="max-w-3xl" sampleToken={filtered[0]?.token} />
 
       <div className="flex flex-wrap items-center gap-2">
         <Input

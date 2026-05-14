@@ -39,6 +39,7 @@ export type PublicTrackingData = {
   sla: string | null;
   dateSent: string | null;
   clientVisibleNote: string;
+  detailsLimited: boolean;
 };
 
 export type PublicTrackingResult =
@@ -882,19 +883,26 @@ export const getClientTracking = createServerFn({ method: "GET" })
       return { ok: false, errorCode: "expired" };
     }
 
-    let job: AirtableRecord<JobFields>;
-    let client: AirtableRecord<ClientFields>;
-    try {
-      [job, client] = (await Promise.all([
-        airtableGet(`${TABLES.jobs}/${row.airtable_job_id}`),
-        airtableGet(`${TABLES.clients}/${row.airtable_client_id}`),
-      ])) as [AirtableRecord<JobFields>, AirtableRecord<ClientFields>];
-    } catch (airtableError) {
-      logPublicTrackingDiagnostic("airtable_fetch_failed", tokenPrefix, airtableError);
-      return { ok: false, errorCode: "temporary_unavailable" };
+    const [jobResult, clientResult] = await Promise.allSettled([
+      airtableGet(`${TABLES.jobs}/${row.airtable_job_id}`),
+      airtableGet(`${TABLES.clients}/${row.airtable_client_id}`),
+    ]);
+
+    if (jobResult.status === "rejected") {
+      logPublicTrackingDiagnostic("airtable_fetch_failed", tokenPrefix, jobResult.reason);
+    }
+    if (clientResult.status === "rejected") {
+      logPublicTrackingDiagnostic("airtable_fetch_failed", tokenPrefix, clientResult.reason);
     }
 
-    const status = job.fields.Status ?? "Pending";
+    const job =
+      jobResult.status === "fulfilled" ? (jobResult.value as AirtableRecord<JobFields>) : null;
+    const client =
+      clientResult.status === "fulfilled"
+        ? (clientResult.value as AirtableRecord<ClientFields>)
+        : null;
+    const detailsLimited = !job;
+    const status = job?.fields.Status ?? "Pending";
 
     try {
       const country = getRequestHeader("cf-ipcountry") ?? null;
@@ -927,9 +935,9 @@ export const getClientTracking = createServerFn({ method: "GET" })
       const activityLogged = await logActivityEvent({
         eventType: "tracking_link_opened",
         actorEmail: row.client_email ?? null,
-        actorName: client.fields["Full Name"] ?? null,
-        subjectLabel: job.fields["Job Code"] ?? row.airtable_job_id,
-        metadata: { jobCode: job.fields["Job Code"] ?? null, status },
+        actorName: client?.fields["Full Name"] ?? null,
+        subjectLabel: job?.fields["Job Code"] ?? row.airtable_job_id,
+        metadata: { jobCode: job?.fields["Job Code"] ?? null, status: job?.fields.Status ?? null },
       });
       if (!activityLogged) {
         logPublicTrackingDiagnostic("activity_log_failed", tokenPrefix);
@@ -940,14 +948,15 @@ export const getClientTracking = createServerFn({ method: "GET" })
 
     return {
       ok: true,
-      clientName: client.fields["Full Name"] ?? "Client",
-      jobCode: job.fields["Job Code"] ?? "",
-      serviceName: job.fields["Service Name"]?.[0] ?? "Tax service",
+      clientName: client?.fields["Full Name"] ?? "Client",
+      jobCode: job?.fields["Job Code"] ?? "",
+      serviceName: job?.fields["Service Name"]?.[0] ?? "Tax service",
       status,
-      progress: STATUS_PROGRESS[status] ?? 0,
-      sla: job.fields["SLA Deadline"] ?? null,
-      dateSent: job.fields["Date Sent"] ?? null,
-      clientVisibleNote: job.fields["Client Visible Note"] ?? "",
+      progress: detailsLimited ? 0 : (STATUS_PROGRESS[status] ?? 0),
+      sla: job?.fields["SLA Deadline"] ?? null,
+      dateSent: job?.fields["Date Sent"] ?? null,
+      clientVisibleNote: job?.fields["Client Visible Note"] ?? "",
+      detailsLimited,
     };
   });
 
