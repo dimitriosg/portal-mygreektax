@@ -6,6 +6,7 @@ import {
   getJob,
   updateJob,
   createClientToken,
+  regenerateClientToken,
   listJobEvents,
   getJobTrackingStats,
   extendClientToken,
@@ -31,6 +32,7 @@ import { NextActionBadge, StatusBadge, TierBadge } from "@/lib/badges";
 import { toast } from "sonner";
 import { formatDate, formatDateTime } from "@/lib/utils";
 import { track } from "@/lib/analytics";
+import { buildTrackingLink } from "@/lib/tracking-links";
 
 export const Route = createFileRoute("/jobs/$jobId")({ component: JobDetail });
 
@@ -50,6 +52,7 @@ function JobDetail() {
   const fetchJob = useServerFn(getJob);
   const updateFn = useServerFn(updateJob);
   const tokenFn = useServerFn(createClientToken);
+  const regenerateTokenFn = useServerFn(regenerateClientToken);
   const fetchEvents = useServerFn(listJobEvents);
   const fetchTrackingStats = useServerFn(getJobTrackingStats);
   const extendFn = useServerFn(extendClientToken);
@@ -227,12 +230,24 @@ function JobDetail() {
 
   const sendLink = useMutation({
     mutationFn: () => tokenFn({ data: { jobId } }),
-    onSuccess: ({ token, email }) => {
-      const url = `${window.location.origin}/track/${token}`;
-      track("tracking_link_created");
+    onSuccess: ({ token, email, created }) => {
+      const url = buildTrackingLink(token);
+      if (created) track("tracking_link_created");
       navigator.clipboard?.writeText(url).catch(() => {});
       toast.success(`Tracking link copied for ${email}`);
       qc.invalidateQueries({ queryKey: ["job-tracking", jobId] });
+    },
+    onError: handleMutationError,
+  });
+  const regenerateLink = useMutation({
+    mutationFn: () => regenerateTokenFn({ data: { jobId } }),
+    onSuccess: ({ token, email }) => {
+      const url = buildTrackingLink(token);
+      track("tracking_link_regenerated");
+      navigator.clipboard?.writeText(url).catch(() => {});
+      toast.success(`New tracking link copied for ${email}`);
+      qc.invalidateQueries({ queryKey: ["job-tracking", jobId] });
+      qc.invalidateQueries({ queryKey: ["token-history", tokenForHistory] });
     },
     onError: handleMutationError,
   });
@@ -451,7 +466,7 @@ function JobDetail() {
                 onClick={() => sendLink.mutate()}
                 disabled={sendLink.isPending}
               >
-                {sendLink.isPending ? "Generating…" : "Copy client tracking link"}
+                {sendLink.isPending ? "Getting link…" : "Copy tracking link"}
               </Button>
             )}
           </div>
@@ -538,6 +553,14 @@ function JobDetail() {
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => sendLink.mutate()}
+                disabled={sendLink.isPending}
+              >
+                {sendLink.isPending ? "Getting link…" : "Copy tracking link"}
+              </Button>
               <select
                 value={extendDays}
                 onChange={(e) => setExtendDays(Number(e.target.value))}
@@ -556,6 +579,14 @@ function JobDetail() {
                 disabled={extendMut.isPending}
               >
                 {extendMut.isPending ? "Extending…" : "Extend expiry"}
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => regenerateLink.mutate()}
+                disabled={regenerateLink.isPending}
+              >
+                {regenerateLink.isPending ? "Regenerating…" : "Regenerate link"}
               </Button>
             </div>
             {trackingQ.data.opens.length > 0 && (
@@ -618,6 +649,10 @@ function JobDetail() {
                               <> · new expiry {formatDate(ev.metadata.new_expires_at)}</>
                             )}
                           </p>
+                        ) : ev.event_type === "regenerated" ? (
+                          <p className="mt-1">Generated a replacement tracking link</p>
+                        ) : ev.event_type === "revoked" ? (
+                          <p className="mt-1">Revoked this tracking link</p>
                         ) : (
                           <p className="mt-1">{ev.event_type}</p>
                         )}

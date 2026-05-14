@@ -11,6 +11,7 @@ export type ActivityEventType =
   | "job_change_request_decided"
   | "job_status_changed"
   | "tracking_link_created"
+  | "tracking_link_regenerated"
   | "tracking_link_opened"
   | "tracking_link_extended";
 

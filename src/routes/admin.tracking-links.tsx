@@ -18,6 +18,7 @@ import { StatusBadge } from "@/lib/badges";
 import { formatDate, formatDateTime } from "@/lib/utils";
 import { toast } from "sonner";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { buildTrackingLink } from "@/lib/tracking-links";
 
 export const Route = createFileRoute("/admin/tracking-links")({
   component: TrackingLinksPage,
@@ -210,7 +211,7 @@ function TrackingLinksPage() {
               </tr>
             )}
             {filtered.map((l) => {
-              const trackUrl = `${typeof window !== "undefined" ? window.location.origin : ""}/track/${l.token}`;
+              const trackUrl = buildTrackingLink(l.token);
               return (
                 <tr key={l.token} className="border-t border-border hover:bg-muted/30">
                   <td className="px-3 py-2">

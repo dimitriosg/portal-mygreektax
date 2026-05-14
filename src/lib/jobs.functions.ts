@@ -24,6 +24,8 @@ import {
 import { logActivityEvent } from "./activity.server";
 import { requireAdminAccess, requireVerifiedAccess } from "./access-context.server";
 
+const CLIENT_TRACKING_LINK_TTL_MS = 90 * 24 * 60 * 60 * 1000;
+
 async function getActorIdentity(
   userId: string,
 ): Promise<{ email: string | null; name: string | null }> {
@@ -60,6 +62,68 @@ function getAutoNextActionNeeded(status?: string) {
   if (status === "Delivered") return "Admin";
   if (status === "Completed") return "None";
   return undefined;
+}
+
+type ClientTokenRow = {
+  token: string;
+  airtable_job_id: string;
+  airtable_client_id: string;
+  client_email: string;
+  expires_at: string;
+  created_at: string;
+  revoked_at: string | null;
+};
+
+async function getActiveClientTokenByJobId(jobId: string) {
+  const now = new Date().toISOString();
+  const { data, error } = await supabaseAdmin
+    .from("client_tokens")
+    .select(
+      "token, airtable_job_id, airtable_client_id, client_email, expires_at, created_at, revoked_at",
+    )
+    .eq("airtable_job_id", jobId)
+    .gt("expires_at", now)
+    .is("revoked_at", null)
+    .order("created_at", { ascending: false })
+    .limit(1);
+  if (error) throw new Error(error.message);
+  return (data?.[0] ?? null) as ClientTokenRow | null;
+}
+
+async function createNewClientToken({
+  jobId,
+  clientId,
+  email,
+  createdBy,
+  regeneratedFromToken,
+}: {
+  jobId: string;
+  clientId: string;
+  email: string;
+  createdBy: string;
+  regeneratedFromToken?: string | null;
+}) {
+  const token = generateClientTrackingToken();
+  const expires = new Date(Date.now() + CLIENT_TRACKING_LINK_TTL_MS).toISOString();
+  const { error } = await supabaseAdmin.from("client_tokens").insert({
+    token,
+    airtable_job_id: jobId,
+    airtable_client_id: clientId,
+    client_email: email,
+    expires_at: expires,
+    created_by: createdBy,
+    regenerated_from_token: regeneratedFromToken ?? null,
+    revoked_at: null,
+  });
+  if (error) {
+    console.error("[createClientToken] DB error:", error);
+    throw new Error("Could not create tracking link. Please try again.");
+  }
+  return { token, expires };
+}
+
+function generateClientTrackingToken() {
+  return crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
 }
 
 export const listJobs = createServerFn({ method: "GET" })
@@ -622,20 +686,18 @@ export const createClientToken = createServerFn({ method: "POST" })
     )) as AirtableRecord<ClientFields>;
     const email = client.fields.Email;
     if (!email) throw new Error("Client has no email");
-    const token = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
-    const expires = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
-    const { error } = await supabaseAdmin.from("client_tokens").insert({
-      token,
-      airtable_job_id: data.jobId,
-      airtable_client_id: clientId,
-      client_email: email,
-      expires_at: expires,
-      created_by: context.userId,
-    });
-    if (error) {
-      console.error("[createClientToken] DB error:", error);
-      throw new Error("Could not create tracking link. Please try again.");
+
+    const activeToken = await getActiveClientTokenByJobId(data.jobId);
+    if (activeToken) {
+      return { token: activeToken.token, email: activeToken.client_email, created: false };
     }
+
+    const { token } = await createNewClientToken({
+      jobId: data.jobId,
+      clientId,
+      email,
+      createdBy: context.userId,
+    });
     const actor = await getActorIdentity(context.userId);
     await logActivityEvent({
       eventType: "tracking_link_created",
@@ -645,7 +707,72 @@ export const createClientToken = createServerFn({ method: "POST" })
       subjectLabel: job.fields["Job Code"] ?? data.jobId,
       metadata: { jobCode: job.fields["Job Code"] ?? null, recipient: email },
     });
-    return { token, email };
+    return { token, email, created: true };
+  });
+
+export const regenerateClientToken = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d: { jobId: string }) => z.object({ jobId: z.string().min(1).max(50) }).parse(d))
+  .handler(async ({ data, context }) => {
+    await requireAdminAccess({
+      userId: context.userId,
+      email: context.claims.email as string | undefined,
+    });
+    const job = (await airtableGet(`${TABLES.jobs}/${data.jobId}`)) as AirtableRecord<JobFields>;
+    const clientId = job.fields.Client?.[0];
+    if (!clientId) throw new Error("Job has no client");
+    const client = (await airtableGet(
+      `${TABLES.clients}/${clientId}`,
+    )) as AirtableRecord<ClientFields>;
+    const email = client.fields.Email;
+    if (!email) throw new Error("Client has no email");
+
+    const activeToken = await getActiveClientTokenByJobId(data.jobId);
+    const revokedAt = new Date().toISOString();
+
+    if (activeToken) {
+      const { error: revokeError } = await supabaseAdmin
+        .from("client_tokens")
+        .update({ revoked_at: revokedAt })
+        .eq("token", activeToken.token);
+      if (revokeError) throw new Error(revokeError.message);
+
+      const actor = await getActorIdentity(context.userId);
+      await supabaseAdmin.from("client_token_events").insert({
+        token: activeToken.token,
+        event_type: "revoked",
+        actor_user_id: context.userId,
+        actor_email: actor.email,
+        actor_name: actor.name,
+        metadata: { revoked_at: revokedAt, reason: "regenerated" },
+      });
+    }
+
+    const { token } = await createNewClientToken({
+      jobId: data.jobId,
+      clientId,
+      email,
+      createdBy: context.userId,
+      regeneratedFromToken: activeToken?.token ?? null,
+    });
+    const actor = await getActorIdentity(context.userId);
+    await supabaseAdmin.from("client_token_events").insert({
+      token,
+      event_type: "regenerated",
+      actor_user_id: context.userId,
+      actor_email: actor.email,
+      actor_name: actor.name,
+      metadata: { regenerated_from_token: activeToken?.token ?? null },
+    });
+    await logActivityEvent({
+      eventType: "tracking_link_regenerated",
+      actorUserId: context.userId,
+      actorEmail: actor.email,
+      actorName: actor.name,
+      subjectLabel: job.fields["Job Code"] ?? data.jobId,
+      metadata: { jobCode: job.fields["Job Code"] ?? null, recipient: email },
+    });
+    return { token, email, regenerated: true };
   });
 
 // Public: client tracking page (no auth)
@@ -660,6 +787,7 @@ export const getClientTracking = createServerFn({ method: "GET" })
       .eq("token", data.token)
       .maybeSingle();
     if (error || !row) throw new Error("Invalid link");
+    if (row.revoked_at) throw new Error("Invalid link");
     if (new Date(row.expires_at) < new Date()) throw new Error("Link expired");
     const job = (await airtableGet(
       `${TABLES.jobs}/${row.airtable_job_id}`,
@@ -852,6 +980,9 @@ export type ClientTokenEventRow = {
     days_added?: number;
     previous_expires_at?: string;
     new_expires_at?: string;
+    regenerated_from_token?: string | null;
+    revoked_at?: string;
+    reason?: string;
   };
 };
 

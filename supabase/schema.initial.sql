@@ -39,13 +39,16 @@ create table public.client_tokens (
   client_email text not null,
   expires_at timestamptz not null,
   created_at timestamptz not null default now(),
-  created_by uuid references auth.users(id) on delete set null
+  created_by uuid references auth.users(id) on delete set null,
+  revoked_at timestamptz,
+  regenerated_from_token text references public.client_tokens(token) on delete set null
 );
 alter table public.client_tokens enable row level security;
 create policy "Authenticated read tokens" on public.client_tokens for select to authenticated using (true);
 create policy "Admins manage tokens" on public.client_tokens for all to authenticated using (public.has_role(auth.uid(), 'admin')) with check (public.has_role(auth.uid(), 'admin'));
 
 create index client_tokens_job_idx on public.client_tokens(airtable_job_id);
+create index client_tokens_active_job_idx on public.client_tokens(airtable_job_id, created_at desc) where revoked_at is null;
 
 -- >>> 20260507205431_f5eb47df-d8a1-40c4-b34c-17832b11294a.sql
 

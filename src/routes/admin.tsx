@@ -37,6 +37,7 @@ import type { DateRange } from "react-day-picker";
 import { PartnersSection } from "@/components/admin-partners";
 import { AdminAnalytics } from "@/components/admin-analytics";
 import { track } from "@/lib/analytics";
+import { buildTrackingLink } from "@/lib/tracking-links";
 
 export const Route = createFileRoute("/admin")({ component: AdminPage });
 
@@ -194,14 +195,14 @@ function AdminPage() {
 
   const makeLink = useMutation({
     mutationFn: (vars: { jobId: string }) => createTokenFn({ data: vars }),
-    onSuccess: async ({ token, email }) => {
-      const url = `${window.location.origin}/track/${token}`;
-      track("tracking_link_created");
+    onSuccess: async ({ token, email, created }) => {
+      const url = buildTrackingLink(token);
+      if (created) track("tracking_link_created");
       try {
         await navigator.clipboard.writeText(url);
         toast.success(`Tracking link copied (for ${email})`);
       } catch {
-        toast.success(`Tracking link created for ${email}`, { description: url });
+        toast.success(`Tracking link ready for ${email}`, { description: url });
       }
     },
     onError: handleMutationError,
@@ -616,7 +617,7 @@ function AdminPage() {
                           onClick={() => makeLink.mutate({ jobId: job.id })}
                           disabled={makeLink.isPending}
                         >
-                          Copy tracking link
+                          {makeLink.isPending ? "Copying…" : "Copy tracking link"}
                         </Button>
                       </td>
                       <td className="px-3 py-2">
