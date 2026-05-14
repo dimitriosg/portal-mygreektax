@@ -466,7 +466,7 @@ function JobDetail() {
                 onClick={() => sendLink.mutate()}
                 disabled={sendLink.isPending}
               >
-                {sendLink.isPending ? "Copying…" : "Copy tracking link"}
+                {sendLink.isPending ? "Getting link…" : "Copy tracking link"}
               </Button>
             )}
           </div>
@@ -559,7 +559,7 @@ function JobDetail() {
                 onClick={() => sendLink.mutate()}
                 disabled={sendLink.isPending}
               >
-                {sendLink.isPending ? "Copying…" : "Copy tracking link"}
+                {sendLink.isPending ? "Getting link…" : "Copy tracking link"}
               </Button>
               <select
                 value={extendDays}

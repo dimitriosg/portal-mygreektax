@@ -772,7 +772,7 @@ export const regenerateClientToken = createServerFn({ method: "POST" })
       subjectLabel: job.fields["Job Code"] ?? data.jobId,
       metadata: { jobCode: job.fields["Job Code"] ?? null, recipient: email },
     });
-    return { token, email, created: true, regenerated: true };
+    return { token, email, regenerated: true };
   });
 
 // Public: client tracking page (no auth)
