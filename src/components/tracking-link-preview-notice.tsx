@@ -26,8 +26,10 @@ export function TrackingLinkPreviewNotice({
       <AlertTitle>Preview tracking links still copy production URLs</AlertTitle>
       <AlertDescription>
         Copied tracking links continue to use https://portal.mygreektax.eu for client safety. To
-        test this preview deployment, open <span className="font-mono text-xs">{previewUrl}</span>{" "}
-        manually with a valid token.
+        test this preview deployment, open the URL below manually with a valid token.
+        <span className="mt-2 block overflow-x-auto rounded-md bg-slate-950 px-3 py-2 font-mono text-xs text-slate-50 select-all">
+          {previewUrl}
+        </span>
       </AlertDescription>
     </Alert>
   );

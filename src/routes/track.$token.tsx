@@ -214,16 +214,14 @@ function TrackContent({ data }: { data: PublicTrackingData }) {
         <h1 className="font-serif text-3xl font-medium tracking-tight sm:text-[2.5rem] sm:leading-[1.1]">
           Hello <span className="italic">{data.clientName}</span>
         </h1>
-        <p className="text-sm sm:text-base text-muted-foreground">
-          {data.detailsLimited ? (
-            "Your secure tracking link is valid."
-          ) : (
+        {!data.detailsLimited && (
+          <p className="text-sm sm:text-base text-muted-foreground">
             <>
               Here is the live status of{" "}
               <span className="font-medium text-foreground">{data.serviceName}</span>.
             </>
-          )}
-        </p>
+          </p>
+        )}
       </section>
 
       {data.detailsLimited && (
