@@ -64,7 +64,9 @@ function LoginPage() {
   const [recoveryRequestLoading, setRecoveryRequestLoading] = useState(false);
   const [recoveryRequestMessage, setRecoveryRequestMessage] = useState<string | null>(null);
   const [recoveryUpdateLoading, setRecoveryUpdateLoading] = useState(false);
-  const [recoveryDetected, setRecoveryDetected] = useState(() => mode === "recovery");
+  const [recoveryDetected, setRecoveryDetected] = useState(
+    () => mode === "recovery" || currentUrlIndicatesRecovery(),
+  );
 
   const isRecoveryMode = mode === "recovery" || recoveryDetected;
   const recoveryEmail = useMemo(() => email.trim().toLowerCase(), [email]);
@@ -72,21 +74,20 @@ function LoginPage() {
   useEffect(() => {
     if (mode === "recovery") {
       setRecoveryDetected(true);
-      return;
-    }
-
-    if (currentUrlIndicatesRecovery()) {
+    } else if (currentUrlIndicatesRecovery()) {
       ensureRecoveryModeInUrl();
       setRecoveryDetected(true);
     }
 
-    const { data: subscription } = supabase.auth.onAuthStateChange((event) => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event) => {
       if (event !== "PASSWORD_RECOVERY") return;
       ensureRecoveryModeInUrl();
       setRecoveryDetected(true);
     });
 
-    return () => subscription.subscription.unsubscribe();
+    return () => subscription.unsubscribe();
   }, [mode]);
 
   useEffect(() => {
