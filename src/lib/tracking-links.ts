@@ -4,13 +4,17 @@ function isLocalHost(hostname: string) {
   return hostname === "localhost" || hostname === "127.0.0.1";
 }
 
+function isLovablePreviewHost(hostname: string) {
+  return hostname === "lovable.app" || hostname.endsWith(".lovable.app");
+}
+
 export function getTrackingPortalOrigin() {
   if (typeof window === "undefined") return PRODUCTION_PORTAL_ORIGIN;
 
   const { hostname, origin } = window.location;
   const normalizedHostname = hostname.toLowerCase();
 
-  if (isLocalHost(normalizedHostname) || normalizedHostname.endsWith(".lovable.app")) {
+  if (isLocalHost(normalizedHostname) || isLovablePreviewHost(normalizedHostname)) {
     return origin;
   }
 

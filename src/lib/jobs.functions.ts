@@ -103,7 +103,7 @@ async function createNewClientToken({
   createdBy: string;
   regeneratedFromToken?: string | null;
 }) {
-  const token = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
+  const token = generateClientTrackingToken();
   const expires = new Date(Date.now() + CLIENT_TRACKING_LINK_TTL_MS).toISOString();
   const { error } = await supabaseAdmin.from("client_tokens").insert({
     token,
@@ -120,6 +120,10 @@ async function createNewClientToken({
     throw new Error("Could not create tracking link. Please try again.");
   }
   return { token, expires };
+}
+
+function generateClientTrackingToken() {
+  return crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
 }
 
 export const listJobs = createServerFn({ method: "GET" })
@@ -768,7 +772,7 @@ export const regenerateClientToken = createServerFn({ method: "POST" })
       subjectLabel: job.fields["Job Code"] ?? data.jobId,
       metadata: { jobCode: job.fields["Job Code"] ?? null, recipient: email },
     });
-    return { token, email, regenerated: true };
+    return { token, email, created: true, regenerated: true };
   });
 
 // Public: client tracking page (no auth)
