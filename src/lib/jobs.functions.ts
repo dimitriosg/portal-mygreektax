@@ -111,8 +111,9 @@ function logPublicTrackingDiagnostic(
   reason: PublicTrackingFailureReason,
   tokenPrefix: string,
   error?: unknown,
+  context?: Record<string, string>,
 ) {
-  const details = { reason, tokenPrefix };
+  const details = { reason, tokenPrefix, ...context };
   if (error === undefined) {
     console.warn("[getClientTracking]", details);
     return;
@@ -889,10 +890,14 @@ export const getClientTracking = createServerFn({ method: "GET" })
     ]);
 
     if (jobResult.status === "rejected") {
-      logPublicTrackingDiagnostic("airtable_fetch_failed", tokenPrefix, jobResult.reason);
+      logPublicTrackingDiagnostic("airtable_fetch_failed", tokenPrefix, jobResult.reason, {
+        source: "job",
+      });
     }
     if (clientResult.status === "rejected") {
-      logPublicTrackingDiagnostic("airtable_fetch_failed", tokenPrefix, clientResult.reason);
+      logPublicTrackingDiagnostic("airtable_fetch_failed", tokenPrefix, clientResult.reason, {
+        source: "client",
+      });
     }
 
     const job =
@@ -901,7 +906,7 @@ export const getClientTracking = createServerFn({ method: "GET" })
       clientResult.status === "fulfilled"
         ? (clientResult.value as AirtableRecord<ClientFields>)
         : null;
-    const detailsLimited = !job;
+    const detailsLimited = !job || !client;
     const status = job?.fields.Status ?? "Pending";
 
     try {
