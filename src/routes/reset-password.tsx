@@ -47,7 +47,7 @@ function ResetPasswordPage() {
   useEffect(() => {
     if (!sessionReady) return;
 
-    if (user && recoveryDetected) {
+    if (user && currentUrlIndicatesRecovery() && !isPasswordRecoveryPending()) {
       markPasswordRecoveryPending();
       return;
     }

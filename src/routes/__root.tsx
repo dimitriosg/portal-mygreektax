@@ -219,6 +219,7 @@ function AppShell() {
   const lastProcessedOverdueJobsErrorRef = useRef<unknown>(null);
   const [isHydrated, setIsHydrated] = useState(false);
   const [isDark, setIsDark] = useState(false);
+  const [recoveryPending, setRecoveryPending] = useState(() => isPasswordRecoveryPending());
 
   useEffect(() => {
     setIsHydrated(true);
@@ -282,10 +283,19 @@ function AppShell() {
     [overdueJobs],
   );
   useEffect(() => {
+    if (!user || !sessionReady) {
+      setRecoveryPending(false);
+      return;
+    }
+
+    setRecoveryPending(isPasswordRecoveryPending());
+  }, [pathname, sessionReady, user]);
+
+  useEffect(() => {
     if (!user || !sessionReady) return;
-    if (!isPasswordRecoveryPending() || pathname === "/reset-password") return;
+    if (!recoveryPending || pathname === "/reset-password") return;
     navigate({ to: "/reset-password", replace: true });
-  }, [navigate, pathname, sessionReady, user]);
+  }, [navigate, pathname, recoveryPending, sessionReady, user]);
 
   const showAuthenticatedNav = isHydrated && !loading && !!user;
   const showImpersonationBanner = isHydrated && !!impersonatingId;
