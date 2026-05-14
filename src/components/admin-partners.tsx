@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
+import { supabase } from "@/integrations/supabase/client";
+import { GENERIC_RECOVERY_SUCCESS_MESSAGE, getRecoveryRedirectUrl } from "@/lib/auth-recovery";
 import {
   createPartnerInvite,
   listPartnerInvites,
@@ -181,6 +183,18 @@ export function PartnersSection({
       toast.success("Invite link copied");
     } catch {
       toast.message("Copy failed", { description: url });
+    }
+  };
+
+  const sendRecoveryLink = async (email: string) => {
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: getRecoveryRedirectUrl(),
+      });
+      if (error) throw error;
+      toast.success(GENERIC_RECOVERY_SUCCESS_MESSAGE);
+    } catch {
+      toast.error("Could not process the recovery request right now. Please try again shortly.");
     }
   };
 
@@ -402,6 +416,11 @@ export function PartnersSection({
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
+                              {!isDisabled && (
+                                <DropdownMenuItem onClick={() => void sendRecoveryLink(p.email)}>
+                                  Send recovery link
+                                </DropdownMenuItem>
+                              )}
                               <DropdownMenuItem
                                 onClick={() =>
                                   setConfirm({

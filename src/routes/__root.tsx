@@ -17,6 +17,7 @@ import appCss from "../styles.css?url";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
 import { isOverdueEligibleStatus } from "@/lib/airtable-shared";
+import { isPasswordRecoveryPending } from "@/lib/auth-recovery";
 import { getErrorMessage, isAuthSessionError } from "@/lib/auth-errors";
 import { createErrorReferenceId, debugError, isDebugEnabled } from "@/lib/debug";
 import { listJobs } from "@/lib/jobs.functions";
@@ -218,6 +219,7 @@ function AppShell() {
   const lastProcessedOverdueJobsErrorRef = useRef<unknown>(null);
   const [isHydrated, setIsHydrated] = useState(false);
   const [isDark, setIsDark] = useState(false);
+  const [recoveryPending, setRecoveryPending] = useState(() => isPasswordRecoveryPending());
 
   useEffect(() => {
     setIsHydrated(true);
@@ -280,6 +282,21 @@ function AppShell() {
       ).length,
     [overdueJobs],
   );
+  useEffect(() => {
+    if (!user || !sessionReady) {
+      setRecoveryPending(false);
+      return;
+    }
+
+    setRecoveryPending(isPasswordRecoveryPending());
+  }, [pathname, sessionReady, user]);
+
+  useEffect(() => {
+    if (!user || !sessionReady) return;
+    if (!recoveryPending || pathname === "/reset-password") return;
+    navigate({ to: "/reset-password", replace: true });
+  }, [navigate, pathname, recoveryPending, sessionReady, user]);
+
   const showAuthenticatedNav = isHydrated && !loading && !!user;
   const showImpersonationBanner = isHydrated && !!impersonatingId;
   if (isPublicClientPage) {

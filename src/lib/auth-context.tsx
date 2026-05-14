@@ -10,6 +10,7 @@ import {
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { linkPartnerProfile, getMyContext } from "@/lib/auth.functions";
+import { clearPasswordRecoveryPending } from "@/lib/auth-recovery";
 import { getErrorMessage } from "@/lib/auth-errors";
 import { recordPartnerLogin } from "@/lib/activity.functions";
 import { track } from "@/lib/analytics";
@@ -296,6 +297,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setLoading(false);
         setSessionReady(false);
         if (typeof window !== "undefined") {
+          clearPasswordRecoveryPending();
           sessionStorage.removeItem(IMP_ID_KEY);
           sessionStorage.removeItem(IMP_NAME_KEY);
         }
@@ -351,6 +353,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => {
     if (typeof window !== "undefined") {
+      clearPasswordRecoveryPending();
       sessionStorage.removeItem(IMP_ID_KEY);
       sessionStorage.removeItem(IMP_NAME_KEY);
       sessionStorage.removeItem("mgt:loginTracked");
