@@ -17,6 +17,7 @@ import appCss from "../styles.css?url";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
 import { isOverdueEligibleStatus } from "@/lib/airtable-shared";
+import { isPasswordRecoveryPending } from "@/lib/auth-recovery";
 import { getErrorMessage, isAuthSessionError } from "@/lib/auth-errors";
 import { createErrorReferenceId, debugError, isDebugEnabled } from "@/lib/debug";
 import { listJobs } from "@/lib/jobs.functions";
@@ -280,6 +281,12 @@ function AppShell() {
       ).length,
     [overdueJobs],
   );
+  useEffect(() => {
+    if (!user || !sessionReady) return;
+    if (!isPasswordRecoveryPending() || pathname === "/reset-password") return;
+    navigate({ to: "/reset-password", replace: true });
+  }, [navigate, pathname, sessionReady, user]);
+
   const showAuthenticatedNav = isHydrated && !loading && !!user;
   const showImpersonationBanner = isHydrated && !!impersonatingId;
   if (isPublicClientPage) {

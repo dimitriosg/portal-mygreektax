@@ -1,6 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { z } from "zod";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,95 +7,38 @@ import { Label } from "@/components/ui/label";
 import {
   GENERIC_RECOVERY_SUCCESS_MESSAGE,
   getRecoveryRedirectUrl,
-  MIN_PASSWORD_LENGTH,
+  isPasswordRecoveryPending,
 } from "@/lib/auth-recovery";
 import { useAuth } from "@/lib/auth-context";
 import { debugLog } from "@/lib/debug";
 import { toast } from "sonner";
 
-const searchSchema = z.object({
-  mode: z.enum(["recovery"]).optional(),
-});
-
 export const Route = createFileRoute("/login")({
-  validateSearch: (search) => searchSchema.parse(search),
   component: LoginPage,
 });
 
-function currentUrlIndicatesRecovery() {
-  if (typeof window === "undefined") return false;
-
-  const url = new URL(window.location.href);
-  if (url.searchParams.get("mode") === "recovery" || url.searchParams.get("type") === "recovery") {
-    return true;
-  }
-
-  const hash = url.hash.startsWith("#") ? url.hash.slice(1) : url.hash;
-  const hashParams = new URLSearchParams(hash);
-  return hashParams.get("type") === "recovery";
-}
-
-function ensureRecoveryModeInUrl() {
-  if (typeof window === "undefined" || !currentUrlIndicatesRecovery()) return;
-
-  const url = new URL(window.location.href);
-  if (url.searchParams.get("mode") === "recovery") return;
-
-  url.searchParams.set("mode", "recovery");
-  const search = url.searchParams.toString();
-  window.history.replaceState(
-    window.history.state,
-    "",
-    `${url.pathname}${search ? `?${search}` : ""}${url.hash}`,
-  );
-}
-
 function LoginPage() {
   const navigate = useNavigate();
-  const { mode } = Route.useSearch();
   const { user, sessionReady } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [nextPassword, setNextPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [recoveryRequestOpen, setRecoveryRequestOpen] = useState(false);
   const [recoveryRequestLoading, setRecoveryRequestLoading] = useState(false);
   const [recoveryRequestMessage, setRecoveryRequestMessage] = useState<string | null>(null);
-  const [recoveryUpdateLoading, setRecoveryUpdateLoading] = useState(false);
-  const [recoveryDetected, setRecoveryDetected] = useState(
-    () => mode === "recovery" || currentUrlIndicatesRecovery(),
-  );
 
-  const isRecoveryMode = mode === "recovery" || recoveryDetected;
   const recoveryEmail = useMemo(() => email.trim().toLowerCase(), [email]);
 
   useEffect(() => {
-    if (mode === "recovery") {
-      setRecoveryDetected(true);
-    } else if (currentUrlIndicatesRecovery()) {
-      ensureRecoveryModeInUrl();
-      setRecoveryDetected(true);
-    }
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event) => {
-      if (event !== "PASSWORD_RECOVERY") return;
-      ensureRecoveryModeInUrl();
-      setRecoveryDetected(true);
-    });
-
-    return () => subscription.unsubscribe();
-  }, [mode]);
-
-  useEffect(() => {
-    if (user && sessionReady && !isRecoveryMode) {
+    if (user && sessionReady) {
       debugLog("[login] redirecting after auth bootstrap", { userId: user.id });
       setLoading(false);
-      navigate({ to: "/dashboard", replace: true });
+      navigate({
+        to: isPasswordRecoveryPending() ? "/reset-password" : "/dashboard",
+        replace: true,
+      });
     }
-  }, [isRecoveryMode, navigate, sessionReady, user]);
+  }, [navigate, sessionReady, user]);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -135,88 +77,6 @@ function LoginPage() {
       setRecoveryRequestLoading(false);
     }
   };
-
-  const submitPasswordReset = async (e: FormEvent) => {
-    e.preventDefault();
-    if (nextPassword.length < MIN_PASSWORD_LENGTH) {
-      toast.error(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
-      return;
-    }
-    if (nextPassword !== confirmPassword) {
-      toast.error("Passwords do not match.");
-      return;
-    }
-
-    setRecoveryUpdateLoading(true);
-    try {
-      const { error } = await supabase.auth.updateUser({ password: nextPassword });
-      if (error) throw error;
-      toast.success("Password updated.");
-      navigate({ to: "/dashboard", replace: true });
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not update your password.");
-    } finally {
-      setRecoveryUpdateLoading(false);
-    }
-  };
-
-  if (isRecoveryMode) {
-    return (
-      <div className="mx-auto max-w-sm px-4 py-16">
-        <h1 className="text-2xl font-semibold tracking-tight">Set a new password</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Choose a new password for your MyGreekTax portal account.
-        </p>
-
-        {!sessionReady ? (
-          <p className="mt-6 text-sm text-muted-foreground">Checking your recovery link…</p>
-        ) : !user ? (
-          <div className="mt-6 space-y-4">
-            <p className="text-sm text-muted-foreground">
-              This recovery link is invalid, expired, or has already been used. Request a new link
-              from the sign-in page.
-            </p>
-            <Button variant="outline" className="w-full" onClick={() => navigate({ to: "/login" })}>
-              Back to sign in
-            </Button>
-          </div>
-        ) : (
-          <form onSubmit={submitPasswordReset} className="mt-6 space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="next-password">New password</Label>
-              <Input
-                id="next-password"
-                type="password"
-                required
-                minLength={MIN_PASSWORD_LENGTH}
-                autoComplete="new-password"
-                value={nextPassword}
-                onChange={(e) => setNextPassword(e.target.value)}
-              />
-              <p className="text-xs text-muted-foreground">
-                At least {MIN_PASSWORD_LENGTH} characters.
-              </p>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="confirm-password">Confirm new password</Label>
-              <Input
-                id="confirm-password"
-                type="password"
-                required
-                minLength={MIN_PASSWORD_LENGTH}
-                autoComplete="new-password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-              />
-            </div>
-            <Button type="submit" disabled={recoveryUpdateLoading} className="w-full">
-              {recoveryUpdateLoading ? "Saving…" : "Set new password"}
-            </Button>
-          </form>
-        )}
-      </div>
-    );
-  }
 
   return (
     <div className="mx-auto max-w-sm px-4 py-16">
