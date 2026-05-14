@@ -28,7 +28,7 @@ export type ActivityEventInput = {
  * Append an activity event. Best-effort: never throws — analytics must
  * never break a user-facing flow.
  */
-export async function logActivityEvent(input: ActivityEventInput): Promise<void> {
+export async function logActivityEvent(input: ActivityEventInput): Promise<boolean> {
   try {
     await supabaseAdmin.from("activity_events").insert({
       event_type: input.eventType,
@@ -38,7 +38,9 @@ export async function logActivityEvent(input: ActivityEventInput): Promise<void>
       subject_label: input.subjectLabel ?? null,
       metadata: input.metadata ?? {},
     });
+    return true;
   } catch (err) {
     console.error("logActivityEvent failed", err);
+    return false;
   }
 }

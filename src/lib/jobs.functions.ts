@@ -25,6 +25,37 @@ import { logActivityEvent } from "./activity.server";
 import { requireAdminAccess, requireVerifiedAccess } from "./access-context.server";
 
 const CLIENT_TRACKING_LINK_TTL_MS = 90 * 24 * 60 * 60 * 1000;
+const TRACKING_TOKEN_PATTERN = /^[A-Fa-f0-9]{64}$/;
+
+export type PublicTrackingErrorCode = "invalid" | "expired" | "revoked" | "temporary_unavailable";
+
+export type PublicTrackingData = {
+  ok: true;
+  clientName: string;
+  jobCode: string;
+  serviceName: string;
+  status: string;
+  progress: number;
+  sla: string | null;
+  dateSent: string | null;
+  clientVisibleNote: string;
+};
+
+export type PublicTrackingResult =
+  | PublicTrackingData
+  | {
+      ok: false;
+      errorCode: PublicTrackingErrorCode;
+    };
+
+type PublicTrackingFailureReason =
+  | "invalid"
+  | "expired"
+  | "revoked"
+  | "temporary_service_issue"
+  | "airtable_fetch_failed"
+  | "analytics_failed"
+  | "activity_log_failed";
 
 async function getActorIdentity(
   userId: string,
@@ -48,6 +79,47 @@ async function getAccessContext(userId: string, email?: string | null) {
 
 function escapeFormula(s: string) {
   return s.replace(/'/g, "\\'");
+}
+
+function safeDecodeTrackingToken(rawToken: string) {
+  try {
+    return decodeURIComponent(rawToken);
+  } catch {
+    return rawToken;
+  }
+}
+
+function normalizeTrackingToken(rawToken: string) {
+  let token = safeDecodeTrackingToken(rawToken).trim();
+  if (token.endsWith("/")) token = token.slice(0, -1);
+  token = token.replace(/[.,)\]]+$/, "");
+  return TRACKING_TOKEN_PATTERN.test(token) ? token : null;
+}
+
+function getTrackingTokenPrefix(token: string) {
+  const sanitized = safeDecodeTrackingToken(token).trim();
+  return sanitized.slice(0, 8) || "unknown";
+}
+
+function getSafeErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message.slice(0, 200);
+  return String(error).slice(0, 200);
+}
+
+function logPublicTrackingDiagnostic(
+  reason: PublicTrackingFailureReason,
+  tokenPrefix: string,
+  error?: unknown,
+) {
+  const details = { reason, tokenPrefix };
+  if (error === undefined) {
+    console.warn("[getClientTracking]", details);
+    return;
+  }
+  console.error("[getClientTracking]", {
+    ...details,
+    errorMessage: getSafeErrorMessage(error),
+  });
 }
 
 function getPartnerProgressNotes(job: Pick<AirtableRecord<JobFields>, "fields">) {
@@ -777,38 +849,65 @@ export const regenerateClientToken = createServerFn({ method: "POST" })
 
 // Public: client tracking page (no auth)
 export const getClientTracking = createServerFn({ method: "GET" })
-  .inputValidator((d: { token: string }) =>
-    z.object({ token: z.string().min(10).max(200) }).parse(d),
-  )
-  .handler(async ({ data }) => {
+  .inputValidator((d: { token: string }) => z.object({ token: z.string().max(512) }).parse(d))
+  .handler(async ({ data }): Promise<PublicTrackingResult> => {
+    const normalizedToken = normalizeTrackingToken(data.token);
+    const tokenPrefix = getTrackingTokenPrefix(normalizedToken ?? data.token);
+
+    if (!normalizedToken) {
+      logPublicTrackingDiagnostic("invalid", tokenPrefix);
+      return { ok: false, errorCode: "invalid" };
+    }
+
     const { data: row, error } = await supabaseAdmin
       .from("client_tokens")
       .select("*")
-      .eq("token", data.token)
+      .eq("token", normalizedToken)
       .maybeSingle();
-    if (error || !row) throw new Error("Invalid link");
-    if (row.revoked_at) throw new Error("Invalid link");
-    if (new Date(row.expires_at) < new Date()) throw new Error("Link expired");
-    const job = (await airtableGet(
-      `${TABLES.jobs}/${row.airtable_job_id}`,
-    )) as AirtableRecord<JobFields>;
-    const client = (await airtableGet(
-      `${TABLES.clients}/${row.airtable_client_id}`,
-    )) as AirtableRecord<ClientFields>;
+
+    if (error) {
+      logPublicTrackingDiagnostic("temporary_service_issue", tokenPrefix, error);
+      return { ok: false, errorCode: "temporary_unavailable" };
+    }
+    if (!row) {
+      logPublicTrackingDiagnostic("invalid", tokenPrefix);
+      return { ok: false, errorCode: "invalid" };
+    }
+    if (row.revoked_at) {
+      logPublicTrackingDiagnostic("revoked", tokenPrefix);
+      return { ok: false, errorCode: "revoked" };
+    }
+    if (new Date(row.expires_at).getTime() < Date.now()) {
+      logPublicTrackingDiagnostic("expired", tokenPrefix);
+      return { ok: false, errorCode: "expired" };
+    }
+
+    let job: AirtableRecord<JobFields>;
+    let client: AirtableRecord<ClientFields>;
+    try {
+      [job, client] = (await Promise.all([
+        airtableGet(`${TABLES.jobs}/${row.airtable_job_id}`),
+        airtableGet(`${TABLES.clients}/${row.airtable_client_id}`),
+      ])) as [AirtableRecord<JobFields>, AirtableRecord<ClientFields>];
+    } catch (airtableError) {
+      logPublicTrackingDiagnostic("airtable_fetch_failed", tokenPrefix, airtableError);
+      return { ok: false, errorCode: "temporary_unavailable" };
+    }
+
     const status = job.fields.Status ?? "Pending";
 
-    // --- Capture minimal open analytics (best-effort, never breaks the page) ---
     try {
       const country = getRequestHeader("cf-ipcountry") ?? null;
+      const now = new Date().toISOString();
 
-      await supabaseAdmin.from("tracking_link_opens").insert({
-        token: data.token,
+      const { error: openInsertError } = await supabaseAdmin.from("tracking_link_opens").insert({
+        token: normalizedToken,
         country,
         airtable_job_id: row.airtable_job_id,
       });
+      if (openInsertError) throw openInsertError;
 
-      const now = new Date().toISOString();
-      await supabaseAdmin
+      const { error: tokenUpdateError } = await supabaseAdmin
         .from("client_tokens")
         .update({
           open_count: (row.open_count ?? 0) + 1,
@@ -818,19 +917,29 @@ export const getClientTracking = createServerFn({ method: "GET" })
           last_ip: null,
           last_user_agent: null,
         })
-        .eq("token", data.token);
-    } catch (e) {
-      console.error("[getClientTracking] open analytics failed", e);
+        .eq("token", normalizedToken);
+      if (tokenUpdateError) throw tokenUpdateError;
+    } catch (analyticsError) {
+      logPublicTrackingDiagnostic("analytics_failed", tokenPrefix, analyticsError);
     }
 
-    await logActivityEvent({
-      eventType: "tracking_link_opened",
-      actorEmail: row.client_email ?? null,
-      actorName: client.fields["Full Name"] ?? null,
-      subjectLabel: job.fields["Job Code"] ?? row.airtable_job_id,
-      metadata: { jobCode: job.fields["Job Code"] ?? null, status },
-    });
+    try {
+      const activityLogged = await logActivityEvent({
+        eventType: "tracking_link_opened",
+        actorEmail: row.client_email ?? null,
+        actorName: client.fields["Full Name"] ?? null,
+        subjectLabel: job.fields["Job Code"] ?? row.airtable_job_id,
+        metadata: { jobCode: job.fields["Job Code"] ?? null, status },
+      });
+      if (!activityLogged) {
+        logPublicTrackingDiagnostic("activity_log_failed", tokenPrefix);
+      }
+    } catch (activityError) {
+      logPublicTrackingDiagnostic("activity_log_failed", tokenPrefix, activityError);
+    }
+
     return {
+      ok: true,
       clientName: client.fields["Full Name"] ?? "Client",
       jobCode: job.fields["Job Code"] ?? "",
       serviceName: job.fields["Service Name"]?.[0] ?? "Tax service",

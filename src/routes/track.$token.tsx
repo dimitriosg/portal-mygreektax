@@ -1,7 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
-import { getClientTracking } from "@/lib/jobs.functions";
+import {
+  getClientTracking,
+  type PublicTrackingData,
+  type PublicTrackingErrorCode,
+} from "@/lib/jobs.functions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AlertCircle, Calendar, Check, Clock, MessageSquare, ShieldCheck } from "lucide-react";
@@ -16,6 +20,10 @@ export const Route = createFileRoute("/track/$token")({
     meta: [
       { title: "Track your job · MyGreekTax" },
       { name: "description", content: "Live status of your tax service with MyGreekTax." },
+      { name: "robots", content: "noindex, nofollow, noarchive" },
+      { httpEquiv: "Cache-Control", content: "no-store, no-cache, max-age=0, must-revalidate" },
+      { httpEquiv: "Pragma", content: "no-cache" },
+      { httpEquiv: "Expires", content: "0" },
     ],
   }),
 });
@@ -101,6 +109,10 @@ function TrackPage() {
   const { data, isLoading, error } = useQuery({
     queryKey: ["track", token],
     queryFn: () => fetchTracking({ data: { token } }),
+    retry: false,
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnMount: "always",
   });
 
   return (
@@ -108,8 +120,9 @@ function TrackPage() {
       <BrandHeader />
       <main className="mx-auto max-w-2xl px-4 pb-16 pt-6 sm:pt-10">
         {isLoading && <LoadingState />}
-        {error && <ErrorState />}
-        {data && <TrackContent data={data} />}
+        {error && <ErrorState errorCode="temporary_unavailable" />}
+        {data && !data.ok && <ErrorState errorCode={data.errorCode} />}
+        {data?.ok && <TrackContent data={data} />}
       </main>
       <footer className="mx-auto max-w-2xl px-4 pb-8 text-center text-xs text-muted-foreground">
         <span className="inline-flex items-center gap-1.5">
@@ -155,32 +168,27 @@ function LoadingState() {
   );
 }
 
-function ErrorState() {
+function ErrorState({ errorCode }: { errorCode: PublicTrackingErrorCode }) {
+  const message =
+    errorCode === "expired"
+      ? "This tracking link has expired. Please contact your accountant for a new link."
+      : errorCode === "revoked"
+        ? "This tracking link is no longer available. Please contact your accountant for a new link."
+        : errorCode === "temporary_unavailable"
+          ? "This tracking page is temporarily unavailable. Please try again in a few minutes."
+          : "This tracking link is invalid. Please contact your accountant for a new link.";
+
   return (
     <Card className="border-border/60">
       <CardContent className="py-10 text-center">
         <h1 className="text-xl font-semibold">Link not available</h1>
-        <p className="mx-auto mt-2 max-w-sm text-sm text-muted-foreground">
-          This tracking link is invalid or has expired. Please contact your accountant for a new
-          link.
-        </p>
+        <p className="mx-auto mt-2 max-w-sm text-sm text-muted-foreground">{message}</p>
       </CardContent>
     </Card>
   );
 }
 
-type TrackData = {
-  clientName: string;
-  jobCode: string;
-  serviceName: string;
-  status: string;
-  progress: number;
-  sla: string | null;
-  dateSent: string | null;
-  clientVisibleNote: string;
-};
-
-function TrackContent({ data }: { data: TrackData }) {
+function TrackContent({ data }: { data: PublicTrackingData }) {
   const publicStatus = getPublicTrackingStatus(data.status);
   const isCancelled = isPublicTrackingCancelled(publicStatus);
   const publicProgress = isCancelled
