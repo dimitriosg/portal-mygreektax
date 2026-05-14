@@ -88,6 +88,8 @@ export type Database = {
           last_opened_at: string | null;
           last_user_agent: string | null;
           open_count: number;
+          regenerated_from_token: string | null;
+          revoked_at: string | null;
           token: string;
         };
         Insert: {
@@ -103,6 +105,8 @@ export type Database = {
           last_opened_at?: string | null;
           last_user_agent?: string | null;
           open_count?: number;
+          regenerated_from_token?: string | null;
+          revoked_at?: string | null;
           token: string;
         };
         Update: {
@@ -118,6 +122,8 @@ export type Database = {
           last_opened_at?: string | null;
           last_user_agent?: string | null;
           open_count?: number;
+          regenerated_from_token?: string | null;
+          revoked_at?: string | null;
           token?: string;
         };
         Relationships: [];

@@ -94,6 +94,7 @@ const TYPE_TITLES: Record<string, string> = {
   job_created: "Jobs created",
   job_status_changed: "Job status changes",
   tracking_link_created: "Tracking links created (admin)",
+  tracking_link_regenerated: "Tracking links regenerated (admin)",
   tracking_link_opened: "Tracking links opened (customers)",
   tracking_link_extended: "Tracking links extended (admin)",
 };
@@ -138,6 +139,9 @@ function describeRow(ev: ActivityEventRow): ActivitySummaryRow {
     case "tracking_link_created":
       description = `Generated tracking link for ${md.jobCode ?? ev.subject_label ?? "a job"}${md.recipient ? ` (sent to ${md.recipient})` : ""}`;
       break;
+    case "tracking_link_regenerated":
+      description = `Regenerated tracking link for ${md.jobCode ?? ev.subject_label ?? "a job"}${md.recipient ? ` (sent to ${md.recipient})` : ""}`;
+      break;
     case "tracking_link_opened":
       description = `Opened tracking link for ${md.jobCode ?? ev.subject_label ?? "a job"} (status: ${md.status ?? "—"})`;
       break;
@@ -173,6 +177,7 @@ export async function buildSummary(period: SummaryPeriod) {
     "job_created",
     "job_status_changed",
     "tracking_link_created",
+    "tracking_link_regenerated",
     "tracking_link_opened",
     "tracking_link_extended",
   ];
