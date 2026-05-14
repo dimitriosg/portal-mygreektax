@@ -23,6 +23,34 @@ export const Route = createFileRoute("/login")({
   component: LoginPage,
 });
 
+function currentUrlIndicatesRecovery() {
+  if (typeof window === "undefined") return false;
+
+  const url = new URL(window.location.href);
+  if (url.searchParams.get("mode") === "recovery" || url.searchParams.get("type") === "recovery") {
+    return true;
+  }
+
+  const hash = url.hash.startsWith("#") ? url.hash.slice(1) : url.hash;
+  const hashParams = new URLSearchParams(hash);
+  return hashParams.get("type") === "recovery";
+}
+
+function ensureRecoveryModeInUrl() {
+  if (typeof window === "undefined" || !currentUrlIndicatesRecovery()) return;
+
+  const url = new URL(window.location.href);
+  if (url.searchParams.get("mode") === "recovery") return;
+
+  url.searchParams.set("mode", "recovery");
+  const search = url.searchParams.toString();
+  window.history.replaceState(
+    window.history.state,
+    "",
+    `${url.pathname}${search ? `?${search}` : ""}${url.hash}`,
+  );
+}
+
 function LoginPage() {
   const navigate = useNavigate();
   const { mode } = Route.useSearch();
@@ -36,9 +64,30 @@ function LoginPage() {
   const [recoveryRequestLoading, setRecoveryRequestLoading] = useState(false);
   const [recoveryRequestMessage, setRecoveryRequestMessage] = useState<string | null>(null);
   const [recoveryUpdateLoading, setRecoveryUpdateLoading] = useState(false);
+  const [recoveryDetected, setRecoveryDetected] = useState(() => mode === "recovery");
 
-  const isRecoveryMode = mode === "recovery";
+  const isRecoveryMode = mode === "recovery" || recoveryDetected;
   const recoveryEmail = useMemo(() => email.trim().toLowerCase(), [email]);
+
+  useEffect(() => {
+    if (mode === "recovery") {
+      setRecoveryDetected(true);
+      return;
+    }
+
+    if (currentUrlIndicatesRecovery()) {
+      ensureRecoveryModeInUrl();
+      setRecoveryDetected(true);
+    }
+
+    const { data: subscription } = supabase.auth.onAuthStateChange((event) => {
+      if (event !== "PASSWORD_RECOVERY") return;
+      ensureRecoveryModeInUrl();
+      setRecoveryDetected(true);
+    });
+
+    return () => subscription.subscription.unsubscribe();
+  }, [mode]);
 
   useEffect(() => {
     if (user && sessionReady && !isRecoveryMode) {
@@ -113,10 +162,9 @@ function LoginPage() {
   if (isRecoveryMode) {
     return (
       <div className="mx-auto max-w-sm px-4 py-16">
-        <h1 className="text-2xl font-semibold tracking-tight">Recover portal access</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Set a new password</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Use the secure link from your email to set a new password for your invite-only portal
-          account.
+          Choose a new password for your MyGreekTax portal account.
         </p>
 
         {!sessionReady ? (
@@ -161,7 +209,7 @@ function LoginPage() {
               />
             </div>
             <Button type="submit" disabled={recoveryUpdateLoading} className="w-full">
-              {recoveryUpdateLoading ? "Saving…" : "Update password"}
+              {recoveryUpdateLoading ? "Saving…" : "Set new password"}
             </Button>
           </form>
         )}
