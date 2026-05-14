@@ -1,10 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useServerFn } from "@tanstack/react-start";
-import { useQuery } from "@tanstack/react-query";
 import {
   getClientTracking,
   type PublicTrackingData,
   type PublicTrackingErrorCode,
+  type PublicTrackingResult,
 } from "@/lib/jobs.functions";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,6 +15,14 @@ import { cn } from "@/lib/utils";
 import { isJobStatus, isOverdueEligibleStatus, type JobStatus } from "@/lib/airtable-shared";
 
 export const Route = createFileRoute("/track/$token")({
+  loader: async ({ params }): Promise<PublicTrackingResult> => {
+    try {
+      return await getClientTracking({ data: { token: params.token } });
+    } catch {
+      return { ok: false, errorCode: "temporary_unavailable" };
+    }
+  },
+  pendingComponent: LoadingState,
   component: TrackPage,
   head: () => ({
     meta: [
@@ -105,23 +112,12 @@ function statusTone(status: string) {
 }
 
 function TrackPage() {
-  const { token } = Route.useParams();
-  const fetchTracking = useServerFn(getClientTracking);
-  const { data, isLoading, error } = useQuery({
-    queryKey: ["track", token],
-    queryFn: () => fetchTracking({ data: { token } }),
-    retry: false,
-    staleTime: 0,
-    gcTime: 0,
-    refetchOnMount: "always",
-  });
+  const data = Route.useLoaderData();
 
   return (
     <div className="min-h-screen" style={{ background: "var(--gradient-hero)" }}>
       <BrandHeader />
       <main className="mx-auto max-w-2xl px-4 pb-16 pt-6 sm:pt-10">
-        {isLoading && <LoadingState />}
-        {error && <ErrorState errorCode="temporary_unavailable" />}
         {data && !data.ok && <ErrorState errorCode={data.errorCode} />}
         {data?.ok && <TrackContent data={data} />}
       </main>

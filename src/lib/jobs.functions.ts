@@ -90,10 +90,15 @@ function safeDecodeTrackingToken(rawToken: string) {
   }
 }
 
-function normalizeTrackingToken(rawToken: string) {
+function sanitizeTrackingToken(rawToken: string) {
   let token = safeDecodeTrackingToken(rawToken).trim();
   if (token.endsWith("/")) token = token.slice(0, -1);
   token = token.replace(/[.,)\]]+$/, "");
+  return token;
+}
+
+function normalizeTrackingToken(rawToken: string) {
+  const token = sanitizeTrackingToken(rawToken);
   return TRACKING_TOKEN_PATTERN.test(token) ? token : null;
 }
 
@@ -102,26 +107,19 @@ function getTrackingTokenPrefix(token: string) {
   return sanitized.slice(0, 8) || "unknown";
 }
 
-function getSafeErrorMessage(error: unknown) {
-  if (error instanceof Error) return error.message.slice(0, 200);
-  return String(error).slice(0, 200);
-}
+type PublicTrackingDiagnosticState = {
+  tokenPrefix: string;
+  normalizedTokenLength: number;
+  tokenLookupSucceeded: boolean;
+  airtableJobFetchSucceeded: boolean | null;
+  airtableClientFetchSucceeded: boolean | null;
+};
 
 function logPublicTrackingDiagnostic(
   reason: PublicTrackingFailureReason,
-  tokenPrefix: string,
-  error?: unknown,
-  context?: Record<string, string>,
+  diagnostic: PublicTrackingDiagnosticState,
 ) {
-  const details = { reason, tokenPrefix, ...context };
-  if (error === undefined) {
-    console.warn("[getClientTracking]", details);
-    return;
-  }
-  console.error("[getClientTracking]", {
-    ...details,
-    errorMessage: getSafeErrorMessage(error),
-  });
+  console.warn("[getClientTracking]", { reason, ...diagnostic });
 }
 
 function getPartnerProgressNotes(job: Pick<AirtableRecord<JobFields>, "fields">) {
@@ -853,11 +851,18 @@ export const regenerateClientToken = createServerFn({ method: "POST" })
 export const getClientTracking = createServerFn({ method: "GET" })
   .inputValidator((d: { token: string }) => z.object({ token: z.string().max(512) }).parse(d))
   .handler(async ({ data }): Promise<PublicTrackingResult> => {
+    const sanitizedToken = sanitizeTrackingToken(data.token);
     const normalizedToken = normalizeTrackingToken(data.token);
-    const tokenPrefix = getTrackingTokenPrefix(normalizedToken ?? data.token);
+    const diagnostic: PublicTrackingDiagnosticState = {
+      tokenPrefix: getTrackingTokenPrefix(normalizedToken ?? sanitizedToken),
+      normalizedTokenLength: sanitizedToken.length,
+      tokenLookupSucceeded: false,
+      airtableJobFetchSucceeded: null,
+      airtableClientFetchSucceeded: null,
+    };
 
     if (!normalizedToken) {
-      logPublicTrackingDiagnostic("invalid", tokenPrefix);
+      logPublicTrackingDiagnostic("invalid", diagnostic);
       return { ok: false, errorCode: "invalid" };
     }
 
@@ -868,19 +873,20 @@ export const getClientTracking = createServerFn({ method: "GET" })
       .maybeSingle();
 
     if (error) {
-      logPublicTrackingDiagnostic("temporary_service_issue", tokenPrefix, error);
+      logPublicTrackingDiagnostic("temporary_service_issue", diagnostic);
       return { ok: false, errorCode: "temporary_unavailable" };
     }
     if (!row) {
-      logPublicTrackingDiagnostic("invalid", tokenPrefix);
+      logPublicTrackingDiagnostic("invalid", diagnostic);
       return { ok: false, errorCode: "invalid" };
     }
+    diagnostic.tokenLookupSucceeded = true;
     if (row.revoked_at) {
-      logPublicTrackingDiagnostic("revoked", tokenPrefix);
+      logPublicTrackingDiagnostic("revoked", diagnostic);
       return { ok: false, errorCode: "revoked" };
     }
     if (new Date(row.expires_at).getTime() < Date.now()) {
-      logPublicTrackingDiagnostic("expired", tokenPrefix);
+      logPublicTrackingDiagnostic("expired", diagnostic);
       return { ok: false, errorCode: "expired" };
     }
 
@@ -889,15 +895,11 @@ export const getClientTracking = createServerFn({ method: "GET" })
       airtableGet(`${TABLES.clients}/${row.airtable_client_id}`),
     ]);
 
-    if (jobResult.status === "rejected") {
-      logPublicTrackingDiagnostic("airtable_fetch_failed", tokenPrefix, jobResult.reason, {
-        source: "job",
-      });
-    }
-    if (clientResult.status === "rejected") {
-      logPublicTrackingDiagnostic("airtable_fetch_failed", tokenPrefix, clientResult.reason, {
-        source: "client",
-      });
+    diagnostic.airtableJobFetchSucceeded = jobResult.status === "fulfilled";
+    diagnostic.airtableClientFetchSucceeded = clientResult.status === "fulfilled";
+
+    if (jobResult.status === "rejected" || clientResult.status === "rejected") {
+      logPublicTrackingDiagnostic("airtable_fetch_failed", diagnostic);
     }
 
     const job =
@@ -932,8 +934,8 @@ export const getClientTracking = createServerFn({ method: "GET" })
         })
         .eq("token", normalizedToken);
       if (tokenUpdateError) throw tokenUpdateError;
-    } catch (analyticsError) {
-      logPublicTrackingDiagnostic("analytics_failed", tokenPrefix, analyticsError);
+    } catch {
+      logPublicTrackingDiagnostic("analytics_failed", diagnostic);
     }
 
     try {
@@ -945,10 +947,10 @@ export const getClientTracking = createServerFn({ method: "GET" })
         metadata: { jobCode: job?.fields["Job Code"] ?? null, status: job?.fields.Status ?? null },
       });
       if (!activityLogged) {
-        logPublicTrackingDiagnostic("activity_log_failed", tokenPrefix);
+        logPublicTrackingDiagnostic("activity_log_failed", diagnostic);
       }
-    } catch (activityError) {
-      logPublicTrackingDiagnostic("activity_log_failed", tokenPrefix, activityError);
+    } catch {
+      logPublicTrackingDiagnostic("activity_log_failed", diagnostic);
     }
 
     return {
@@ -957,7 +959,7 @@ export const getClientTracking = createServerFn({ method: "GET" })
       jobCode: job?.fields["Job Code"] ?? "",
       serviceName: job?.fields["Service Name"]?.[0] ?? "Tax service",
       status,
-      progress: detailsLimited ? 0 : (STATUS_PROGRESS[status] ?? 0),
+      progress: STATUS_PROGRESS[status] ?? 0,
       sla: job?.fields["SLA Deadline"] ?? null,
       dateSent: job?.fields["Date Sent"] ?? null,
       clientVisibleNote: job?.fields["Client Visible Note"] ?? "",
