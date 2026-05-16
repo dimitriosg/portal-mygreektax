@@ -136,6 +136,30 @@ function getAutoNextActionForStatus(status?: string) {
   return undefined;
 }
 
+type AuditFieldChange = {
+  fieldKey: string;
+  label: string;
+  previousValue: unknown;
+  nextValue: unknown;
+};
+
+function normalizeAuditValue(value: unknown) {
+  if (value == null) return "";
+  return String(value).trim();
+}
+
+function buildFieldChangeAuditComment(label: string, previousValue: unknown, nextValue: unknown) {
+  const prevStr = normalizeAuditValue(previousValue);
+  const nextStr = normalizeAuditValue(nextValue);
+  return `${label}: ${prevStr || "—"} → ${nextStr || "—"}`;
+}
+
+function getChangedAuditFields(fieldChanges: AuditFieldChange[]) {
+  return fieldChanges.filter(({ previousValue, nextValue }) => {
+    return normalizeAuditValue(previousValue) !== normalizeAuditValue(nextValue);
+  });
+}
+
 type ClientTokenRow = {
   token: string;
   airtable_job_id: string;
@@ -454,32 +478,85 @@ export const updateJob = createServerFn({ method: "POST" })
         comment: data.partnerProgressNotes,
       });
     }
-    // Log other admin field changes as comment-style events.
+    // Keep timeline copy as comments, but tag admin-owned changes as field_change events so
+    // these can be migrated to richer structured audit payloads later without changing UI now.
     if (isAdmin) {
-      const fieldChangeMap: Array<[string, unknown, unknown]> = [
-        ["SLA deadline", job.fields["SLA Deadline"], data.slaDeadline],
-        ["Date sent", job.fields["Date Sent"], data.dateSent],
-        ["Next action needed", job.fields["Next Action Needed"], manualNextActionNeeded],
-        ["Client fee", job.fields["Client Fee (\u20ac)"], data.clientFee],
-        ["Accountant fee", job.fields["Accountant Fee (\u20ac)"], data.accountantFee],
-        ["Tier", job.fields.Tier?.[0], data.tier],
-        ["Category", job.fields.Category?.[0], data.category],
-        ["Service", job.fields["Service Catalog"]?.[0], data.serviceId],
-        ["Client", job.fields.Client?.[0], data.clientId],
-        ["Assigned accountant", job.fields["Assigned Accountant"]?.[0], data.accountantId],
+      const fieldChangeMap: AuditFieldChange[] = [
+        {
+          fieldKey: "sla_deadline",
+          label: "SLA deadline",
+          previousValue: job.fields["SLA Deadline"],
+          nextValue: data.slaDeadline,
+        },
+        {
+          fieldKey: "date_sent",
+          label: "Date sent",
+          previousValue: job.fields["Date Sent"],
+          nextValue: data.dateSent,
+        },
+        {
+          fieldKey: "next_action_needed",
+          label: "Next action needed",
+          previousValue: job.fields["Next Action Needed"],
+          nextValue: manualNextActionNeeded,
+        },
+        {
+          fieldKey: "client_fee",
+          label: "Client fee",
+          previousValue: job.fields["Client Fee (\u20ac)"],
+          nextValue: data.clientFee,
+        },
+        {
+          fieldKey: "accountant_fee",
+          label: "Accountant fee",
+          previousValue: job.fields["Accountant Fee (\u20ac)"],
+          nextValue: data.accountantFee,
+        },
+        {
+          fieldKey: "tier",
+          label: "Tier",
+          previousValue: job.fields.Tier?.[0],
+          nextValue: data.tier,
+        },
+        {
+          fieldKey: "category",
+          label: "Category",
+          previousValue: job.fields.Category?.[0],
+          nextValue: data.category,
+        },
+        {
+          fieldKey: "service_id",
+          label: "Service",
+          previousValue: job.fields["Service Catalog"]?.[0],
+          nextValue: data.serviceId,
+        },
+        {
+          fieldKey: "client_id",
+          label: "Client",
+          previousValue: job.fields.Client?.[0],
+          nextValue: data.clientId,
+        },
+        {
+          fieldKey: "accountant_id",
+          label: "Assigned accountant",
+          previousValue: job.fields["Assigned Accountant"]?.[0],
+          nextValue: data.accountantId,
+        },
       ];
-      for (const [label, prev, next] of fieldChangeMap) {
-        if (next === undefined) continue;
-        const prevStr = prev == null ? "" : String(prev);
-        const nextStr = next == null ? "" : String(next);
-        if (prevStr === nextStr) continue;
+      for (const changedField of getChangedAuditFields(
+        fieldChangeMap.filter((field) => field.nextValue !== undefined),
+      )) {
         events.push({
           airtable_job_id: data.jobId,
           user_id: userId,
           actor_email: actorEmail,
           actor_name: actorName,
-          event_type: "comment",
-          comment: `${label}: ${prevStr || "—"} → ${nextStr || "—"}`,
+          event_type: "field_change",
+          comment: buildFieldChangeAuditComment(
+            changedField.label,
+            changedField.previousValue,
+            changedField.nextValue,
+          ),
         });
       }
     }
