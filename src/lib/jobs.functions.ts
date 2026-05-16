@@ -551,7 +551,8 @@ export const updateJob = createServerFn({ method: "POST" })
           user_id: userId,
           actor_email: actorEmail,
           actor_name: actorName,
-          event_type: "field_change",
+          // Keep this as "comment" until job_events.event_type supports structured field_change values.
+          event_type: "comment",
           comment: buildFieldChangeAuditComment(
             changedField.label,
             changedField.previousValue,
