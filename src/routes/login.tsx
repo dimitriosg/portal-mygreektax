@@ -30,6 +30,15 @@ function LoginPage() {
   const recoveryEmail = useMemo(() => email.trim().toLowerCase(), [email]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const url = new URL(window.location.href);
+    if (url.hash !== "#password-reset-success") return;
+
+    toast.success("Password updated. You can now continue.");
+    navigate({ to: "/login", hash: undefined, replace: true });
+  }, [navigate]);
+  useEffect(() => {
     if (user && sessionReady) {
       debugLog("[login] redirecting after auth bootstrap", { userId: user.id });
       setLoading(false);

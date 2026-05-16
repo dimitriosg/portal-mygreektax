@@ -73,8 +73,16 @@ function ResetPasswordPage() {
       const { error } = await supabase.auth.updateUser({ password: nextPassword });
       if (error) throw error;
       clearPasswordRecoveryPending();
-      toast.success("Password updated.");
-      navigate({ to: "/dashboard", replace: true });
+      toast.success("Password updated. You can now continue.");
+
+      const { data: sessionData } = await supabase.auth.getSession();
+      const hasValidSession = Boolean(sessionData.session?.user);
+
+      navigate({
+        to: hasValidSession ? "/dashboard" : "/login",
+        hash: hasValidSession ? undefined : "password-reset-success",
+        replace: true,
+      });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not update your password.");
     } finally {
