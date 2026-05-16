@@ -55,6 +55,23 @@ const SKELETON_COL_WIDTHS = [
   "w-16",
 ];
 
+const ACTIVE_PARTNER_WORK_STATUSES = new Set([
+  "Pending",
+  "Paid",
+  "In Progress",
+  "Delivered",
+  "Invoiced",
+]);
+
+function compareJobCodeAsc(a?: string, b?: string) {
+  const left = (a ?? "").trim();
+  const right = (b ?? "").trim();
+  if (!left && !right) return 0;
+  if (!left) return 1;
+  if (!right) return -1;
+  return left.localeCompare(right, undefined, { numeric: true, sensitivity: "base" });
+}
+
 function AdminTableSkeleton() {
   return (
     <>
@@ -214,6 +231,9 @@ function AdminPage() {
   const [tierFilter, setTierFilter] = useState<string>("");
   const [partnerFilter, setPartnerFilter] = useState<string>("");
   const [slaRange, setSlaRange] = useState<DateRange | undefined>(undefined);
+  const [hideCompleted, setHideCompleted] = useState(false);
+  const [hideToAssign, setHideToAssign] = useState(false);
+  const [activePartnerWorkOnly, setActivePartnerWorkOnly] = useState(false);
 
   if (loading || (!!user && !sessionReady)) {
     return (
@@ -233,6 +253,10 @@ function AdminPage() {
     const q = filter.trim().toLowerCase();
     return jobs.filter((job) => {
       if (statusFilter && job.fields.Status !== statusFilter) return false;
+      if (hideCompleted && job.fields.Status === "Completed") return false;
+      if (hideToAssign && job.fields.Status === "To Assign") return false;
+      if (activePartnerWorkOnly && !ACTIVE_PARTNER_WORK_STATUSES.has(job.fields.Status ?? ""))
+        return false;
       if (tierFilter && job.fields.Tier?.[0] !== tierFilter) return false;
       if (partnerFilter) {
         const accId = job.fields["Assigned Accountant"]?.[0] ?? "";
@@ -271,12 +295,7 @@ function AdminPage() {
 
   // Sort by Job Code ascending (e.g. JB100, JB101, JB102…). Uses natural
   // (numeric-aware) compare so JB9 < JB10 even if widths ever differ.
-  filteredJobs.sort((a, b) =>
-    (a.fields["Job Code"] ?? "").localeCompare(b.fields["Job Code"] ?? "", undefined, {
-      numeric: true,
-      sensitivity: "base",
-    }),
-  );
+  filteredJobs.sort((a, b) => compareJobCodeAsc(a.fields["Job Code"], b.fields["Job Code"]));
 
   const counts = jobs.reduce<Record<string, number>>((acc, j) => {
     const s = j.fields.Status ?? "—";
@@ -524,7 +543,38 @@ function AdminPage() {
                 />
               </PopoverContent>
             </Popover>
-            {(filter || statusFilter || tierFilter || partnerFilter || slaRange?.from) && (
+            <label className="flex items-center gap-2 rounded border border-input px-2 py-2 text-sm">
+              <input
+                type="checkbox"
+                checked={hideCompleted}
+                onChange={(e) => setHideCompleted(e.target.checked)}
+              />
+              Hide Completed
+            </label>
+            <label className="flex items-center gap-2 rounded border border-input px-2 py-2 text-sm">
+              <input
+                type="checkbox"
+                checked={hideToAssign}
+                onChange={(e) => setHideToAssign(e.target.checked)}
+              />
+              Hide To Assign
+            </label>
+            <label className="flex items-center gap-2 rounded border border-input px-2 py-2 text-sm">
+              <input
+                type="checkbox"
+                checked={activePartnerWorkOnly}
+                onChange={(e) => setActivePartnerWorkOnly(e.target.checked)}
+              />
+              Active partner work
+            </label>
+            {(filter ||
+              statusFilter ||
+              tierFilter ||
+              partnerFilter ||
+              slaRange?.from ||
+              hideCompleted ||
+              hideToAssign ||
+              activePartnerWorkOnly) && (
               <Button
                 size="sm"
                 variant="ghost"
@@ -534,6 +584,9 @@ function AdminPage() {
                   setTierFilter("");
                   setPartnerFilter("");
                   setSlaRange(undefined);
+                  setHideCompleted(false);
+                  setHideToAssign(false);
+                  setActivePartnerWorkOnly(false);
                 }}
               >
                 Clear
@@ -541,6 +594,9 @@ function AdminPage() {
             )}
           </div>
         </div>
+        {(hideCompleted || hideToAssign || activePartnerWorkOnly) && (
+          <p className="mb-2 text-xs text-muted-foreground">Filters active</p>
+        )}
         <div className="overflow-x-auto rounded-lg border border-border">
           <table className="w-full min-w-[760px] text-sm">
             <thead className="bg-muted/50 text-left">

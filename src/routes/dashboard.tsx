@@ -21,7 +21,7 @@ import { formatDate } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { NextActionBadge, StatusBadge, TierBadge } from "@/lib/badges";
-import { getJobStatusSortOrder, JOB_STATUSES } from "@/lib/airtable-shared";
+import { getJobStatusSortOrder } from "@/lib/airtable-shared";
 import {
   DndContext,
   closestCenter,
@@ -41,6 +41,22 @@ import { GripVertical, ChevronDown } from "lucide-react";
 
 // Briefly keep the session-expired UI visible before routing back to sign-in.
 const AUTH_ERROR_REDIRECT_DELAY_MS = 1500;
+const ACTIVE_PARTNER_WORK_STATUSES = new Set([
+  "Pending",
+  "Paid",
+  "In Progress",
+  "Delivered",
+  "Invoiced",
+]);
+
+function compareJobCodeAsc(a?: string, b?: string) {
+  const left = (a ?? "").trim();
+  const right = (b ?? "").trim();
+  if (!left && !right) return 0;
+  if (!left) return 1;
+  if (!right) return -1;
+  return left.localeCompare(right, undefined, { numeric: true, sensitivity: "base" });
+}
 
 function isRequireSupabaseAuthMessage(error: unknown) {
   return getErrorMessage(error).startsWith("Unauthorized:");
@@ -111,8 +127,10 @@ function Dashboard() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const lastProcessedAuthErrorRef = useRef<unknown>(null);
   const lastProcessedQueryErrorRef = useRef<unknown>(null);
-  const [filter, setFilter] = useState<string>("all");
-  const [sortBy, setSortBy] = useState<string>("manual");
+  const [hideCompleted, setHideCompleted] = useState(false);
+  const [hideToAssign, setHideToAssign] = useState(false);
+  const [activePartnerWorkOnly, setActivePartnerWorkOnly] = useState(false);
+  const [sortBy, setSortBy] = useState<string>("code");
   const showAuthDebugPanel = isDebugEnabled();
   const clientTokenDiagnostics = useMemo(
     () => describeSupabaseToken(session?.access_token),
@@ -295,6 +313,10 @@ function Dashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, orderQ.data]);
 
+  useEffect(() => {
+    setSortBy(savedOrder.length > 0 ? "manual" : "code");
+  }, [savedOrder.length]);
+
   const newJobIds = useMemo(() => {
     if (!Array.isArray(savedOrder) || savedOrder.length === 0) return [] as string[];
     return jobs.map((j) => j.id).filter((id) => !savedOrder.includes(id));
@@ -327,7 +349,8 @@ function Dashboard() {
     }
     const arr = [...jobs];
     const cmp = (a: string | undefined, b: string | undefined) => (a ?? "").localeCompare(b ?? "");
-    if (sortBy === "code") arr.sort((a, b) => cmp(a.fields["Job Code"], b.fields["Job Code"]));
+    if (sortBy === "code")
+      arr.sort((a, b) => compareJobCodeAsc(a.fields["Job Code"], b.fields["Job Code"]));
     else if (sortBy === "status")
       arr.sort(
         (a, b) =>
@@ -340,8 +363,13 @@ function Dashboard() {
     return arr;
   }, [jobs, manualOrder, sortBy]);
 
-  const filtered =
-    filter === "all" ? sortedJobs : sortedJobs.filter((j) => j.fields.Status === filter);
+  const filtered = sortedJobs.filter((j) => {
+    const status = j.fields.Status ?? "";
+    if (hideCompleted && status === "Completed") return false;
+    if (hideToAssign && status === "To Assign") return false;
+    if (activePartnerWorkOnly && !ACTIVE_PARTNER_WORK_STATUSES.has(status)) return false;
+    return true;
+  });
 
   const handleDragEnd = (e: DragEndEvent) => {
     const { active, over } = e;
@@ -506,24 +534,38 @@ function Dashboard() {
               </select>
               <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground h-4 w-4" />
             </div>
-            <div className="relative">
-              <select
-                value={filter}
-                onChange={(e) => setFilter(e.target.value)}
-                className="appearance-none pr-8 rounded-md border border-input bg-background px-3 py-2 text-sm"
-              >
-                <option value="all">All statuses</option>
-                {JOB_STATUSES.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground h-4 w-4" />
+            <div className="flex flex-wrap items-center gap-3 rounded-md border border-input px-3 py-2 text-sm">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={hideCompleted}
+                  onChange={(e) => setHideCompleted(e.target.checked)}
+                />
+                Hide Completed
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={hideToAssign}
+                  onChange={(e) => setHideToAssign(e.target.checked)}
+                />
+                Hide To Assign
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={activePartnerWorkOnly}
+                  onChange={(e) => setActivePartnerWorkOnly(e.target.checked)}
+                />
+                Active partner work
+              </label>
             </div>
           </div>
         )}
       </div>
+      {hasPortalAccess && (hideCompleted || hideToAssign || activePartnerWorkOnly) && (
+        <p className="mt-2 text-xs text-muted-foreground">Filters active</p>
+      )}
 
       {impersonatingId && (
         <div className="mt-4 flex items-center justify-between gap-3 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm">
