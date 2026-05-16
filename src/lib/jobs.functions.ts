@@ -130,7 +130,7 @@ function getPartnerProgressNotes(job: Pick<AirtableRecord<JobFields>, "fields">)
   return job.fields.Notes ?? "";
 }
 
-function getAutoNextActionNeeded(status?: string) {
+function getAutoNextActionForStatus(status?: string) {
   if (status === "Delivered") return "Admin";
   if (status === "Completed") return "None";
   return undefined;
@@ -350,13 +350,17 @@ export const updateJob = createServerFn({ method: "POST" })
     const job = (await airtableGet(`${TABLES.jobs}/${data.jobId}`)) as AirtableRecord<JobFields>;
     const previousStatus = job.fields.Status ?? null;
     const didStatusChange = data.status !== undefined && data.status !== previousStatus;
-    const autoNextActionNeeded = didStatusChange ? getAutoNextActionNeeded(data.status) : undefined;
+    const autoNextActionNeeded = didStatusChange
+      ? getAutoNextActionForStatus(data.status)
+      : undefined;
     const manualNextActionNeeded =
       isAdmin && autoNextActionNeeded === undefined ? data.nextActionNeeded : undefined;
     if (!isAdmin) {
       const allowed =
         partner && job.fields["Assigned Accountant"]?.includes(partner.airtable_accountant_id);
       if (!allowed) throw new Error("Forbidden");
+      // Partners can directly edit only progress updates; all admin-owned fields must go
+      // through change requests.
       const partnerFields = new Set(["jobId", "status", "partnerProgressNotes"]);
       for (const k of Object.keys(data)) {
         if (!partnerFields.has(k) && data[k as keyof typeof data] !== undefined) {

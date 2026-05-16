@@ -376,7 +376,9 @@ function JobDetail() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Update progress</CardTitle>
+          <CardTitle className="text-base">
+            {isAdmin ? "Update job" : "Direct partner progress update"}
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           {!isAdmin && (
@@ -432,7 +434,7 @@ function JobDetail() {
             </div>
           )}
           <div>
-            <label className="text-sm font-medium">Partner / progress notes</label>
+            <label className="text-sm font-medium">Partner progress notes</label>
             <Textarea
               value={partnerProgressNotes}
               onChange={(e) => setPartnerProgressNotes(e.target.value)}
@@ -680,8 +682,8 @@ function JobDetail() {
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             <p className="text-sm text-muted-foreground">
-              Use this to request SLA deadline changes. Status and progress notes should be updated
-              in the Update progress card.
+              Use this to request admin-owned field changes (currently SLA deadline). Direct status
+              updates and partner progress notes belong in the progress update card.
             </p>
             <div className="space-y-2">
               <label className="text-sm font-medium">Requested SLA deadline</label>
