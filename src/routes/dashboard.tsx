@@ -488,84 +488,113 @@ function Dashboard() {
           </p>
         </div>
         {hasPortalAccess && (
-          <div className="flex flex-col gap-2 sm:flex-row">
-            {isRealAdmin && (
-              <div className="flex items-center gap-2">
-                <label htmlFor="partner-impersonation" className="text-xs text-muted-foreground">
-                  Partner view
-                </label>
-                <div className="relative">
-                  <select
-                    id="partner-impersonation"
-                    value={asPartner}
-                    onChange={(e) => {
-                      const id = e.target.value;
-                      if (!id) {
-                        stopImpersonation();
-                      } else {
-                        const name = accountants.find((a) => a.id === id)?.fields.Name ?? id;
-                        startImpersonation(id, name);
-                      }
-                    }}
-                    className="appearance-none pr-8 rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  >
-                    <option value="">All partners (admin)</option>
-                    {accountants.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        View as: {a.fields.Name ?? a.id}
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground h-4 w-4" />
+          <div className="flex w-full flex-col gap-3 sm:w-auto">
+            <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+              {isRealAdmin && (
+                <div className="flex items-center gap-2">
+                  <label htmlFor="partner-impersonation" className="text-xs text-muted-foreground">
+                    Partner view
+                  </label>
+                  <div className="relative">
+                    <select
+                      id="partner-impersonation"
+                      value={asPartner}
+                      onChange={(e) => {
+                        const id = e.target.value;
+                        if (!id) {
+                          stopImpersonation();
+                        } else {
+                          const name = accountants.find((a) => a.id === id)?.fields.Name ?? id;
+                          startImpersonation(id, name);
+                        }
+                      }}
+                      className="h-9 min-w-52 appearance-none rounded-md border border-input bg-background px-3 pr-8 text-sm"
+                    >
+                      <option value="">All partners (admin)</option>
+                      {accountants.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          View as: {a.fields.Name ?? a.id}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground h-4 w-4" />
+                  </div>
                 </div>
+              )}
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="text-xs text-muted-foreground">Filters</label>
+                <label className="inline-flex h-9 items-center gap-2 rounded-full border border-input bg-background px-3 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={hideCompleted}
+                    onChange={(e) => setHideCompleted(e.target.checked)}
+                  />
+                  Hide Completed
+                </label>
+                <label className="inline-flex h-9 items-center gap-2 rounded-full border border-input bg-background px-3 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={hideToAssign}
+                    onChange={(e) => setHideToAssign(e.target.checked)}
+                  />
+                  Hide To Assign
+                </label>
+                <label className="inline-flex h-9 items-center gap-2 rounded-full border border-input bg-background px-3 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={activePartnerWorkOnly}
+                    onChange={(e) => setActivePartnerWorkOnly(e.target.checked)}
+                  />
+                  Active partner work
+                </label>
+                {(hideCompleted || hideToAssign || activePartnerWorkOnly) && (
+                  <span className="rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground">
+                    Filters active
+                  </span>
+                )}
               </div>
-            )}
-            <div className="relative">
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value)}
-                className="appearance-none pr-8 rounded-md border border-input bg-background px-3 py-2 text-sm"
-              >
-                <option value="manual">Manual order (drag & drop)</option>
-                <option value="code">Sort by Job Code</option>
-                <option value="status">Sort by Status</option>
-                <option value="tier">Sort by Tier</option>
-                <option value="sla">Sort by SLA</option>
-              </select>
-              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground h-4 w-4" />
             </div>
-            <div className="flex flex-wrap items-center gap-3 rounded-md border border-input px-3 py-2 text-sm">
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={hideCompleted}
-                  onChange={(e) => setHideCompleted(e.target.checked)}
-                />
-                Hide Completed
-              </label>
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={hideToAssign}
-                  onChange={(e) => setHideToAssign(e.target.checked)}
-                />
-                Hide To Assign
-              </label>
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={activePartnerWorkOnly}
-                  onChange={(e) => setActivePartnerWorkOnly(e.target.checked)}
-                />
-                Active partner work
-              </label>
+            <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+              <div className="relative">
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value)}
+                  className="h-9 min-w-56 appearance-none rounded-md border border-input bg-background px-3 pr-8 text-sm"
+                >
+                  <option value="manual">Manual order (drag & drop)</option>
+                  <option value="code">Sort by Job Code</option>
+                  <option value="status">Sort by Status</option>
+                  <option value="tier">Sort by Tier</option>
+                  <option value="sla">Sort by SLA</option>
+                </select>
+                <ChevronDown className="absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 pointer-events-none text-muted-foreground" />
+              </div>
+              {sortBy === "manual" && (dirty || savedOrder.length > 0) && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() => saveMut.mutate()}
+                    disabled={!dirty || saveMut.isPending}
+                  >
+                    {saveMut.isPending ? "Saving…" : "Save order"}
+                  </Button>
+                  {savedOrder.length > 0 && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => clearMut.mutate()}
+                      disabled={clearMut.isPending}
+                    >
+                      Clear saved order
+                    </Button>
+                  )}
+                  {dirty && <span className="text-xs text-muted-foreground">Unsaved changes</span>}
+                </div>
+              )}
             </div>
           </div>
         )}
       </div>
-      {hasPortalAccess && (hideCompleted || hideToAssign || activePartnerWorkOnly) && (
-        <p className="mt-2 text-xs text-muted-foreground">Filters active</p>
-      )}
 
       {impersonatingId && (
         <div className="mt-4 flex items-center justify-between gap-3 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm">
@@ -584,24 +613,6 @@ function Dashboard() {
           {newJobIds.length === 1 ? " has" : "s have"} been added since and{" "}
           {newJobIds.length === 1 ? "is" : "are"} placed at the bottom. Drag and save to include{" "}
           {newJobIds.length === 1 ? "it" : "them"} in your order.
-        </div>
-      )}
-      {hasPortalAccess && sortBy === "manual" && (dirty || savedOrder.length > 0) && (
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <Button size="sm" onClick={() => saveMut.mutate()} disabled={!dirty || saveMut.isPending}>
-            {saveMut.isPending ? "Saving…" : "Save order"}
-          </Button>
-          {savedOrder.length > 0 && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => clearMut.mutate()}
-              disabled={clearMut.isPending}
-            >
-              Clear saved order
-            </Button>
-          )}
-          {dirty && <span className="text-xs text-muted-foreground">Unsaved changes</span>}
         </div>
       )}
 
