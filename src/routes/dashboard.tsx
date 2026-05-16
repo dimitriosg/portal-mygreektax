@@ -21,7 +21,7 @@ import { formatDate } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { NextActionBadge, StatusBadge, TierBadge } from "@/lib/badges";
-import { getJobStatusSortOrder } from "@/lib/airtable-shared";
+import { getJobStatusSortOrder, JOB_STATUSES } from "@/lib/airtable-shared";
 import {
   DndContext,
   closestCenter,
@@ -130,6 +130,7 @@ function Dashboard() {
   const [hideCompleted, setHideCompleted] = useState(false);
   const [hideToAssign, setHideToAssign] = useState(false);
   const [activePartnerWorkOnly, setActivePartnerWorkOnly] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string>("all");
   const [sortBy, setSortBy] = useState<string>("code");
   const showAuthDebugPanel = isDebugEnabled();
   const clientTokenDiagnostics = useMemo(
@@ -365,6 +366,7 @@ function Dashboard() {
 
   const filtered = sortedJobs.filter((j) => {
     const status = j.fields.Status ?? "";
+    if (statusFilter !== "all" && status !== statusFilter) return false;
     if (hideCompleted && status === "Completed") return false;
     if (hideToAssign && status === "To Assign") return false;
     if (activePartnerWorkOnly && !ACTIVE_PARTNER_WORK_STATUSES.has(status)) return false;
@@ -522,6 +524,21 @@ function Dashboard() {
                 </div>
               )}
               <div className="flex flex-wrap items-center gap-2">
+                <div className="relative">
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                    className="h-9 min-w-44 appearance-none rounded-md border border-input bg-background px-3 pr-8 text-sm"
+                  >
+                    <option value="all">All statuses</option>
+                    {JOB_STATUSES.map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 pointer-events-none text-muted-foreground" />
+                </div>
                 <label className="text-xs text-muted-foreground">Filters</label>
                 <label className="inline-flex h-9 items-center gap-2 rounded-full border border-input bg-background px-3 text-sm">
                   <input
@@ -547,7 +564,10 @@ function Dashboard() {
                   />
                   Active partner work
                 </label>
-                {(hideCompleted || hideToAssign || activePartnerWorkOnly) && (
+                {(statusFilter !== "all" ||
+                  hideCompleted ||
+                  hideToAssign ||
+                  activePartnerWorkOnly) && (
                   <span className="rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground">
                     Filters active
                   </span>
