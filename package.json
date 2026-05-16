@@ -11,7 +11,8 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "smoke:manual": "echo \"Manual smoke checklist: docs/smoke-test-checklist.md\""
   },
   "dependencies": {
     "@cloudflare/vite-plugin": "^1.25.5",
