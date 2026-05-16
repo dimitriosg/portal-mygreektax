@@ -564,14 +564,6 @@ function Dashboard() {
                   />
                   Active partner work
                 </label>
-                {(statusFilter !== "all" ||
-                  hideCompleted ||
-                  hideToAssign ||
-                  activePartnerWorkOnly) && (
-                  <span className="rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground">
-                    Filters active
-                  </span>
-                )}
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2 sm:justify-end">
@@ -610,6 +602,14 @@ function Dashboard() {
                   )}
                   {dirty && <span className="text-xs text-muted-foreground">Unsaved changes</span>}
                 </div>
+              )}
+            </div>
+            <div className="min-h-4 text-right">
+              {(statusFilter !== "all" ||
+                hideCompleted ||
+                hideToAssign ||
+                activePartnerWorkOnly) && (
+                <span className="text-xs text-muted-foreground">Filters active</span>
               )}
             </div>
           </div>
