@@ -462,28 +462,34 @@ function Dashboard() {
         {hasPortalAccess && (
           <div className="flex flex-col gap-2 sm:flex-row">
             {isRealAdmin && (
-              <div className="relative">
-                <select
-                  value={asPartner}
-                  onChange={(e) => {
-                    const id = e.target.value;
-                    if (!id) {
-                      stopImpersonation();
-                    } else {
-                      const name = accountants.find((a) => a.id === id)?.fields.Name ?? id;
-                      startImpersonation(id, name);
-                    }
-                  }}
-                  className="appearance-none pr-8 rounded-md border border-input bg-background px-3 py-2 text-sm"
-                >
-                  <option value="">All partners (admin)</option>
-                  {accountants.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      View as: {a.fields.Name ?? a.id}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground h-4 w-4" />
+              <div className="flex items-center gap-2">
+                <label htmlFor="partner-impersonation" className="text-xs text-muted-foreground">
+                  Partner view
+                </label>
+                <div className="relative">
+                  <select
+                    id="partner-impersonation"
+                    value={asPartner}
+                    onChange={(e) => {
+                      const id = e.target.value;
+                      if (!id) {
+                        stopImpersonation();
+                      } else {
+                        const name = accountants.find((a) => a.id === id)?.fields.Name ?? id;
+                        startImpersonation(id, name);
+                      }
+                    }}
+                    className="appearance-none pr-8 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  >
+                    <option value="">All partners (admin)</option>
+                    {accountants.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        View as: {a.fields.Name ?? a.id}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground h-4 w-4" />
+                </div>
               </div>
             )}
             <div className="relative">
@@ -518,6 +524,17 @@ function Dashboard() {
           </div>
         )}
       </div>
+
+      {impersonatingId && (
+        <div className="mt-4 flex items-center justify-between gap-3 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm">
+          <p className="font-medium text-amber-900">
+            Viewing as partner: {impersonatingName ?? impersonatingId}
+          </p>
+          <Button size="sm" variant="outline" onClick={stopImpersonation}>
+            Exit impersonation
+          </Button>
+        </div>
+      )}
 
       {hasPortalAccess && sortBy === "manual" && savedOrder.length > 0 && newJobIds.length > 0 && (
         <div className="mt-4 rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">
