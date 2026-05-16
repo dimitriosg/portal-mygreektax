@@ -36,6 +36,7 @@ import { cn, formatDate } from "@/lib/utils";
 import type { DateRange } from "react-day-picker";
 import { PartnersSection } from "@/components/admin-partners";
 import { AdminAnalytics } from "@/components/admin-analytics";
+import { TrackingLinkPreviewNotice } from "@/components/tracking-link-preview-notice";
 import { track } from "@/lib/analytics";
 import { buildTrackingLink } from "@/lib/tracking-links";
 
@@ -436,6 +437,8 @@ function AdminPage() {
         <Stat label="Overdue" value={overdue} highlight={overdue > 0} />
         <Stat label="Completed" value={counts["Completed"] ?? 0} />
       </div>
+
+      <TrackingLinkPreviewNotice className="max-w-3xl" />
 
       {[jobsQ.error, accQ.error, clientsQ.error, servicesQ.error].some(Boolean) && (
         <Card>

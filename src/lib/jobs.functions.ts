@@ -25,6 +25,38 @@ import { logActivityEvent } from "./activity.server";
 import { requireAdminAccess, requireVerifiedAccess } from "./access-context.server";
 
 const CLIENT_TRACKING_LINK_TTL_MS = 90 * 24 * 60 * 60 * 1000;
+const TRACKING_TOKEN_PATTERN = /^[A-Fa-f0-9]{64}$/;
+
+export type PublicTrackingErrorCode = "invalid" | "expired" | "revoked" | "temporary_unavailable";
+
+export type PublicTrackingData = {
+  ok: true;
+  clientName: string;
+  jobCode: string;
+  serviceName: string;
+  status: string;
+  progress: number;
+  sla: string | null;
+  dateSent: string | null;
+  clientVisibleNote: string;
+  detailsLimited: boolean;
+};
+
+export type PublicTrackingResult =
+  | PublicTrackingData
+  | {
+      ok: false;
+      errorCode: PublicTrackingErrorCode;
+    };
+
+type PublicTrackingFailureReason =
+  | "invalid"
+  | "expired"
+  | "revoked"
+  | "temporary_service_issue"
+  | "airtable_fetch_failed"
+  | "analytics_failed"
+  | "activity_log_failed";
 
 async function getActorIdentity(
   userId: string,
@@ -48,6 +80,46 @@ async function getAccessContext(userId: string, email?: string | null) {
 
 function escapeFormula(s: string) {
   return s.replace(/'/g, "\\'");
+}
+
+function safeDecodeTrackingToken(rawToken: string) {
+  try {
+    return decodeURIComponent(rawToken);
+  } catch {
+    return rawToken;
+  }
+}
+
+function sanitizeTrackingToken(rawToken: string) {
+  let token = safeDecodeTrackingToken(rawToken).trim();
+  if (token.endsWith("/")) token = token.slice(0, -1);
+  token = token.replace(/[.,)\]]+$/, "");
+  return token;
+}
+
+function normalizeTrackingToken(rawToken: string) {
+  const token = sanitizeTrackingToken(rawToken);
+  return TRACKING_TOKEN_PATTERN.test(token) ? token : null;
+}
+
+function getTrackingTokenPrefix(token: string) {
+  const sanitized = safeDecodeTrackingToken(token).trim();
+  return sanitized.slice(0, 8) || "unknown";
+}
+
+type PublicTrackingDiagnosticState = {
+  tokenPrefix: string;
+  normalizedTokenLength: number;
+  tokenLookupSucceeded: boolean;
+  airtableJobFetchSucceeded: boolean | null;
+  airtableClientFetchSucceeded: boolean | null;
+};
+
+function logPublicTrackingDiagnostic(
+  reason: PublicTrackingFailureReason,
+  diagnostic: PublicTrackingDiagnosticState,
+) {
+  console.warn("[getClientTracking]", { reason, ...diagnostic });
 }
 
 function getPartnerProgressNotes(job: Pick<AirtableRecord<JobFields>, "fields">) {
@@ -777,38 +849,80 @@ export const regenerateClientToken = createServerFn({ method: "POST" })
 
 // Public: client tracking page (no auth)
 export const getClientTracking = createServerFn({ method: "GET" })
-  .inputValidator((d: { token: string }) =>
-    z.object({ token: z.string().min(10).max(200) }).parse(d),
-  )
-  .handler(async ({ data }) => {
+  .inputValidator((d: { token: string }) => z.object({ token: z.string().max(512) }).parse(d))
+  .handler(async ({ data }): Promise<PublicTrackingResult> => {
+    const sanitizedToken = sanitizeTrackingToken(data.token);
+    const normalizedToken = normalizeTrackingToken(data.token);
+    const diagnostic: PublicTrackingDiagnosticState = {
+      tokenPrefix: getTrackingTokenPrefix(normalizedToken ?? sanitizedToken),
+      normalizedTokenLength: sanitizedToken.length,
+      tokenLookupSucceeded: false,
+      airtableJobFetchSucceeded: null,
+      airtableClientFetchSucceeded: null,
+    };
+
+    if (!normalizedToken) {
+      logPublicTrackingDiagnostic("invalid", diagnostic);
+      return { ok: false, errorCode: "invalid" };
+    }
+
     const { data: row, error } = await supabaseAdmin
       .from("client_tokens")
       .select("*")
-      .eq("token", data.token)
+      .eq("token", normalizedToken)
       .maybeSingle();
-    if (error || !row) throw new Error("Invalid link");
-    if (row.revoked_at) throw new Error("Invalid link");
-    if (new Date(row.expires_at) < new Date()) throw new Error("Link expired");
-    const job = (await airtableGet(
-      `${TABLES.jobs}/${row.airtable_job_id}`,
-    )) as AirtableRecord<JobFields>;
-    const client = (await airtableGet(
-      `${TABLES.clients}/${row.airtable_client_id}`,
-    )) as AirtableRecord<ClientFields>;
-    const status = job.fields.Status ?? "Pending";
 
-    // --- Capture minimal open analytics (best-effort, never breaks the page) ---
+    if (error) {
+      logPublicTrackingDiagnostic("temporary_service_issue", diagnostic);
+      return { ok: false, errorCode: "temporary_unavailable" };
+    }
+    if (!row) {
+      logPublicTrackingDiagnostic("invalid", diagnostic);
+      return { ok: false, errorCode: "invalid" };
+    }
+    diagnostic.tokenLookupSucceeded = true;
+    if (row.revoked_at) {
+      logPublicTrackingDiagnostic("revoked", diagnostic);
+      return { ok: false, errorCode: "revoked" };
+    }
+    if (new Date(row.expires_at).getTime() < Date.now()) {
+      logPublicTrackingDiagnostic("expired", diagnostic);
+      return { ok: false, errorCode: "expired" };
+    }
+
+    const [jobResult, clientResult] = await Promise.allSettled([
+      airtableGet(`${TABLES.jobs}/${row.airtable_job_id}`),
+      airtableGet(`${TABLES.clients}/${row.airtable_client_id}`),
+    ]);
+
+    diagnostic.airtableJobFetchSucceeded = jobResult.status === "fulfilled";
+    diagnostic.airtableClientFetchSucceeded = clientResult.status === "fulfilled";
+
+    if (jobResult.status === "rejected" || clientResult.status === "rejected") {
+      logPublicTrackingDiagnostic("airtable_fetch_failed", diagnostic);
+    }
+
+    const job =
+      jobResult.status === "fulfilled" ? (jobResult.value as AirtableRecord<JobFields>) : null;
+    const client =
+      clientResult.status === "fulfilled"
+        ? (clientResult.value as AirtableRecord<ClientFields>)
+        : null;
+    const detailsLimited = !job || !client;
+    const status = job?.fields.Status ?? "Pending";
+
     try {
       const country = getRequestHeader("cf-ipcountry") ?? null;
+      const now = new Date().toISOString();
 
-      await supabaseAdmin.from("tracking_link_opens").insert({
-        token: data.token,
+      const { error: openInsertError } = await supabaseAdmin.from("tracking_link_opens").insert({
+        token: normalizedToken,
         country,
         airtable_job_id: row.airtable_job_id,
       });
+      if (openInsertError) throw openInsertError;
 
-      const now = new Date().toISOString();
-      await supabaseAdmin
+      const { error: tokenUpdateError } = await supabaseAdmin
         .from("client_tokens")
         .update({
           open_count: (row.open_count ?? 0) + 1,
@@ -818,27 +932,38 @@ export const getClientTracking = createServerFn({ method: "GET" })
           last_ip: null,
           last_user_agent: null,
         })
-        .eq("token", data.token);
-    } catch (e) {
-      console.error("[getClientTracking] open analytics failed", e);
+        .eq("token", normalizedToken);
+      if (tokenUpdateError) throw tokenUpdateError;
+    } catch {
+      logPublicTrackingDiagnostic("analytics_failed", diagnostic);
     }
 
-    await logActivityEvent({
-      eventType: "tracking_link_opened",
-      actorEmail: row.client_email ?? null,
-      actorName: client.fields["Full Name"] ?? null,
-      subjectLabel: job.fields["Job Code"] ?? row.airtable_job_id,
-      metadata: { jobCode: job.fields["Job Code"] ?? null, status },
-    });
+    try {
+      const activityLogged = await logActivityEvent({
+        eventType: "tracking_link_opened",
+        actorEmail: row.client_email ?? null,
+        actorName: client?.fields["Full Name"] ?? null,
+        subjectLabel: job?.fields["Job Code"] ?? row.airtable_job_id,
+        metadata: { jobCode: job?.fields["Job Code"] ?? null, status: job?.fields.Status ?? null },
+      });
+      if (!activityLogged) {
+        logPublicTrackingDiagnostic("activity_log_failed", diagnostic);
+      }
+    } catch {
+      logPublicTrackingDiagnostic("activity_log_failed", diagnostic);
+    }
+
     return {
-      clientName: client.fields["Full Name"] ?? "Client",
-      jobCode: job.fields["Job Code"] ?? "",
-      serviceName: job.fields["Service Name"]?.[0] ?? "Tax service",
+      ok: true,
+      clientName: client?.fields["Full Name"] ?? "Client",
+      jobCode: job?.fields["Job Code"] ?? "",
+      serviceName: job?.fields["Service Name"]?.[0] ?? "Tax service",
       status,
       progress: STATUS_PROGRESS[status] ?? 0,
-      sla: job.fields["SLA Deadline"] ?? null,
-      dateSent: job.fields["Date Sent"] ?? null,
-      clientVisibleNote: job.fields["Client Visible Note"] ?? "",
+      sla: job?.fields["SLA Deadline"] ?? null,
+      dateSent: job?.fields["Date Sent"] ?? null,
+      clientVisibleNote: job?.fields["Client Visible Note"] ?? "",
+      detailsLimited,
     };
   });
 

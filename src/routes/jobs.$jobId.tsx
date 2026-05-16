@@ -31,6 +31,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { NextActionBadge, StatusBadge, TierBadge } from "@/lib/badges";
 import { toast } from "sonner";
 import { formatDate, formatDateTime } from "@/lib/utils";
+import { TrackingLinkPreviewNotice } from "@/components/tracking-link-preview-notice";
 import { track } from "@/lib/analytics";
 import { buildTrackingLink } from "@/lib/tracking-links";
 
@@ -317,6 +318,11 @@ function JobDetail() {
           <NextActionBadge value={j["Next Action Needed"]} labelPrefix="Next:" showUnset />
         </div>
       </div>
+
+      <TrackingLinkPreviewNotice
+        className="max-w-3xl"
+        sampleToken={trackingQ.data?.token?.token ?? undefined}
+      />
 
       <Card>
         <CardHeader>

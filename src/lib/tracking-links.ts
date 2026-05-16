@@ -4,6 +4,12 @@ function isLocalHost(hostname: string) {
   return hostname === "localhost" || hostname === "127.0.0.1";
 }
 
+export function isWorkersPreviewOrigin(
+  hostname = typeof window === "undefined" ? "" : window.location.hostname,
+) {
+  return hostname.toLowerCase().endsWith(".workers.dev");
+}
+
 function isLovablePreviewHost(hostname: string) {
   return hostname === "lovable.app" || hostname.endsWith(".lovable.app");
 }
@@ -21,7 +27,7 @@ export function getTrackingPortalOrigin() {
   if (
     normalizedHostname === "portal.mygreektax.eu" ||
     normalizedHostname === "www.portal.mygreektax.eu" ||
-    normalizedHostname.endsWith(".workers.dev")
+    isWorkersPreviewOrigin(normalizedHostname)
   ) {
     return PRODUCTION_PORTAL_ORIGIN;
   }
@@ -31,4 +37,9 @@ export function getTrackingPortalOrigin() {
 
 export function buildTrackingLink(token: string) {
   return `${getTrackingPortalOrigin()}/track/${token}`;
+}
+
+export function getPreviewTrackingTestLink(token: string) {
+  if (typeof window === "undefined") return `${PRODUCTION_PORTAL_ORIGIN}/track/${token}`;
+  return `${window.location.origin}/track/${token}`;
 }

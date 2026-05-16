@@ -8,6 +8,12 @@ type ServerEntry = {
 };
 
 let serverEntryPromise: Promise<ServerEntry> | undefined;
+const PUBLIC_TRACKING_HEADERS = {
+  "cache-control": "private, no-store, no-cache, must-revalidate, max-age=0",
+  pragma: "no-cache",
+  expires: "0",
+  "x-robots-tag": "noindex, nofollow, noarchive",
+} as const;
 
 async function getServerEntry(): Promise<ServerEntry> {
   if (!serverEntryPromise) {
@@ -22,6 +28,35 @@ function brandedErrorResponse(): Response {
   return new Response(renderErrorPage(), {
     status: 500,
     headers: { "content-type": "text/html; charset=utf-8" },
+  });
+}
+
+function normalizePublicTrackingRequest(request: Request): Response | null {
+  const url = new URL(request.url);
+  if (
+    !url.pathname.startsWith("/track/") ||
+    url.pathname === "/track/" ||
+    !url.pathname.endsWith("/")
+  ) {
+    return null;
+  }
+  url.pathname = url.pathname.slice(0, -1);
+  return Response.redirect(url.toString(), 307);
+}
+
+function applyPublicTrackingHeaders(request: Request, response: Response): Response {
+  const url = new URL(request.url);
+  if (!url.pathname.startsWith("/track/")) return response;
+
+  const headers = new Headers(response.headers);
+  for (const [key, value] of Object.entries(PUBLIC_TRACKING_HEADERS)) {
+    headers.set(key, value);
+  }
+
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
   });
 }
 
@@ -92,13 +127,16 @@ async function normalizeCatastrophicSsrResponse(response: Response): Promise<Res
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
+      const normalizedTrackingResponse = normalizePublicTrackingRequest(request);
+      if (normalizedTrackingResponse) return normalizedTrackingResponse;
+
       applyCloudflareEnvBindings(env);
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
-      return await normalizeCatastrophicSsrResponse(response);
+      return applyPublicTrackingHeaders(request, await normalizeCatastrophicSsrResponse(response));
     } catch (error) {
       console.error(error);
-      return brandedErrorResponse();
+      return applyPublicTrackingHeaders(request, brandedErrorResponse());
     }
   },
 };
