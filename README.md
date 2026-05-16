@@ -174,6 +174,19 @@ Recommended operational backup:
 
 ---
 
+
+## Smoke testing
+
+Use the manual critical-path checklist in [`docs/smoke-test-checklist.md`](docs/smoke-test-checklist.md) after auth, access-control, workflow, or tracking changes.
+
+Optional helper command:
+
+```bash
+bun run smoke:manual
+```
+
+---
+
 ## Deployment Architecture
 
 ```
