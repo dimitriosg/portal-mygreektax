@@ -11,13 +11,24 @@ const LEGACY_TABLES = {
   accountants: "tblwNZNcrnaJMaq1w",
 } as const;
 
+// CRM base (front of funnel) — separate Airtable base from the Ops Tracker above.
+const LEGACY_CRM_BASE_ID = "apphw8Y9Tn3L40lF1";
+const LEGACY_CRM_TABLES = {
+  leads: "tblUIFo0VNNmdTDeQ",
+} as const;
+
 export const BASE_ID = process.env.AIRTABLE_BASE_ID || LEGACY_BASE_ID;
+export const CRM_BASE_ID = process.env.AIRTABLE_CRM_BASE_ID || LEGACY_CRM_BASE_ID;
 
 export const TABLES = {
   jobs: process.env.AIRTABLE_TABLE_JOBS || LEGACY_TABLES.jobs,
   clients: process.env.AIRTABLE_TABLE_CLIENTS || LEGACY_TABLES.clients,
   serviceCatalog: process.env.AIRTABLE_TABLE_SERVICE_CATALOG || LEGACY_TABLES.serviceCatalog,
   accountants: process.env.AIRTABLE_TABLE_ACCOUNTANTS || LEGACY_TABLES.accountants,
+} as const;
+
+export const CRM_TABLES = {
+  leads: process.env.AIRTABLE_TABLE_LEADS || LEGACY_CRM_TABLES.leads,
 } as const;
 
 const GENERIC_ERROR = "Service temporarily unavailable. Please try again.";
@@ -37,8 +48,8 @@ function getAirtableHeaders(): Record<string, string> {
   };
 }
 
-function getAirtableUrl(path: string, query?: AirtableQuery) {
-  const url = new URL(`${AIRTABLE_API_URL}/v0/${BASE_ID}/${path}`);
+function getAirtableUrl(path: string, query?: AirtableQuery, baseId: string = BASE_ID) {
+  const url = new URL(`${AIRTABLE_API_URL}/v0/${baseId}/${path}`);
   if (query) {
     for (const [key, value] of Object.entries(query)) {
       if (value === undefined) continue;
@@ -63,8 +74,8 @@ async function logAndThrow(method: string, path: string, res: Response): Promise
   throw new Error(GENERIC_ERROR);
 }
 
-export async function airtableGet(path: string, query?: AirtableQuery) {
-  const url = getAirtableUrl(path, query);
+export async function airtableGet(path: string, query?: AirtableQuery, baseId?: string) {
+  const url = getAirtableUrl(path, query, baseId);
   let res: Response;
   try {
     res = await fetch(url.toString(), { headers: getAirtableHeaders() });
@@ -79,6 +90,7 @@ export async function airtableGet(path: string, query?: AirtableQuery) {
 export async function airtableListAll<T = Record<string, unknown>>(
   table: string,
   query?: AirtableQuery,
+  baseId?: string,
 ) {
   const querySnapshot = query
     ? Object.fromEntries(
@@ -92,10 +104,14 @@ export async function airtableListAll<T = Record<string, unknown>>(
   let offset: string | undefined;
 
   do {
-    const page = (await airtableGet(table, {
-      ...querySnapshot,
-      ...(offset ? { offset } : {}),
-    })) as {
+    const page = (await airtableGet(
+      table,
+      {
+        ...querySnapshot,
+        ...(offset ? { offset } : {}),
+      },
+      baseId,
+    )) as {
       records?: AirtableRecord<T>[];
       offset?: string;
     };
@@ -110,8 +126,9 @@ export async function airtablePatch(
   table: string,
   recordId: string,
   fields: Record<string, unknown>,
+  baseId?: string,
 ) {
-  const url = getAirtableUrl(`${table}/${recordId}`);
+  const url = getAirtableUrl(`${table}/${recordId}`, undefined, baseId);
   let res: Response;
   try {
     res = await fetch(url.toString(), {
@@ -127,8 +144,12 @@ export async function airtablePatch(
   return res.json();
 }
 
-export async function airtablePost(table: string, fields: Record<string, unknown>) {
-  const url = getAirtableUrl(table);
+export async function airtablePost(
+  table: string,
+  fields: Record<string, unknown>,
+  baseId?: string,
+) {
+  const url = getAirtableUrl(table, undefined, baseId);
   let res: Response;
   try {
     res = await fetch(url.toString(), {
@@ -192,6 +213,29 @@ export type ClientFields = {
   Phone?: string;
   Status?: string;
   Notes?: string;
+};
+
+export type LeadFields = {
+  "Lead Name"?: string;
+  Email?: string;
+  Phone?: string;
+  Company?: string;
+  Urgency?: string;
+  "Referral source"?: string;
+  "Submission date"?: string;
+  "Acknowledgment date"?: string;
+  "Lead status"?: string;
+  "Acknowledgment sent"?: string;
+  "Lead value"?: number;
+  Situation?: string;
+  Notes?: string;
+  "Source detail"?: string;
+  "Lost reason"?: string;
+  "Last follow-up date"?: string;
+  Stage?: string;
+  "Next action date"?: string;
+  "Last activity"?: string;
+  "Ops Client Record ID"?: string;
 };
 
 export { JOB_STATUSES, STATUS_PROGRESS } from "./airtable-shared";

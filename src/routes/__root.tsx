@@ -354,6 +354,11 @@ function AppShell() {
                     Admin
                   </Link>
                 )}
+                {isAdmin && (
+                  <Link to="/leads" activeProps={{ className: "font-semibold" }}>
+                    Leads
+                  </Link>
+                )}
                 {isRealAdmin && impersonatingId && (
                   <button
                     onClick={stopImpersonation}
