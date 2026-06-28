@@ -257,37 +257,44 @@ function LeadsPage() {
           {LEAD_STAGES.map((stage) => {
             const stageLeads = leadsByStage.get(stage) ?? [];
             const collapsed = collapsedStages.has(stage);
+            if (collapsed) {
+              return (
+                <button
+                  key={stage}
+                  onClick={() => toggleCollapsed(stage)}
+                  title={`Expand ${stage}`}
+                  className={`flex w-10 shrink-0 flex-col items-center gap-2 rounded-md border px-1 py-2 ${stageStyle(stage)}`}
+                  style={{ minHeight: 240 }}
+                >
+                  <ChevronRight className="h-3.5 w-3.5 shrink-0" />
+                  <span className="shrink-0 rounded-full bg-background/70 px-1.5 text-[10px]">
+                    {stageLeads.length}
+                  </span>
+                  <span
+                    className="mt-1 flex-1 text-xs font-semibold uppercase tracking-wide"
+                    style={{ writingMode: "vertical-rl", textOrientation: "mixed" }}
+                  >
+                    {stage}
+                  </span>
+                </button>
+              );
+            }
             return (
-              <div
-                key={stage}
-                className={collapsed ? "w-10 shrink-0" : "min-w-[260px] max-w-[280px] flex-1"}
-              >
+              <div key={stage} className="min-w-[260px] max-w-[280px] flex-1">
                 <button
                   onClick={() => toggleCollapsed(stage)}
                   className={`mb-2 flex w-full items-center justify-between rounded-md border px-2 py-1.5 text-xs font-semibold uppercase tracking-wide ${stageStyle(stage)}`}
-                  title={collapsed ? `Expand ${stage}` : `Collapse ${stage}`}
+                  title={`Collapse ${stage}`}
                 >
-                  {collapsed ? (
-                    <span className="flex w-full flex-col items-center gap-1">
-                      <ChevronRight className="h-3.5 w-3.5" />
-                      <span className="rounded-full bg-background/70 px-1.5 text-[10px]">
-                        {stageLeads.length}
-                      </span>
-                    </span>
-                  ) : (
-                    <>
-                      <span className="flex items-center gap-1.5">
-                        <ChevronDown className="h-3.5 w-3.5" />
-                        {stage}
-                      </span>
-                      <span className="rounded-full bg-background/70 px-2 py-0.5 text-[10px] normal-case">
-                        {stageLeads.length}
-                      </span>
-                    </>
-                  )}
+                  <span className="flex items-center gap-1.5">
+                    <ChevronDown className="h-3.5 w-3.5" />
+                    {stage}
+                  </span>
+                  <span className="rounded-full bg-background/70 px-2 py-0.5 text-[10px] normal-case">
+                    {stageLeads.length}
+                  </span>
                 </button>
-                {!collapsed && (
-                  <div className="space-y-2">
+                <div className="space-y-2">
                     {stageLeads.map((lead) => {
                       const client = getLinkedClient(lead);
                       return (
@@ -338,8 +345,7 @@ function LeadsPage() {
                     {stageLeads.length === 0 && (
                       <p className="px-1 text-xs text-muted-foreground">No leads</p>
                     )}
-                  </div>
-                )}
+                </div>
               </div>
             );
           })}
