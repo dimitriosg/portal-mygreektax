@@ -195,21 +195,21 @@ export const listLeadThread = createServerFn({ method: "GET" })
       email: context.claims.email as string | undefined,
     });
 
+    // Note: {Lead}/{Leads} inside a filterByFormula resolves to the *primary field
+    // value* of the linked record(s), not the record id -- so filtering by record id
+    // via formula never matches. The REST API response itself does return the linked
+    // record ids directly on each row, so we fetch and filter client-side instead.
     const [messages, activities] = await Promise.all([
-      airtableListAll<MessageFields>(
-        CRM_TABLES.messages,
-        { filterByFormula: `FIND("${data.leadId}", ARRAYJOIN({Lead}))` },
-        CRM_BASE_ID,
-      ),
-      airtableListAll<ActivityFields>(
-        CRM_TABLES.activities,
-        { filterByFormula: `FIND("${data.leadId}", ARRAYJOIN({Leads}))` },
-        CRM_BASE_ID,
-      ),
+      airtableListAll<MessageFields>(CRM_TABLES.messages, {}, CRM_BASE_ID),
+      airtableListAll<ActivityFields>(CRM_TABLES.activities, {}, CRM_BASE_ID),
     ]);
 
     return {
-      messages: messages.records as AirtableRecord<MessageFields>[],
-      activities: activities.records as AirtableRecord<ActivityFields>[],
+      messages: messages.records.filter((r) =>
+        (r.fields.Lead ?? []).includes(data.leadId),
+      ) as AirtableRecord<MessageFields>[],
+      activities: activities.records.filter((r) =>
+        (r.fields.Leads ?? []).includes(data.leadId),
+      ) as AirtableRecord<ActivityFields>[],
     };
   });
