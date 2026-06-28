@@ -15,6 +15,8 @@ const LEGACY_TABLES = {
 const LEGACY_CRM_BASE_ID = "apphw8Y9Tn3L40lF1";
 const LEGACY_CRM_TABLES = {
   leads: "tblUIFo0VNNmdTDeQ",
+  messages: "tblE07Y7VDlvxPFWB",
+  activities: "tbljyMcKf78GkkPyO",
 } as const;
 
 export const BASE_ID = process.env.AIRTABLE_BASE_ID || LEGACY_BASE_ID;
@@ -29,6 +31,8 @@ export const TABLES = {
 
 export const CRM_TABLES = {
   leads: process.env.AIRTABLE_TABLE_LEADS || LEGACY_CRM_TABLES.leads,
+  messages: process.env.AIRTABLE_TABLE_MESSAGES || LEGACY_CRM_TABLES.messages,
+  activities: process.env.AIRTABLE_TABLE_ACTIVITIES || LEGACY_CRM_TABLES.activities,
 } as const;
 
 const GENERIC_ERROR = "Service temporarily unavailable. Please try again.";
@@ -236,6 +240,26 @@ export type LeadFields = {
   "Next action date"?: string;
   "Last activity"?: string;
   "Ops Client Record ID"?: string;
+};
+
+export type MessageFields = {
+  "Message ID"?: string;
+  Lead?: string[];
+  Direction?: string;
+  Timestamp?: string;
+  Subject?: string;
+  Body?: string;
+  "Thread ID"?: string;
+  From?: string;
+  To?: string;
+};
+
+export type ActivityFields = {
+  Title?: string;
+  Leads?: string[];
+  Type?: string;
+  Date?: string;
+  Details?: string;
 };
 
 export { JOB_STATUSES, STATUS_PROGRESS } from "./airtable-shared";
