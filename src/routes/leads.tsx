@@ -61,7 +61,9 @@ function stageStyle(stage?: string | null) {
 }
 
 function StageBadge({ stage }: { stage?: string | null }) {
-  return <Badge className={`font-medium hover:opacity-100 ${stageStyle(stage)}`}>{stage ?? "—"}</Badge>;
+  return (
+    <Badge className={`font-medium hover:opacity-100 ${stageStyle(stage)}`}>{stage ?? "—"}</Badge>
+  );
 }
 
 type Lead = AirtableRecord<LeadFields>;
@@ -172,8 +174,7 @@ function LeadsPage() {
   };
 
   const update = useMutation({
-    mutationFn: (vars: Parameters<typeof updateLeadFn>[0]["data"]) =>
-      updateLeadFn({ data: vars }),
+    mutationFn: (vars: Parameters<typeof updateLeadFn>[0]["data"]) => updateLeadFn({ data: vars }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["leads"] });
     },
@@ -181,8 +182,7 @@ function LeadsPage() {
   });
 
   const create = useMutation({
-    mutationFn: (vars: Parameters<typeof createLeadFn>[0]["data"]) =>
-      createLeadFn({ data: vars }),
+    mutationFn: (vars: Parameters<typeof createLeadFn>[0]["data"]) => createLeadFn({ data: vars }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["leads"] });
       toast.success("Lead added");
@@ -305,9 +305,9 @@ function LeadsPage() {
         <div>
           <h1 className="text-xl font-semibold">Lead Pipeline</h1>
           <p className="text-sm text-muted-foreground">
-            Internal view — edits here write straight back to the CRM Airtable base. Synced
-            with the inbound/outbound CRM automation every ~15 minutes, so very recent emails
-            may take a few minutes to show up here.
+            Internal view — edits here write straight back to the CRM Airtable base. Synced with the
+            inbound/outbound CRM automation every ~15 minutes, so very recent emails may take a few
+            minutes to show up here.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -357,7 +357,9 @@ function LeadsPage() {
               {stats.overdueCount > 0 && <AlertTriangle className="h-3 w-3 text-destructive" />}
               Overdue follow-ups
             </div>
-            <div className={`text-lg font-semibold ${stats.overdueCount > 0 ? "text-destructive" : ""}`}>
+            <div
+              className={`text-lg font-semibold ${stats.overdueCount > 0 ? "text-destructive" : ""}`}
+            >
               {stats.overdueCount}
             </div>
           </CardContent>
@@ -440,65 +442,65 @@ function LeadsPage() {
                   </span>
                 </button>
                 <div className="space-y-2">
-                    {stageLeads.map((lead) => {
-                      const client = getLinkedClient(lead);
-                      const linked = isLeadLinked(lead);
-                      const overdue = isOverdue(lead);
-                      return (
-                        <Card
-                          key={lead.id}
-                          className={`cursor-pointer border-l-4 transition-shadow hover:shadow-md ${stageStyle(stage).split(" ")[0]} ${overdue ? "ring-1 ring-destructive" : ""}`}
-                          onClick={() => setEditingLead(lead)}
-                        >
-                          <CardContent className="space-y-2 py-3">
-                            <div className="flex items-center justify-between gap-1">
-                              <div className="font-medium leading-tight">
-                                {lead.fields["Lead Name"] ?? "—"}
-                              </div>
-                              {overdue && (
-                                <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-destructive" />
-                              )}
+                  {stageLeads.map((lead) => {
+                    const client = getLinkedClient(lead);
+                    const linked = isLeadLinked(lead);
+                    const overdue = isOverdue(lead);
+                    return (
+                      <Card
+                        key={lead.id}
+                        className={`cursor-pointer border-l-4 transition-shadow hover:shadow-md ${stageStyle(stage).split(" ")[0]} ${overdue ? "ring-1 ring-destructive" : ""}`}
+                        onClick={() => setEditingLead(lead)}
+                      >
+                        <CardContent className="space-y-2 py-3">
+                          <div className="flex items-center justify-between gap-1">
+                            <div className="font-medium leading-tight">
+                              {lead.fields["Lead Name"] ?? "—"}
                             </div>
-                            <div className="truncate text-xs text-muted-foreground">
-                              {lead.fields.Email ?? "—"}
-                            </div>
-                            <div className="flex items-center justify-between text-xs">
-                              <span className={urgencyTextClass(lead.fields.Urgency)}>
-                                {lead.fields.Urgency ?? "—"}
-                              </span>
-                              <span className="font-medium">
-                                {leadValueLabel(lead.fields["Lead value"])}
-                              </span>
-                            </div>
-                            {client && (
-                              <div className="truncate text-xs text-muted-foreground">
-                                Client: {client.fields["Client Code"] ?? client.fields["Full Name"]}
-                              </div>
+                            {overdue && (
+                              <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-destructive" />
                             )}
-                            <select
-                              value={lead.fields.Stage ?? ""}
-                              disabled={linked}
-                              title={linked ? "Managed by the CRM↔Ops sync once linked" : undefined}
-                              onClick={(e) => e.stopPropagation()}
-                              onChange={(e) => {
-                                e.stopPropagation();
-                                update.mutate({ leadId: lead.id, stage: e.target.value });
-                              }}
-                              className={`w-full rounded border px-2 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-60 ${stageStyle(lead.fields.Stage)}`}
-                            >
-                              {LEAD_STAGES.map((s) => (
-                                <option key={s} value={s}>
-                                  {s}
-                                </option>
-                              ))}
-                            </select>
-                          </CardContent>
-                        </Card>
-                      );
-                    })}
-                    {stageLeads.length === 0 && (
-                      <p className="px-1 text-xs text-muted-foreground">No leads</p>
-                    )}
+                          </div>
+                          <div className="truncate text-xs text-muted-foreground">
+                            {lead.fields.Email ?? "—"}
+                          </div>
+                          <div className="flex items-center justify-between text-xs">
+                            <span className={urgencyTextClass(lead.fields.Urgency)}>
+                              {lead.fields.Urgency ?? "—"}
+                            </span>
+                            <span className="font-medium">
+                              {leadValueLabel(lead.fields["Lead value"])}
+                            </span>
+                          </div>
+                          {client && (
+                            <div className="truncate text-xs text-muted-foreground">
+                              Client: {client.fields["Client Code"] ?? client.fields["Full Name"]}
+                            </div>
+                          )}
+                          <select
+                            value={lead.fields.Stage ?? ""}
+                            disabled={linked}
+                            title={linked ? "Managed by the CRM↔Ops sync once linked" : undefined}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              update.mutate({ leadId: lead.id, stage: e.target.value });
+                            }}
+                            className={`w-full rounded border px-2 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-60 ${stageStyle(lead.fields.Stage)}`}
+                          >
+                            {LEAD_STAGES.map((s) => (
+                              <option key={s} value={s}>
+                                {s}
+                              </option>
+                            ))}
+                          </select>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                  {stageLeads.length === 0 && (
+                    <p className="px-1 text-xs text-muted-foreground">No leads</p>
+                  )}
                 </div>
               </div>
             );
@@ -547,7 +549,7 @@ function LeadsPage() {
                     {!collapsed &&
                       stageLeads.map((lead) => {
                         const client = getLinkedClient(lead);
-                        const clientJobs = client ? jobsByClientId.get(client.id) ?? [] : [];
+                        const clientJobs = client ? (jobsByClientId.get(client.id) ?? []) : [];
                         const linked = isLeadLinked(lead);
                         const overdue = isOverdue(lead);
                         return (
@@ -565,7 +567,9 @@ function LeadsPage() {
                               <select
                                 value={lead.fields.Stage ?? ""}
                                 disabled={linked}
-                                title={linked ? "Managed by the CRM↔Ops sync once linked" : undefined}
+                                title={
+                                  linked ? "Managed by the CRM↔Ops sync once linked" : undefined
+                                }
                                 onChange={(e) =>
                                   update.mutate({ leadId: lead.id, stage: e.target.value })
                                 }
@@ -584,7 +588,9 @@ function LeadsPage() {
                             <td className={`px-3 py-2 ${urgencyTextClass(lead.fields.Urgency)}`}>
                               {lead.fields.Urgency ?? "—"}
                             </td>
-                            <td className="px-3 py-2">{leadValueLabel(lead.fields["Lead value"])}</td>
+                            <td className="px-3 py-2">
+                              {leadValueLabel(lead.fields["Lead value"])}
+                            </td>
                             <td className="px-3 py-2 text-xs text-muted-foreground">
                               {client ? (
                                 <div className="space-y-0.5">
@@ -594,7 +600,10 @@ function LeadsPage() {
                                   {clientJobs.length > 0 ? (
                                     <div>
                                       {clientJobs
-                                        .map((j) => `${j.fields["Job Code"] ?? "Job"} (${j.fields.Status ?? "—"})`)
+                                        .map(
+                                          (j) =>
+                                            `${j.fields["Job Code"] ?? "Job"} (${j.fields.Status ?? "—"})`,
+                                        )
                                         .join(", ")}
                                     </div>
                                   ) : (
@@ -605,12 +614,18 @@ function LeadsPage() {
                                 "Not linked"
                               )}
                             </td>
-                            <td className={`px-3 py-2 ${overdue ? "font-semibold text-destructive" : "text-muted-foreground"}`}>
+                            <td
+                              className={`px-3 py-2 ${overdue ? "font-semibold text-destructive" : "text-muted-foreground"}`}
+                            >
                               {overdue && <AlertTriangle className="mr-1 inline h-3 w-3" />}
                               {formatDate(lead.fields["Next action date"])}
                             </td>
                             <td className="px-3 py-2">
-                              <Button size="sm" variant="outline" onClick={() => setEditingLead(lead)}>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setEditingLead(lead)}
+                              >
                                 Edit
                               </Button>
                             </td>
@@ -631,7 +646,7 @@ function LeadsPage() {
           client={getLinkedClient(editingLead)}
           clientJobs={(() => {
             const client = getLinkedClient(editingLead);
-            return client ? jobsByClientId.get(client.id) ?? [] : [];
+            return client ? (jobsByClientId.get(client.id) ?? []) : [];
           })()}
           onClose={() => setEditingLead(null)}
           onSave={(vars) =>
@@ -688,9 +703,7 @@ function LeadThread({ leadId }: { leadId: string }) {
     return <p className="text-xs text-muted-foreground">Loading activity…</p>;
   }
   if (threadQ.error) {
-    return (
-      <p className="text-xs text-destructive">{getErrorMessage(threadQ.error)}</p>
-    );
+    return <p className="text-xs text-destructive">{getErrorMessage(threadQ.error)}</p>;
   }
   if (timeline.length === 0) {
     return <p className="text-xs text-muted-foreground">No emails or activity logged yet.</p>;
@@ -705,26 +718,37 @@ function LeadThread({ leadId }: { leadId: string }) {
               <Badge variant="outline" className="text-[10px]">
                 {item.record.fields.Direction ?? "Message"}
               </Badge>
-              <span className="text-muted-foreground">{formatDate(item.record.fields.Timestamp)}</span>
+              <span className="text-muted-foreground">
+                {formatDate(item.record.fields.Timestamp)}
+              </span>
             </div>
             {item.record.fields.Subject && (
               <div className="font-medium">{item.record.fields.Subject}</div>
             )}
             {item.record.fields.Body && (
-              <div className="mt-0.5 line-clamp-3 text-muted-foreground">{item.record.fields.Body}</div>
+              <div className="mt-0.5 line-clamp-3 text-muted-foreground">
+                {item.record.fields.Body}
+              </div>
             )}
           </div>
         ) : (
-          <div key={`a-${item.record.id}`} className="rounded border border-dashed border-border p-2 text-xs">
+          <div
+            key={`a-${item.record.id}`}
+            className="rounded border border-dashed border-border p-2 text-xs"
+          >
             <div className="mb-0.5 flex items-center justify-between gap-2">
               <Badge variant="outline" className="text-[10px]">
                 {item.record.fields.Type ?? "Activity"}
               </Badge>
               <span className="text-muted-foreground">{formatDate(item.record.fields.Date)}</span>
             </div>
-            {item.record.fields.Title && <div className="font-medium">{item.record.fields.Title}</div>}
+            {item.record.fields.Title && (
+              <div className="font-medium">{item.record.fields.Title}</div>
+            )}
             {item.record.fields.Details && (
-              <div className="mt-0.5 line-clamp-3 text-muted-foreground">{item.record.fields.Details}</div>
+              <div className="mt-0.5 line-clamp-3 text-muted-foreground">
+                {item.record.fields.Details}
+              </div>
             )}
           </div>
         ),
@@ -795,7 +819,11 @@ function LeadEditDialog({
             </div>
             <div className="col-span-2">
               <Label>Company</Label>
-              <Input value={company} onChange={(e) => setCompany(e.target.value)} className="mt-1" />
+              <Input
+                value={company}
+                onChange={(e) => setCompany(e.target.value)}
+                className="mt-1"
+              />
             </div>
           </div>
 
@@ -823,8 +851,8 @@ function LeadEditDialog({
               </div>
             ) : (
               <div className="text-muted-foreground">
-                Not linked yet — the CRM↔Ops sync links this automatically once the lead
-                converts to a client.
+                Not linked yet — the CRM↔Ops sync links this automatically once the lead converts to
+                a client.
               </div>
             )}
           </div>
@@ -978,12 +1006,16 @@ function NewLeadDialog({
         </DialogHeader>
         <div className="space-y-3">
           <p className="text-xs text-muted-foreground">
-            For leads that came in by phone, in person, or anywhere else outside the web
-            form/inbox automation. Starts at Stage = New.
+            For leads that came in by phone, in person, or anywhere else outside the web form/inbox
+            automation. Starts at Stage = New.
           </p>
           <div>
             <Label>Name *</Label>
-            <Input value={leadName} onChange={(e) => setLeadName(e.target.value)} className="mt-1" />
+            <Input
+              value={leadName}
+              onChange={(e) => setLeadName(e.target.value)}
+              className="mt-1"
+            />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -1001,7 +1033,11 @@ function NewLeadDialog({
             </div>
             <div className="col-span-2">
               <Label>Company</Label>
-              <Input value={company} onChange={(e) => setCompany(e.target.value)} className="mt-1" />
+              <Input
+                value={company}
+                onChange={(e) => setCompany(e.target.value)}
+                className="mt-1"
+              />
             </div>
             <div className="col-span-2">
               <Label>Urgency</Label>

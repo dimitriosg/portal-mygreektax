@@ -22,7 +22,11 @@ import { logActivityEvent } from "./activity.server";
 // Unlike Jobs, there is no partner-facing variant and no change-request workflow:
 // the admin is both requester and approver, so writes go straight to Airtable.
 
-const RECORD_ID = z.string().min(1).max(80).regex(/^rec[A-Za-z0-9]+$/, "Invalid record id");
+const RECORD_ID = z
+  .string()
+  .min(1)
+  .max(80)
+  .regex(/^rec[A-Za-z0-9]+$/, "Invalid record id");
 
 export const listLeads = createServerFn({ method: "GET" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
