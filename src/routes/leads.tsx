@@ -263,7 +263,7 @@ function LeadsPage() {
                   key={stage}
                   onClick={() => toggleCollapsed(stage)}
                   title={`Expand ${stage}`}
-                  className={`flex w-10 shrink-0 flex-col items-center gap-2 rounded-md border px-1 py-2 ${stageStyle(stage)}`}
+                  className={`flex w-10 shrink-0 flex-col items-center justify-start gap-2 rounded-md border px-1 py-2 ${stageStyle(stage)}`}
                   style={{ minHeight: 240 }}
                 >
                   <ChevronRight className="h-3.5 w-3.5 shrink-0" />
@@ -271,8 +271,8 @@ function LeadsPage() {
                     {stageLeads.length}
                   </span>
                   <span
-                    className="mt-1 flex-1 text-xs font-semibold uppercase tracking-wide"
-                    style={{ writingMode: "vertical-rl", textOrientation: "mixed" }}
+                    className="mt-1 whitespace-nowrap text-xs font-semibold uppercase tracking-wide"
+                    style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}
                   >
                     {stage}
                   </span>
