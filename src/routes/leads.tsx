@@ -955,7 +955,7 @@ function LeadEditDialog({
               onSave({
                 stage: linked ? undefined : stage,
                 leadStatus: linked ? undefined : leadStatus,
-              urgency: urgency === "" ? null : urgency,
+                urgency: urgency === "" ? null : urgency,
                 leadValue: leadValue === "" ? null : Number(leadValue),
                 notes,
                 lostReason: !linked && stage === "Lost" ? lostReason : undefined,
