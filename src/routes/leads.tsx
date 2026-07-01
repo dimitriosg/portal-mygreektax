@@ -526,7 +526,7 @@ function LeadsPage() {
               {(stageFilter ? [stageFilter] : LEAD_STAGES).map((stage) => {
                 const stageLeads = leadsByStage.get(stage) ?? [];
                 if (stageLeads.length === 0) return null;
-                const collapsed = collapsedStages.has(stage);
+                const collapsed = !stageFilter && collapsedStages.has(stage); // rows always show when a stage filter hides the collapse toggle
                 return (
                   <>
                     {!stageFilter && (
@@ -772,7 +772,7 @@ function LeadEditDialog({
   onSave: (vars: {
     stage?: string;
     leadStatus?: string;
-    urgency?: string;
+    urgency?: string | null;
     leadValue?: number | null;
     notes?: string;
     lostReason?: string;
@@ -955,7 +955,7 @@ function LeadEditDialog({
               onSave({
                 stage: linked ? undefined : stage,
                 leadStatus: linked ? undefined : leadStatus,
-                urgency: urgency || undefined,
+                urgency: urgency === "" ? null : urgency,
                 leadValue: leadValue === "" ? null : Number(leadValue),
                 notes,
                 lostReason: !linked && stage === "Lost" ? lostReason : undefined,

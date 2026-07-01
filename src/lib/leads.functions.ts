@@ -50,7 +50,7 @@ export const updateLead = createServerFn({ method: "POST" })
       leadId: string;
       stage?: string;
       leadStatus?: string;
-      urgency?: string;
+      urgency?: string | null;
       leadValue?: number | null;
       notes?: string;
       lostReason?: string;
@@ -63,7 +63,7 @@ export const updateLead = createServerFn({ method: "POST" })
           leadId: RECORD_ID,
           stage: z.enum(LEAD_STAGES).optional(),
           leadStatus: z.enum(LEAD_STATUSES).optional(),
-          urgency: z.enum(LEAD_URGENCY_OPTIONS).optional(),
+          urgency: z.enum(LEAD_URGENCY_OPTIONS).nullable().optional(),
           leadValue: z.number().min(0).max(1_000_000).nullable().optional(),
           notes: z.string().max(5000).optional(),
           lostReason: z.string().max(500).optional(),
