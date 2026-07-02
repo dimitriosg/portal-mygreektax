@@ -52,6 +52,17 @@ export const updateLead = createServerFn({ method: "POST" })
       lostReason?: string;
       email?: string;
       phone?: string;
+      nationality?: string;
+      afm?: string;
+      taxisnetAccess?: boolean;
+      cadence?: string;
+      caseCode?: string;
+      quoteSentDate?: string | null;
+      quoteAmount?: number | null;
+      deposit?: number | null;
+      balanceDue?: number | null;
+      partnerFee?: number | null;
+      parkedReason?: string;
     }) =>
       z
         .object({
@@ -63,6 +74,17 @@ export const updateLead = createServerFn({ method: "POST" })
           lostReason: z.string().max(500).optional(),
           email: z.string().email().max(200).optional(),
           phone: z.string().max(50).optional(),
+          nationality: z.string().max(100).optional(),
+          afm: z.string().max(50).optional(),
+          taxisnetAccess: z.boolean().optional(),
+          cadence: z.string().max(100).optional(),
+          caseCode: z.string().max(100).optional(),
+          quoteSentDate: z.string().nullable().optional(),
+          quoteAmount: z.number().min(0).max(1_000_000).nullable().optional(),
+          deposit: z.number().min(0).max(1_000_000).nullable().optional(),
+          balanceDue: z.number().min(0).max(1_000_000).nullable().optional(),
+          partnerFee: z.number().min(0).max(1_000_000).nullable().optional(),
+          parkedReason: z.string().max(500).optional(),
         })
         .parse(d),
   )
@@ -85,6 +107,17 @@ export const updateLead = createServerFn({ method: "POST" })
     if (data.lostReason !== undefined) fields["Lost Reason"] = data.lostReason;
     if (data.email !== undefined) fields["Email"] = data.email;
     if (data.phone !== undefined) fields["Phone"] = data.phone;
+    if (data.nationality !== undefined) fields["Nationality"] = data.nationality;
+    if (data.afm !== undefined) fields["AFM"] = data.afm;
+    if (data.taxisnetAccess !== undefined) fields["TAXISnet Access"] = data.taxisnetAccess;
+    if (data.cadence !== undefined) fields["Cadence"] = data.cadence;
+    if (data.caseCode !== undefined) fields["Case Code"] = data.caseCode;
+    if (data.quoteSentDate !== undefined) fields["Quote Sent Date"] = data.quoteSentDate;
+    if (data.quoteAmount !== undefined) fields["Quote Amount €"] = data.quoteAmount;
+    if (data.deposit !== undefined) fields["Deposit €"] = data.deposit;
+    if (data.balanceDue !== undefined) fields["Balance Due €"] = data.balanceDue;
+    if (data.partnerFee !== undefined) fields["Partner Fee €"] = data.partnerFee;
+    if (data.parkedReason !== undefined) fields["Parked Reason"] = data.parkedReason;
 
     const updated = (await airtablePatch(
       TABLES.clients,
