@@ -369,7 +369,7 @@ function Dashboard() {
     const status = j.fields.Status ?? "";
     if (statusFilter !== "all" && status !== statusFilter) return false;
     if (hideCompleted && status === "Completed") return false;
-    if (hideCancelled && status === "Cancelled") return false;
+    if (hideCancelled && status === "Cancelled / NMF") return false;
     if (hideToAssign && status === "To Assign") return false;
     if (activePartnerWorkOnly && !ACTIVE_PARTNER_WORK_STATUSES.has(status)) return false;
     return true;
