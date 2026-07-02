@@ -1,37 +1,30 @@
-// Shared constants for the Leads CRM view (mirrors airtable-shared.ts for Jobs).
+// Shared constants for the pipeline (formerly "Leads CRM") view (mirrors
+// airtable-shared.ts for Jobs). As of Task 4, leads and clients are the same
+// Airtable record — this is the single Stage vocabulary for that pipeline,
+// from first contact through to a completed engagement.
 
-export const LEAD_STAGES = ["New", "Contacted", "Qualified", "Quoted", "Won", "Lost"] as const;
-
-export type LeadStage = (typeof LEAD_STAGES)[number];
-
-export const LEAD_STATUSES = [
-  "Processing",
-  "New",
-  "Contacted",
-  "Qualified",
+export const CLIENT_STAGES = [
+  "Potential",
   "Quoted",
-  "Won",
+  "Active",
+  "Parked",
+  "Complete",
   "Lost",
 ] as const;
 
-export type LeadStatus = (typeof LEAD_STATUSES)[number];
+export type ClientStage = (typeof CLIENT_STAGES)[number];
 
 export const LEAD_URGENCY_OPTIONS = ["Within a week", "This month", "Just exploring"] as const;
 
 export type LeadUrgency = (typeof LEAD_URGENCY_OPTIONS)[number];
 
-const LEAD_STAGE_SET = new Set<string>(LEAD_STAGES);
-const LEAD_STATUS_SET = new Set<string>(LEAD_STATUSES);
+const CLIENT_STAGE_SET = new Set<string>(CLIENT_STAGES);
 
-export function isLeadStage(value?: string | null): value is LeadStage {
-  return typeof value === "string" && LEAD_STAGE_SET.has(value);
-}
-
-export function isLeadStatus(value?: string | null): value is LeadStatus {
-  return typeof value === "string" && LEAD_STATUS_SET.has(value);
+export function isClientStage(value?: string | null): value is ClientStage {
+  return typeof value === "string" && CLIENT_STAGE_SET.has(value);
 }
 
 /** Unknown or legacy stages sort after the active pipeline. */
-export function getLeadStageSortOrder(stage?: string | null) {
-  return isLeadStage(stage) ? LEAD_STAGES.indexOf(stage) : LEAD_STAGES.length;
+export function getClientStageSortOrder(stage?: string | null) {
+  return isClientStage(stage) ? CLIENT_STAGES.indexOf(stage) : CLIENT_STAGES.length;
 }

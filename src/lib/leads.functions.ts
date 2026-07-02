@@ -7,18 +7,19 @@ import {
   airtableListAll,
   airtablePatch,
   airtablePost,
-  CRM_BASE_ID,
-  CRM_TABLES,
+  TABLES,
   type AirtableRecord,
-  type LeadFields,
+  type ClientFields,
   type MessageFields,
-  type ActivityFields,
 } from "./airtable.server";
-import { LEAD_STAGES, LEAD_STATUSES, LEAD_URGENCY_OPTIONS } from "./leads-shared";
+import { CLIENT_STAGES, LEAD_URGENCY_OPTIONS } from "./leads-shared";
 import { requireAdminAccess } from "./access-context.server";
 import { logActivityEvent } from "./activity.server";
 
-// Internal-only CRM view (Jim only) — every endpoint here requires admin access.
+// Internal-only pipeline view (Jim only) — every endpoint here requires admin
+// access. As of Task 4 (single-base consolidation) a "lead" is just a Client
+// record with Stage = "Potential"; there is no separate CRM base or Lead
+// entity, and no linking step — the record IS the client from day one.
 // Unlike Jobs, there is no partner-facing variant and no change-request workflow:
 // the admin is both requester and approver, so writes go straight to Airtable.
 
@@ -35,12 +36,8 @@ export const listLeads = createServerFn({ method: "GET" })
       userId: context.userId,
       email: context.claims.email as string | undefined,
     });
-    const data = await airtableListAll<LeadFields>(
-      CRM_TABLES.leads,
-      { pageSize: "100" },
-      CRM_BASE_ID,
-    );
-    return { leads: data.records as AirtableRecord<LeadFields>[] };
+    const data = await airtableListAll<ClientFields>(TABLES.clients, { pageSize: "100" });
+    return { leads: data.records as AirtableRecord<ClientFields>[] };
   });
 
 export const updateLead = createServerFn({ method: "POST" })
@@ -49,27 +46,23 @@ export const updateLead = createServerFn({ method: "POST" })
     (d: {
       leadId: string;
       stage?: string;
-      leadStatus?: string;
       urgency?: string | null;
       leadValue?: number | null;
       notes?: string;
       lostReason?: string;
       email?: string;
       phone?: string;
-      company?: string;
     }) =>
       z
         .object({
           leadId: RECORD_ID,
-          stage: z.enum(LEAD_STAGES).optional(),
-          leadStatus: z.enum(LEAD_STATUSES).optional(),
+          stage: z.enum(CLIENT_STAGES).optional(),
           urgency: z.enum(LEAD_URGENCY_OPTIONS).nullable().optional(),
           leadValue: z.number().min(0).max(1_000_000).nullable().optional(),
           notes: z.string().max(5000).optional(),
           lostReason: z.string().max(500).optional(),
           email: z.string().email().max(200).optional(),
           phone: z.string().max(50).optional(),
-          company: z.string().max(200).optional(),
         })
         .parse(d),
   )
@@ -80,49 +73,31 @@ export const updateLead = createServerFn({ method: "POST" })
     });
 
     const existing = (await airtableGet(
-      `${CRM_TABLES.leads}/${data.leadId}`,
-      undefined,
-      CRM_BASE_ID,
-    )) as AirtableRecord<LeadFields>;
+      `${TABLES.clients}/${data.leadId}`,
+    )) as AirtableRecord<ClientFields>;
     const previousStage = existing.fields.Stage ?? null;
-
-    // Once a lead is linked to an Ops client, the CRM<->Ops sync ("Sync: Ops
-    // Client -> CRM Lead outcome") drives Stage/Lead status from Client.Status
-    // on its own 15-min cadence. Manual edits to those two fields here would
-    // get silently reverted on the next sync run, so block them post-link
-    // rather than let Jim "fix" something that quietly un-fixes itself.
-    const isLinked = Boolean(existing.fields["Ops Client Record ID"]);
-    if (isLinked && (data.stage !== undefined || data.leadStatus !== undefined)) {
-      throw new Error(
-        "This lead is linked to a client — Stage and Lead status are now managed " +
-          "automatically by the CRM↔Ops sync and can't be edited here.",
-      );
-    }
 
     const fields: Record<string, unknown> = {};
     if (data.stage !== undefined) fields["Stage"] = data.stage;
-    if (data.leadStatus !== undefined) fields["Lead status"] = data.leadStatus;
     if (data.urgency !== undefined) fields["Urgency"] = data.urgency;
-    if (data.leadValue !== undefined) fields["Lead value"] = data.leadValue;
+    if (data.leadValue !== undefined) fields["Lead Value (€)"] = data.leadValue;
     if (data.notes !== undefined) fields["Notes"] = data.notes;
-    if (data.lostReason !== undefined) fields["Lost reason"] = data.lostReason;
+    if (data.lostReason !== undefined) fields["Lost Reason"] = data.lostReason;
     if (data.email !== undefined) fields["Email"] = data.email;
     if (data.phone !== undefined) fields["Phone"] = data.phone;
-    if (data.company !== undefined) fields["Company"] = data.company;
 
     const updated = (await airtablePatch(
-      CRM_TABLES.leads,
+      TABLES.clients,
       data.leadId,
       fields,
-      CRM_BASE_ID,
-    )) as AirtableRecord<LeadFields>;
+    )) as AirtableRecord<ClientFields>;
 
     if (data.stage !== undefined && data.stage !== previousStage) {
       await logActivityEvent({
         eventType: "lead_stage_changed",
         actorUserId: context.userId,
         actorEmail: context.claims.email as string | undefined,
-        subjectLabel: existing.fields["Lead Name"] ?? data.leadId,
+        subjectLabel: existing.fields["Full Name"] ?? data.leadId,
         metadata: { leadId: data.leadId, from: previousStage, to: data.stage },
       });
     }
@@ -137,7 +112,6 @@ export const createLead = createServerFn({ method: "POST" })
       leadName: string;
       email: string;
       phone?: string;
-      company?: string;
       urgency?: string;
       situation?: string;
     }) =>
@@ -146,7 +120,6 @@ export const createLead = createServerFn({ method: "POST" })
           leadName: z.string().min(1).max(200),
           email: z.string().email().max(200),
           phone: z.string().max(50).optional(),
-          company: z.string().max(200).optional(),
           urgency: z.enum(LEAD_URGENCY_OPTIONS).optional(),
           situation: z.string().max(2000).optional(),
         })
@@ -158,22 +131,19 @@ export const createLead = createServerFn({ method: "POST" })
       email: context.claims.email as string | undefined,
     });
 
-    const created = await airtablePost(
-      CRM_TABLES.leads,
-      {
-        "Lead Name": data.leadName,
-        Email: data.email,
-        Phone: data.phone,
-        Company: data.company,
-        Urgency: data.urgency,
-        Situation: data.situation,
-        Stage: "New",
-        "Lead status": "New",
-        "Submission date": new Date().toISOString(),
-        "Referral source": "Manual entry",
-      },
-      CRM_BASE_ID,
-    );
+    // Client Code is intentionally left blank here, same as the Incoming Form
+    // automation — auto-numbering per the CLT####-XX standard is a separate,
+    // not-yet-built piece of work (needs a "next available number" lookup).
+    const created = await airtablePost(TABLES.clients, {
+      "Full Name": data.leadName,
+      Email: data.email,
+      Phone: data.phone,
+      Urgency: data.urgency,
+      Notes: data.situation,
+      Stage: "Potential",
+      Status: "Prospect",
+      Source: "Manual entry",
+    });
 
     await logActivityEvent({
       eventType: "lead_created",
@@ -183,7 +153,7 @@ export const createLead = createServerFn({ method: "POST" })
       metadata: { leadId: created.id, source: "manual" },
     });
 
-    return { lead: created as AirtableRecord<LeadFields> };
+    return { lead: created as AirtableRecord<ClientFields> };
   });
 
 export const listLeadThread = createServerFn({ method: "GET" })
@@ -195,21 +165,15 @@ export const listLeadThread = createServerFn({ method: "GET" })
       email: context.claims.email as string | undefined,
     });
 
-    // Note: {Lead}/{Leads} inside a filterByFormula resolves to the *primary field
+    // Note: {Client} inside a filterByFormula resolves to the *primary field
     // value* of the linked record(s), not the record id -- so filtering by record id
     // via formula never matches. The REST API response itself does return the linked
     // record ids directly on each row, so we fetch and filter client-side instead.
-    const [messages, activities] = await Promise.all([
-      airtableListAll<MessageFields>(CRM_TABLES.messages, {}, CRM_BASE_ID),
-      airtableListAll<ActivityFields>(CRM_TABLES.activities, {}, CRM_BASE_ID),
-    ]);
+    const messages = await airtableListAll<MessageFields>(TABLES.messages, {});
 
     return {
       messages: messages.records.filter((r) =>
-        (r.fields.Lead ?? []).includes(data.leadId),
+        (r.fields.Client ?? []).includes(data.leadId),
       ) as AirtableRecord<MessageFields>[],
-      activities: activities.records.filter((r) =>
-        (r.fields.Leads ?? []).includes(data.leadId),
-      ) as AirtableRecord<ActivityFields>[],
     };
   });
