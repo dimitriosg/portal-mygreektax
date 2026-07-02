@@ -203,6 +203,9 @@ export type AccountantFields = {
 
 // Clients doubles as the unified pipeline: a brand-new lead is a Client record
 // with Stage = "Potential". There is no separate Lead entity anymore (Task 4).
+// Task 6 (Option B) surfaces the full person/money profile here too, so the
+// portal's pipeline view can be the one daily-driver UI (no Airtable Interface
+// needed) — all of these fields already existed on Clients from Task 1.
 export type ClientFields = {
   "Full Name"?: string;
   "Client Code"?: string;
@@ -218,6 +221,17 @@ export type ClientFields = {
   "Next Action"?: string;
   "Next Action Date"?: string;
   "Last activity"?: string;
+  Nationality?: string;
+  AFM?: string;
+  "TAXISnet Access"?: boolean;
+  Cadence?: string;
+  "Case Code"?: string;
+  "Quote Sent Date"?: string;
+  "Quote Amount €"?: number;
+  "Deposit €"?: number;
+  "Balance Due €"?: number;
+  "Partner Fee €"?: number;
+  "Parked Reason"?: string;
 };
 
 export type MessageFields = {

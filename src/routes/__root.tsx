@@ -356,7 +356,7 @@ function AppShell() {
                 )}
                 {isAdmin && (
                   <Link to="/leads" activeProps={{ className: "font-semibold" }}>
-                    Leads
+                    Pipeline
                   </Link>
                 )}
                 {isRealAdmin && impersonatingId && (

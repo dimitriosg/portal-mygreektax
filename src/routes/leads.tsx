@@ -255,10 +255,11 @@ function LeadsPage() {
     <div className="mx-auto max-w-6xl space-y-6 px-4 py-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold">Lead Pipeline</h1>
+          <h1 className="text-xl font-semibold">Pipeline</h1>
           <p className="text-sm text-muted-foreground">
-            Internal view — edits here write straight back to the Ops Airtable base. New leads from
-            the web form/inbox show up here directly (no separate CRM sync to wait on).
+            Your daily driver — every client from first contact through to a completed job, in one
+            place. Edits here write straight back to the Ops Airtable base. New leads from the web
+            form/inbox show up here directly (no separate CRM sync to wait on).
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -639,6 +640,14 @@ function LeadThread({ leadId }: { leadId: string }) {
   );
 }
 
+// Money fields are only shown once there is something to quote — Potential
+// leads with no quote yet don't need an empty wall of € inputs.
+const MONEY_RELEVANT_STAGES = new Set(["Quoted", "Active", "Parked", "Complete"]);
+
+function euroField(value?: number | null) {
+  return value !== undefined && value !== null ? String(value) : "";
+}
+
 function LeadEditDialog({
   lead,
   clientJobs,
@@ -657,18 +666,42 @@ function LeadEditDialog({
     lostReason?: string;
     email?: string;
     phone?: string;
+    nationality?: string;
+    afm?: string;
+    taxisnetAccess?: boolean;
+    cadence?: string;
+    caseCode?: string;
+    quoteSentDate?: string | null;
+    quoteAmount?: number | null;
+    deposit?: number | null;
+    balanceDue?: number | null;
+    partnerFee?: number | null;
+    parkedReason?: string;
   }) => void;
   saving: boolean;
 }) {
   const [stage, setStage] = useState(lead.fields.Stage ?? "Potential");
   const [urgency, setUrgency] = useState(lead.fields.Urgency ?? "");
-  const [leadValue, setLeadValue] = useState(
-    lead.fields["Lead Value (€)"] !== undefined ? String(lead.fields["Lead Value (€)"]) : "",
-  );
+  const [leadValue, setLeadValue] = useState(euroField(lead.fields["Lead Value (€)"]));
   const [notes, setNotes] = useState(lead.fields.Notes ?? "");
   const [lostReason, setLostReason] = useState(lead.fields["Lost Reason"] ?? "");
   const [email, setEmail] = useState(lead.fields.Email ?? "");
   const [phone, setPhone] = useState(lead.fields.Phone ?? "");
+  const [nationality, setNationality] = useState(lead.fields.Nationality ?? "");
+  const [afm, setAfm] = useState(lead.fields.AFM ?? "");
+  const [taxisnetAccess, setTaxisnetAccess] = useState(Boolean(lead.fields["TAXISnet Access"]));
+  const [cadence, setCadence] = useState(lead.fields.Cadence ?? "");
+  const [caseCode, setCaseCode] = useState(lead.fields["Case Code"] ?? "");
+  const [quoteSentDate, setQuoteSentDate] = useState(
+    lead.fields["Quote Sent Date"] ? lead.fields["Quote Sent Date"].slice(0, 10) : "",
+  );
+  const [quoteAmount, setQuoteAmount] = useState(euroField(lead.fields["Quote Amount €"]));
+  const [deposit, setDeposit] = useState(euroField(lead.fields["Deposit €"]));
+  const [balanceDue, setBalanceDue] = useState(euroField(lead.fields["Balance Due €"]));
+  const [partnerFee, setPartnerFee] = useState(euroField(lead.fields["Partner Fee €"]));
+  const [parkedReason, setParkedReason] = useState(lead.fields["Parked Reason"] ?? "");
+
+  const showMoney = MONEY_RELEVANT_STAGES.has(stage);
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
@@ -686,6 +719,44 @@ function LeadEditDialog({
               <Label>Phone</Label>
               <Input value={phone} onChange={(e) => setPhone(e.target.value)} className="mt-1" />
             </div>
+            <div>
+              <Label>Nationality</Label>
+              <Input
+                value={nationality}
+                onChange={(e) => setNationality(e.target.value)}
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label>AFM</Label>
+              <Input value={afm} onChange={(e) => setAfm(e.target.value)} className="mt-1" />
+            </div>
+            <div>
+              <Label>Cadence</Label>
+              <Input
+                value={cadence}
+                onChange={(e) => setCadence(e.target.value)}
+                className="mt-1"
+                placeholder="e.g. Annual, Monthly"
+              />
+            </div>
+            <div>
+              <Label>Case code</Label>
+              <Input
+                value={caseCode}
+                onChange={(e) => setCaseCode(e.target.value)}
+                className="mt-1"
+              />
+            </div>
+            <label className="col-span-2 mt-1 flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={taxisnetAccess}
+                onChange={(e) => setTaxisnetAccess(e.target.checked)}
+                className="h-4 w-4"
+              />
+              TAXISnet access
+            </label>
           </div>
 
           <div className="rounded border border-border bg-muted/20 p-2 text-xs">
@@ -763,6 +834,76 @@ function LeadEditDialog({
               />
             </div>
           )}
+          {stage === "Parked" && (
+            <div>
+              <Label>Parked reason</Label>
+              <Input
+                value={parkedReason}
+                onChange={(e) => setParkedReason(e.target.value)}
+                className="mt-1"
+              />
+            </div>
+          )}
+
+          {showMoney && (
+            <div className="rounded border border-border p-2">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Money
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Quote sent</Label>
+                  <Input
+                    type="date"
+                    value={quoteSentDate}
+                    onChange={(e) => setQuoteSentDate(e.target.value)}
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label>Quote amount (€)</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={quoteAmount}
+                    onChange={(e) => setQuoteAmount(e.target.value)}
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label>Deposit (€)</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={deposit}
+                    onChange={(e) => setDeposit(e.target.value)}
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label>Balance due (€)</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={balanceDue}
+                    onChange={(e) => setBalanceDue(e.target.value)}
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label>Partner fee (€)</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={partnerFee}
+                    onChange={(e) => setPartnerFee(e.target.value)}
+                    className="mt-1"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
           <div>
             <Label>Notes</Label>
             <Textarea
@@ -787,6 +928,25 @@ function LeadEditDialog({
                 lostReason: stage === "Lost" ? lostReason : undefined,
                 email: email || undefined,
                 phone: phone || undefined,
+                nationality: nationality || undefined,
+                afm: afm || undefined,
+                taxisnetAccess,
+                cadence: cadence || undefined,
+                caseCode: caseCode || undefined,
+                parkedReason: stage === "Parked" ? parkedReason : undefined,
+                quoteSentDate: showMoney
+                  ? quoteSentDate === ""
+                    ? null
+                    : quoteSentDate
+                  : undefined,
+                quoteAmount: showMoney
+                  ? quoteAmount === ""
+                    ? null
+                    : Number(quoteAmount)
+                  : undefined,
+                deposit: showMoney ? (deposit === "" ? null : Number(deposit)) : undefined,
+                balanceDue: showMoney ? (balanceDue === "" ? null : Number(balanceDue)) : undefined,
+                partnerFee: showMoney ? (partnerFee === "" ? null : Number(partnerFee)) : undefined,
               })
             }
           >
