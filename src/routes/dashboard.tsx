@@ -128,6 +128,7 @@ function Dashboard() {
   const lastProcessedAuthErrorRef = useRef<unknown>(null);
   const lastProcessedQueryErrorRef = useRef<unknown>(null);
   const [hideCompleted, setHideCompleted] = useState(false);
+  const [hideCancelled, setHideCancelled] = useState(false);
   const [hideToAssign, setHideToAssign] = useState(false);
   const [activePartnerWorkOnly, setActivePartnerWorkOnly] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -368,6 +369,7 @@ function Dashboard() {
     const status = j.fields.Status ?? "";
     if (statusFilter !== "all" && status !== statusFilter) return false;
     if (hideCompleted && status === "Completed") return false;
+    if (hideCancelled && status === "Cancelled") return false;
     if (hideToAssign && status === "To Assign") return false;
     if (activePartnerWorkOnly && !ACTIVE_PARTNER_WORK_STATUSES.has(status)) return false;
     return true;
@@ -551,6 +553,14 @@ function Dashboard() {
                 <label className="inline-flex h-9 items-center gap-2 rounded-full border border-input bg-background px-3 text-sm">
                   <input
                     type="checkbox"
+                    checked={hideCancelled}
+                    onChange={(e) => setHideCancelled(e.target.checked)}
+                  />
+                  Hide Cancelled
+                </label>
+                <label className="inline-flex h-9 items-center gap-2 rounded-full border border-input bg-background px-3 text-sm">
+                  <input
+                    type="checkbox"
                     checked={hideToAssign}
                     onChange={(e) => setHideToAssign(e.target.checked)}
                   />
@@ -607,6 +617,7 @@ function Dashboard() {
             <div className="min-h-4 text-right">
               {(statusFilter !== "all" ||
                 hideCompleted ||
+                hideCancelled ||
                 hideToAssign ||
                 activePartnerWorkOnly) && (
                 <span className="text-xs text-muted-foreground">Filters active</span>
@@ -803,8 +814,8 @@ type JobLite = {
     Client?: string[];
     "Client Code"?: string[];
     "SLA Deadline"?: string;
-    "Client Fee (\u20ac)"?: number;
-    "Accountant Fee (\u20ac)"?: number;
+    "Client Fee (€)"?: number;
+    "Accountant Fee (€)"?: number;
   };
 };
 
@@ -855,8 +866,8 @@ function JobCardInner({
           </span>
           <span>
             {isAdmin && !asPartner
-              ? `Client fee: \u20ac${job.fields["Client Fee (\u20ac)"] ?? "—"}`
-              : `Your fee: \u20ac${job.fields["Accountant Fee (\u20ac)"] ?? "—"}`}
+              ? `Client fee: €${job.fields["Client Fee (€)"] ?? "—"}`
+              : `Your fee: €${job.fields["Accountant Fee (€)"] ?? "—"}`}
           </span>
         </div>
       </CardContent>
