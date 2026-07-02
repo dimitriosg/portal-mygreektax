@@ -3,36 +3,27 @@
 const AIRTABLE_API_URL = "https://api.airtable.com";
 // Backward-compatibility fallback only. Cloudflare Workers Variables should be
 // the production source of truth for Airtable base and table IDs.
+//
+// As of Task 4 (Jul 2026 consolidation) there is a single Airtable base — the
+// Ops Tracker. The former CRM base (front-of-funnel leads) has been retired;
+// leads now live as Client records with Stage = "Potential" in this same base.
 const LEGACY_BASE_ID = "appBJ9yHC38YHvvSw";
 const LEGACY_TABLES = {
   jobs: "tblpH2ULYydRB3exW",
   clients: "tbl70xa6gossiWTMg",
   serviceCatalog: "tblMaCJtLqPXKv5XR",
   accountants: "tblwNZNcrnaJMaq1w",
-} as const;
-
-// CRM base (front of funnel) — separate Airtable base from the Ops Tracker above.
-const LEGACY_CRM_BASE_ID = "apphw8Y9Tn3L40lF1";
-const LEGACY_CRM_TABLES = {
-  leads: "tblUIFo0VNNmdTDeQ",
-  messages: "tblE07Y7VDlvxPFWB",
-  activities: "tbljyMcKf78GkkPyO",
+  messages: "tblZfhv20xntNJG3D",
 } as const;
 
 export const BASE_ID = process.env.AIRTABLE_BASE_ID || LEGACY_BASE_ID;
-export const CRM_BASE_ID = process.env.AIRTABLE_CRM_BASE_ID || LEGACY_CRM_BASE_ID;
 
 export const TABLES = {
   jobs: process.env.AIRTABLE_TABLE_JOBS || LEGACY_TABLES.jobs,
   clients: process.env.AIRTABLE_TABLE_CLIENTS || LEGACY_TABLES.clients,
   serviceCatalog: process.env.AIRTABLE_TABLE_SERVICE_CATALOG || LEGACY_TABLES.serviceCatalog,
   accountants: process.env.AIRTABLE_TABLE_ACCOUNTANTS || LEGACY_TABLES.accountants,
-} as const;
-
-export const CRM_TABLES = {
-  leads: process.env.AIRTABLE_TABLE_LEADS || LEGACY_CRM_TABLES.leads,
-  messages: process.env.AIRTABLE_TABLE_MESSAGES || LEGACY_CRM_TABLES.messages,
-  activities: process.env.AIRTABLE_TABLE_ACTIVITIES || LEGACY_CRM_TABLES.activities,
+  messages: process.env.AIRTABLE_TABLE_MESSAGES || LEGACY_TABLES.messages,
 } as const;
 
 const GENERIC_ERROR = "Service temporarily unavailable. Please try again.";
@@ -210,6 +201,8 @@ export type AccountantFields = {
   Notes?: string;
 };
 
+// Clients doubles as the unified pipeline: a brand-new lead is a Client record
+// with Stage = "Potential". There is no separate Lead entity anymore (Task 4).
 export type ClientFields = {
   "Full Name"?: string;
   "Client Code"?: string;
@@ -217,34 +210,19 @@ export type ClientFields = {
   Phone?: string;
   Status?: string;
   Notes?: string;
-};
-
-export type LeadFields = {
-  "Lead Name"?: string;
-  Email?: string;
-  Phone?: string;
-  Company?: string;
-  Urgency?: string;
-  "Referral source"?: string;
-  "Submission date"?: string;
-  "Acknowledgment date"?: string;
-  "Lead status"?: string;
-  "Acknowledgment sent"?: string;
-  "Lead value"?: number;
-  Situation?: string;
-  Notes?: string;
-  "Source detail"?: string;
-  "Lost reason"?: string;
-  "Last follow-up date"?: string;
   Stage?: string;
-  "Next action date"?: string;
+  Source?: string;
+  Urgency?: string;
+  "Lead Value (€)"?: number;
+  "Lost Reason"?: string;
+  "Next Action"?: string;
+  "Next Action Date"?: string;
   "Last activity"?: string;
-  "Ops Client Record ID"?: string;
 };
 
 export type MessageFields = {
   "Message ID"?: string;
-  Lead?: string[];
+  Client?: string[];
   Direction?: string;
   Timestamp?: string;
   Subject?: string;
@@ -252,14 +230,6 @@ export type MessageFields = {
   "Thread ID"?: string;
   From?: string;
   To?: string;
-};
-
-export type ActivityFields = {
-  Title?: string;
-  Leads?: string[];
-  Type?: string;
-  Date?: string;
-  Details?: string;
 };
 
 export { JOB_STATUSES, STATUS_PROGRESS } from "./airtable-shared";
