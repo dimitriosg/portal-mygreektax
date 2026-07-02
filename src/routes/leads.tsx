@@ -604,7 +604,8 @@ function LeadThread({ leadId }: { leadId: string }) {
   const messages = useMemo(() => {
     const list = threadQ.data?.messages ?? [];
     return [...list].sort(
-      (a, b) => new Date(b.fields.Timestamp ?? 0).getTime() - new Date(a.fields.Timestamp ?? 0).getTime(),
+      (a, b) =>
+        new Date(b.fields.Timestamp ?? 0).getTime() - new Date(a.fields.Timestamp ?? 0).getTime(),
     );
   }, [threadQ.data]);
 
