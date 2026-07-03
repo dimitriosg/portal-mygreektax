@@ -14,7 +14,13 @@ import {
   type DragEndEvent,
 } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
-import { listLeads, updateLead, createLead, listLeadThread } from "@/lib/leads.functions";
+import {
+  listLeads,
+  updateLead,
+  createLead,
+  listLeadThread,
+  listLeadActivity,
+} from "@/lib/leads.functions";
 import { listJobs } from "@/lib/jobs.functions";
 import { useAuth } from "@/lib/auth-context";
 import { getErrorMessage, isAuthSessionError } from "@/lib/auth-errors";
@@ -89,6 +95,16 @@ function urgencyTextClass(urgency?: string | null) {
   if (urgency === "Within a week") return "font-semibold text-destructive";
   if (urgency === "This month") return "text-amber-700";
   return "text-muted-foreground";
+}
+
+// Ticket C — human-readable rendering for a History row's old/new values.
+// Metadata values come straight out of Airtable field values via
+// updateLead's diff loop, so this just needs to handle the plain JSON
+// primitives that show up there (string/number/boolean/null).
+function formatHistoryValue(v: unknown): string {
+  if (v === null || v === undefined || v === "") return "—";
+  if (typeof v === "boolean") return v ? "Yes" : "No";
+  return String(v);
 }
 
 function loadCollapsedStages(): Set<string> {
@@ -854,6 +870,56 @@ function LeadThread({ leadId }: { leadId: string }) {
   );
 }
 
+// Ticket C, Part 2b — read-only per-client audit trail, newest first.
+// Reads the same activity_events stream every logActivityEvent call writes
+// to (Stage changes + the Ticket C field-diff entries + lead_created);
+// nothing here is editable from the UI.
+function LeadHistory({ leadId }: { leadId: string }) {
+  const fetchHistory = useServerFn(listLeadActivity);
+  const historyQ = useQuery({
+    queryKey: ["leads", "history", leadId],
+    queryFn: () => fetchHistory({ data: { leadId } }),
+  });
+
+  const events = historyQ.data?.events ?? [];
+
+  if (historyQ.isLoading) {
+    return <p className="text-xs text-muted-foreground">Loading history…</p>;
+  }
+  if (historyQ.error) {
+    return <p className="text-xs text-destructive">{getErrorMessage(historyQ.error)}</p>;
+  }
+  if (events.length === 0) {
+    return <p className="text-xs text-muted-foreground">No changes logged yet.</p>;
+  }
+
+  return (
+    <div className="max-h-48 space-y-1.5 overflow-y-auto pr-1">
+      {events.map((ev) => {
+        const md = (ev.metadata ?? {}) as Record<string, unknown>;
+        const actor = ev.actor_name || ev.actor_email || "Someone";
+        const when = formatDate(ev.occurred_at);
+        const description =
+          ev.event_type === "lead_created" ? (
+            "created this lead"
+          ) : (
+            <>
+              changed <span className="font-medium">{String(md.field ?? "a field")}</span> from{" "}
+              <span className="text-muted-foreground">{formatHistoryValue(md.from)}</span> to{" "}
+              <span className="font-medium">{formatHistoryValue(md.to)}</span>
+            </>
+          );
+        return (
+          <div key={ev.id} className="rounded border border-border p-2 text-xs">
+            <span className="font-medium">{actor}</span> {description}
+            <span className="text-muted-foreground"> — {when}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // Money fields are only shown once there is something to quote — Potential
 // leads with no quote yet don't need an empty wall of € inputs.
 const MONEY_RELEVANT_STAGES = new Set(["Quoted", "Active", "Parked", "Complete"]);
@@ -1020,6 +1086,13 @@ function LeadEditDialog({
               Email history
             </div>
             <LeadThread leadId={lead.id} />
+          </div>
+
+          <div>
+            <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              History
+            </div>
+            <LeadHistory leadId={lead.id} />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
