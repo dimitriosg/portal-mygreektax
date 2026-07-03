@@ -173,6 +173,43 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   errorComponent: ErrorComponent,
 });
 
+// Ticket C, Part 1 — a purely client-side connectivity indicator. Tells Jim
+// at a glance *why* a write just rolled back with a toast (Ticket B already
+// handles the failure safely; this just explains it). No server calls, no
+// new dependency — navigator.onLine + the online/offline window events.
+// Deliberately NOT an offline queue/merge system — see Ticket C scope note.
+function OnlineStatusBadge() {
+  const [isOnline, setIsOnline] = useState(true);
+
+  useEffect(() => {
+    setIsOnline(navigator.onLine);
+    const goOnline = () => setIsOnline(true);
+    const goOffline = () => setIsOnline(false);
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
+    return () => {
+      window.removeEventListener("online", goOnline);
+      window.removeEventListener("offline", goOffline);
+    };
+  }, []);
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium ${
+        isOnline
+          ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+          : "border-destructive/40 bg-destructive/10 text-destructive"
+      }`}
+      title={isOnline ? "Connected" : "Offline — edits will fail until your connection is back"}
+    >
+      <span
+        className={`h-1.5 w-1.5 rounded-full ${isOnline ? "bg-emerald-500" : "bg-destructive"}`}
+      />
+      {isOnline ? "Live" : "Offline"}
+    </span>
+  );
+}
+
 function RootShell({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
@@ -359,6 +396,7 @@ function AppShell() {
           <nav className="flex flex-wrap items-center gap-3 sm:gap-4 text-sm">
             {showAuthenticatedNav ? (
               <>
+                <OnlineStatusBadge />
                 <Link to="/dashboard" activeProps={{ className: "font-semibold" }}>
                   <span className="inline-flex items-center gap-2">
                     <span>Dashboard</span>

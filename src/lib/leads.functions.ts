@@ -15,6 +15,7 @@ import { createClientWithCode } from "./client-code.server";
 import { CLIENT_STAGES, LEAD_URGENCY_OPTIONS } from "./leads-shared";
 import { requireAdminAccess } from "./access-context.server";
 import { logActivityEvent } from "./activity.server";
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 // Internal-only pipeline view (Jim only) — every endpoint here requires admin
 // access. As of Task 4 (single-base consolidation) a "lead" is just a Client
@@ -28,6 +29,56 @@ const RECORD_ID = z
   .min(1)
   .max(80)
   .regex(/^rec[A-Za-z0-9]+$/, "Invalid record id");
+
+// Ticket C, Part 2 — every updateLead field except Stage (Stage keeps its
+// own lead_stage_changed event above, unchanged from Ticket B), mapped to
+// the Airtable field name it writes. Drives the generic diff-and-log loop
+// in updateLead's handler so every field the dialog's Save button and the
+// pipeline's quickUpdate can touch ends up in the one activity_events
+// stream — not a second table, not a second log.
+const UPDATE_LEAD_LOG_FIELDS: ReadonlyArray<{
+  key:
+    | "urgency"
+    | "leadValue"
+    | "notes"
+    | "lostReason"
+    | "email"
+    | "phone"
+    | "nationality"
+    | "afm"
+    | "taxisnetAccess"
+    | "cadence"
+    | "caseCode"
+    | "quoteSentDate"
+    | "quoteAmount"
+    | "deposit"
+    | "balanceDue"
+    | "partnerFee"
+    | "parkedReason"
+    | "nextAction"
+    | "nextActionDate";
+  airtableField: string;
+}> = [
+  { key: "urgency", airtableField: "Urgency" },
+  { key: "leadValue", airtableField: "Lead Value (€)" },
+  { key: "notes", airtableField: "Notes" },
+  { key: "lostReason", airtableField: "Lost Reason" },
+  { key: "email", airtableField: "Email" },
+  { key: "phone", airtableField: "Phone" },
+  { key: "nationality", airtableField: "Nationality" },
+  { key: "afm", airtableField: "AFM" },
+  { key: "taxisnetAccess", airtableField: "TAXISnet Access" },
+  { key: "cadence", airtableField: "Cadence" },
+  { key: "caseCode", airtableField: "Case Code" },
+  { key: "quoteSentDate", airtableField: "Quote Sent Date" },
+  { key: "quoteAmount", airtableField: "Quote Amount €" },
+  { key: "deposit", airtableField: "Deposit €" },
+  { key: "balanceDue", airtableField: "Balance Due €" },
+  { key: "partnerFee", airtableField: "Partner Fee €" },
+  { key: "parkedReason", airtableField: "Parked Reason" },
+  { key: "nextAction", airtableField: "Next Action" },
+  { key: "nextActionDate", airtableField: "Next Action Date" },
+];
 
 export const listLeads = createServerFn({ method: "GET" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
@@ -137,7 +188,39 @@ export const updateLead = createServerFn({ method: "POST" })
         actorUserId: context.userId,
         actorEmail: context.claims.email as string | undefined,
         subjectLabel: existing.fields["Full Name"] ?? data.leadId,
-        metadata: { leadId: data.leadId, from: previousStage, to: data.stage },
+        metadata: { leadId: data.leadId, field: "Stage", from: previousStage, to: data.stage },
+      });
+    }
+
+    // Ticket C, Part 2 — audit log for every other field this handler can
+    // write, covering both the Ticket B inline quickUpdate calls (Next
+    // Action / Next Action Date) and the detail dialog's batch Save (the
+    // rest). Reuses the SAME logActivityEvent + activity_events stream as
+    // lead_stage_changed/lead_created above — no second logging system.
+    // Diffed against `existing` (fetched once, above) so a field only logs
+    // when its value actually changed, whether the caller sent one field
+    // (quickUpdate) or the whole form (batch Save).
+    type LoggableValue = string | number | boolean | null;
+    const normalize = (v: unknown): LoggableValue =>
+      v === undefined ? null : (v as LoggableValue);
+    for (const { key, airtableField } of UPDATE_LEAD_LOG_FIELDS) {
+      const rawNewValue = (data as Record<string, unknown>)[key];
+      if (rawNewValue === undefined) continue;
+      const rawOldValue = (existing.fields as Record<string, unknown>)[airtableField];
+      const oldValue = normalize(rawOldValue);
+      const newValue = normalize(rawNewValue);
+      if (oldValue === newValue) continue;
+      await logActivityEvent({
+        eventType: "lead_field_changed",
+        actorUserId: context.userId,
+        actorEmail: context.claims.email as string | undefined,
+        subjectLabel: existing.fields["Full Name"] ?? data.leadId,
+        metadata: {
+          leadId: data.leadId,
+          field: airtableField,
+          from: oldValue,
+          to: newValue,
+        },
       });
     }
 
@@ -193,6 +276,32 @@ export const createLead = createServerFn({ method: "POST" })
     });
 
     return { lead: created as AirtableRecord<ClientFields> };
+  });
+
+// Ticket C, Part 2b — read-only history for one client, newest first.
+// Reads the same activity_events stream every other logActivityEvent call
+// writes to (Stage changes, Ticket C field-diff entries, lead_created) —
+// filtered by metadata.leadId, since that's the one place every one of
+// those entries already records which Client record it's about.
+export const listLeadActivity = createServerFn({ method: "GET" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d: { leadId: string }) => z.object({ leadId: RECORD_ID }).parse(d))
+  .handler(async ({ data, context }) => {
+    await requireAdminAccess({
+      userId: context.userId,
+      email: context.claims.email as string | undefined,
+    });
+
+    const { data: events, error } = await supabaseAdmin
+      .from("activity_events")
+      .select("*")
+      .in("event_type", ["lead_stage_changed", "lead_field_changed", "lead_created"])
+      .eq("metadata->>leadId", data.leadId)
+      .order("occurred_at", { ascending: false })
+      .limit(100);
+    if (error) throw new Error(`Failed to load activity history: ${error.message}`);
+
+    return { events: events ?? [] };
   });
 
 export const listLeadThread = createServerFn({ method: "GET" })
