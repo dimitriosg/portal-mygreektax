@@ -2,7 +2,18 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Plus, AlertTriangle } from "lucide-react";
+import { ChevronDown, ChevronRight, Plus, AlertTriangle, GripVertical } from "lucide-react";
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  useDraggable,
+  useDroppable,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import { CSS } from "@dnd-kit/utilities";
 import { listLeads, updateLead, createLead, listLeadThread } from "@/lib/leads.functions";
 import { listJobs } from "@/lib/jobs.functions";
 import { useAuth } from "@/lib/auth-context";
@@ -48,6 +59,15 @@ function stageStyle(stage?: string | null) {
 
 type Lead = AirtableRecord<ClientFields>;
 type Job = AirtableRecord<JobFields>;
+
+// Ticket B2 — the three fields that write back individually/optimistically,
+// from both the board and the detail dialog.
+type QuickUpdateVars = {
+  leadId: string;
+  stage?: string;
+  nextAction?: string;
+  nextActionDate?: string | null;
+};
 
 function leadValueLabel(value?: number | null) {
   if (value === undefined || value === null) return "—";
@@ -155,6 +175,49 @@ function LeadsPage() {
     onError: handleMutationError,
   });
 
+  // Ticket B2: Stage, Next Action, and Next Action Date each write back
+  // individually and optimistically (board dropdown/drag, board+list inline
+  // inputs, and the same three fields in the Client detail dialog all share
+  // this one mutation) - update the local cache immediately, then confirm
+  // against the real Airtable write; roll back and toast on failure. This is
+  // deliberately separate from the `update` mutation above, which still
+  // handles the rest of the detail dialog's fields via the batch Save button
+  // exactly as before.
+  const quickUpdate = useMutation({
+    mutationFn: (vars: QuickUpdateVars) => updateLeadFn({ data: vars }),
+    onMutate: async (vars) => {
+      await qc.cancelQueries({ queryKey: ["leads", "admin"] });
+      const previous = qc.getQueryData<{ leads: Lead[] }>(["leads", "admin"]);
+      qc.setQueryData<{ leads: Lead[] } | undefined>(["leads", "admin"], (old) => {
+        if (!old) return old;
+        return {
+          leads: old.leads.map((l) => {
+            if (l.id !== vars.leadId) return l;
+            const fields: ClientFields = { ...l.fields };
+            if (vars.stage !== undefined) fields.Stage = vars.stage;
+            if (vars.nextAction !== undefined) fields["Next Action"] = vars.nextAction;
+            if (vars.nextActionDate !== undefined) {
+              fields["Next Action Date"] = vars.nextActionDate ?? undefined;
+            }
+            return { ...l, fields };
+          }),
+        };
+      });
+      return { previous };
+    },
+    onError: (error, _vars, context) => {
+      if (context?.previous) qc.setQueryData(["leads", "admin"], context.previous);
+      if (isAuthSessionError(error)) {
+        navigate({ to: "/login", replace: true });
+        return;
+      }
+      toast.error(`Change reverted — ${getErrorMessage(error)}`);
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ["leads"] });
+    },
+  });
+
   const leads = leadsQ.data?.leads ?? [];
   const jobs = jobsQ.data?.jobs ?? [];
 
@@ -248,6 +311,19 @@ function LeadsPage() {
     { label: "Leads", error: leadsQ.error },
     { label: "Jobs", error: jobsQ.error },
   ].filter((e) => e.error) as Array<{ label: string; error: unknown }>;
+
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+
+  const handleBoardDragEnd = (event: DragEndEvent) => {
+    const overId = event.over?.id;
+    if (!overId) return;
+    const targetStage = String(overId);
+    if (!(CLIENT_STAGES as readonly string[]).includes(targetStage)) return;
+    const leadId = String(event.active.id);
+    const lead = leads.find((l) => l.id === leadId);
+    if (!lead || lead.fields.Stage === targetStage) return;
+    quickUpdate.mutate({ leadId, stage: targetStage });
+  };
 
   if (!isAdmin) return null;
 
@@ -352,108 +428,25 @@ function LeadsPage() {
       {leadsQ.isLoading ? (
         <p className="text-sm text-muted-foreground">Loading leads…</p>
       ) : view === "board" ? (
-        <div className="flex gap-3 overflow-x-auto pb-2">
-          {CLIENT_STAGES.map((stage) => {
-            const stageLeads = leadsByStage.get(stage) ?? [];
-            const collapsed = collapsedStages.has(stage);
-            if (collapsed) {
-              return (
-                <button
-                  key={stage}
-                  onClick={() => toggleCollapsed(stage)}
-                  title={`Expand ${stage}`}
-                  className={`flex w-10 shrink-0 flex-col items-center justify-start gap-2 rounded-md border px-1 py-2 ${stageStyle(stage)}`}
-                  style={{ minHeight: 240 }}
-                >
-                  <ChevronRight className="h-3.5 w-3.5 shrink-0" />
-                  <span className="shrink-0 rounded-full bg-background/70 px-1.5 text-[10px]">
-                    {stageLeads.length}
-                  </span>
-                  <span
-                    className="mt-1 whitespace-nowrap text-xs font-semibold uppercase tracking-wide"
-                    style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}
-                  >
-                    {stage}
-                  </span>
-                </button>
-              );
-            }
-            return (
-              <div key={stage} className="min-w-[260px] max-w-[280px] flex-1">
-                <button
-                  onClick={() => toggleCollapsed(stage)}
-                  className={`mb-2 flex w-full items-center justify-between rounded-md border px-2 py-1.5 text-xs font-semibold uppercase tracking-wide ${stageStyle(stage)}`}
-                  title={`Collapse ${stage}`}
-                >
-                  <span className="flex items-center gap-1.5">
-                    <ChevronDown className="h-3.5 w-3.5" />
-                    {stage}
-                  </span>
-                  <span className="rounded-full bg-background/70 px-2 py-0.5 text-[10px] normal-case">
-                    {stageLeads.length}
-                  </span>
-                </button>
-                <div className="space-y-2">
-                  {stageLeads.map((lead) => {
-                    const overdue = isOverdue(lead);
-                    return (
-                      <Card
-                        key={lead.id}
-                        className={`cursor-pointer border-l-4 transition-shadow hover:shadow-md ${stageStyle(stage).split(" ")[0]} ${overdue ? "ring-1 ring-destructive" : ""}`}
-                        onClick={() => setEditingLead(lead)}
-                      >
-                        <CardContent className="space-y-2 py-3">
-                          <div className="flex items-center justify-between gap-1">
-                            <div className="font-medium leading-tight">
-                              {lead.fields["Full Name"] ?? "—"}
-                            </div>
-                            {overdue && (
-                              <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-destructive" />
-                            )}
-                          </div>
-                          <div className="truncate text-xs text-muted-foreground">
-                            {lead.fields.Email ?? "—"}
-                          </div>
-                          <div className="flex items-center justify-between text-xs">
-                            <span className={urgencyTextClass(lead.fields.Urgency)}>
-                              {lead.fields.Urgency ?? "—"}
-                            </span>
-                            <span className="font-medium">
-                              {leadValueLabel(lead.fields["Lead Value (€)"])}
-                            </span>
-                          </div>
-                          {lead.fields["Client Code"] && (
-                            <div className="truncate text-xs text-muted-foreground">
-                              {lead.fields["Client Code"]}
-                            </div>
-                          )}
-                          <select
-                            value={lead.fields.Stage ?? ""}
-                            onClick={(e) => e.stopPropagation()}
-                            onChange={(e) => {
-                              e.stopPropagation();
-                              update.mutate({ leadId: lead.id, stage: e.target.value });
-                            }}
-                            className={`w-full rounded border px-2 py-1 text-xs ${stageStyle(lead.fields.Stage)}`}
-                          >
-                            {CLIENT_STAGES.map((s) => (
-                              <option key={s} value={s}>
-                                {s}
-                              </option>
-                            ))}
-                          </select>
-                        </CardContent>
-                      </Card>
-                    );
-                  })}
-                  {stageLeads.length === 0 && (
-                    <p className="px-1 text-xs text-muted-foreground">No leads</p>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleBoardDragEnd}
+        >
+          <div className="flex gap-3 overflow-x-auto pb-2">
+            {CLIENT_STAGES.map((stage) => (
+              <PipelineColumn
+                key={stage}
+                stage={stage}
+                leads={leadsByStage.get(stage) ?? []}
+                collapsed={collapsedStages.has(stage)}
+                onToggleCollapse={() => toggleCollapsed(stage)}
+                onOpen={setEditingLead}
+                quickUpdate={quickUpdate.mutate}
+              />
+            ))}
+          </div>
+        </DndContext>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-border">
           <table className="w-full min-w-[860px] text-sm">
@@ -494,73 +487,15 @@ function LeadsPage() {
                       </tr>
                     )}
                     {!collapsed &&
-                      stageLeads.map((lead) => {
-                        const clientJobs = jobsByClientId.get(lead.id) ?? [];
-                        const overdue = isOverdue(lead);
-                        return (
-                          <tr
-                            key={lead.id}
-                            className={`border-t border-border ${overdue ? "bg-destructive/5" : ""}`}
-                          >
-                            <td className="px-3 py-2 font-medium">
-                              {lead.fields["Full Name"] ?? "—"}
-                            </td>
-                            <td className="px-3 py-2 text-muted-foreground">
-                              {lead.fields.Email ?? "—"}
-                            </td>
-                            <td className="px-3 py-2">
-                              <select
-                                value={lead.fields.Stage ?? ""}
-                                onChange={(e) =>
-                                  update.mutate({ leadId: lead.id, stage: e.target.value })
-                                }
-                                className={`rounded border px-2 py-1 text-xs ${stageStyle(lead.fields.Stage)}`}
-                              >
-                                {CLIENT_STAGES.map((s) => (
-                                  <option key={s} value={s}>
-                                    {s}
-                                  </option>
-                                ))}
-                              </select>
-                            </td>
-                            <td className={`px-3 py-2 ${urgencyTextClass(lead.fields.Urgency)}`}>
-                              {lead.fields.Urgency ?? "—"}
-                            </td>
-                            <td className="px-3 py-2">
-                              {leadValueLabel(lead.fields["Lead Value (€)"])}
-                            </td>
-                            <td className="px-3 py-2 text-xs text-muted-foreground">
-                              {clientJobs.length > 0 ? (
-                                <div>
-                                  {clientJobs
-                                    .map(
-                                      (j) =>
-                                        `${j.fields["Job Code"] ?? "Job"} (${j.fields.Status ?? "—"})`,
-                                    )
-                                    .join(", ")}
-                                </div>
-                              ) : (
-                                "No jobs yet"
-                              )}
-                            </td>
-                            <td
-                              className={`px-3 py-2 ${overdue ? "font-semibold text-destructive" : "text-muted-foreground"}`}
-                            >
-                              {overdue && <AlertTriangle className="mr-1 inline h-3 w-3" />}
-                              {formatDate(lead.fields["Next Action Date"])}
-                            </td>
-                            <td className="px-3 py-2">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => setEditingLead(lead)}
-                              >
-                                Edit
-                              </Button>
-                            </td>
-                          </tr>
-                        );
-                      })}
+                      stageLeads.map((lead) => (
+                        <LeadListRow
+                          key={lead.id}
+                          lead={lead}
+                          clientJobs={jobsByClientId.get(lead.id) ?? []}
+                          onOpen={setEditingLead}
+                          quickUpdate={quickUpdate.mutate}
+                        />
+                      ))}
                   </>
                 );
               })}
@@ -581,6 +516,7 @@ function LeadsPage() {
             )
           }
           saving={update.isPending}
+          onQuickUpdate={(vars) => quickUpdate.mutate({ leadId: editingLead.id, ...vars })}
         />
       )}
 
@@ -592,6 +528,284 @@ function LeadsPage() {
         />
       )}
     </div>
+  );
+}
+
+// One droppable Stage column on the board. Extracted so useDroppable (a
+// hook) isn't called inside a .map() callback in the parent.
+function PipelineColumn({
+  stage,
+  leads,
+  collapsed,
+  onToggleCollapse,
+  onOpen,
+  quickUpdate,
+}: {
+  stage: string;
+  leads: Lead[];
+  collapsed: boolean;
+  onToggleCollapse: () => void;
+  onOpen: (lead: Lead) => void;
+  quickUpdate: (vars: QuickUpdateVars) => void;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: stage });
+
+  if (collapsed) {
+    return (
+      <button
+        onClick={onToggleCollapse}
+        title={`Expand ${stage}`}
+        className={`flex w-10 shrink-0 flex-col items-center justify-start gap-2 rounded-md border px-1 py-2 ${stageStyle(stage)}`}
+        style={{ minHeight: 240 }}
+      >
+        <ChevronRight className="h-3.5 w-3.5 shrink-0" />
+        <span className="shrink-0 rounded-full bg-background/70 px-1.5 text-[10px]">
+          {leads.length}
+        </span>
+        <span
+          className="mt-1 whitespace-nowrap text-xs font-semibold uppercase tracking-wide"
+          style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}
+        >
+          {stage}
+        </span>
+      </button>
+    );
+  }
+
+  return (
+    <div className="min-w-[260px] max-w-[280px] flex-1">
+      <button
+        onClick={onToggleCollapse}
+        className={`mb-2 flex w-full items-center justify-between rounded-md border px-2 py-1.5 text-xs font-semibold uppercase tracking-wide ${stageStyle(stage)}`}
+        title={`Collapse ${stage}`}
+      >
+        <span className="flex items-center gap-1.5">
+          <ChevronDown className="h-3.5 w-3.5" />
+          {stage}
+        </span>
+        <span className="rounded-full bg-background/70 px-2 py-0.5 text-[10px] normal-case">
+          {leads.length}
+        </span>
+      </button>
+      <div
+        ref={setNodeRef}
+        className={`space-y-2 rounded-md p-1 transition-colors ${isOver ? "bg-muted ring-2 ring-primary/40" : ""}`}
+        style={{ minHeight: 60 }}
+      >
+        {leads.map((lead) => (
+          <LeadCard
+            key={lead.id}
+            lead={lead}
+            stage={stage}
+            onOpen={onOpen}
+            quickUpdate={quickUpdate}
+          />
+        ))}
+        {leads.length === 0 && <p className="px-1 text-xs text-muted-foreground">No leads</p>}
+      </div>
+    </div>
+  );
+}
+
+// One draggable board card. Stage changes via the dropdown or by dragging
+// the card (grip handle only, so the rest of the card stays click-to-open
+// and the dropdown/inputs stay independently clickable) both call the same
+// optimistic quickUpdate mutation as the detail dialog.
+function LeadCard({
+  lead,
+  stage,
+  onOpen,
+  quickUpdate,
+}: {
+  lead: Lead;
+  stage: string;
+  onOpen: (lead: Lead) => void;
+  quickUpdate: (vars: QuickUpdateVars) => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: lead.id,
+  });
+  const overdue = isOverdue(lead);
+  const [nextActionDraft, setNextActionDraft] = useState(lead.fields["Next Action"] ?? "");
+
+  useEffect(() => {
+    setNextActionDraft(lead.fields["Next Action"] ?? "");
+  }, [lead.id, lead.fields["Next Action"]]);
+
+  const style = {
+    transform: transform ? CSS.Translate.toString(transform) : undefined,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 10 : undefined,
+    position: "relative" as const,
+  };
+
+  const commitNextAction = () => {
+    if (nextActionDraft !== (lead.fields["Next Action"] ?? "")) {
+      quickUpdate({ leadId: lead.id, nextAction: nextActionDraft });
+    }
+  };
+
+  return (
+    <Card
+      ref={setNodeRef}
+      style={style}
+      className={`cursor-pointer border-l-4 transition-shadow hover:shadow-md ${stageStyle(stage).split(" ")[0]} ${overdue ? "ring-1 ring-destructive" : ""}`}
+      onClick={() => onOpen(lead)}
+    >
+      <CardContent className="space-y-2 py-3">
+        <div className="flex items-center justify-between gap-1">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <button
+              type="button"
+              className="shrink-0 cursor-grab touch-none text-muted-foreground hover:text-foreground active:cursor-grabbing"
+              aria-label="Drag to change stage"
+              onClick={(e) => e.stopPropagation()}
+              {...attributes}
+              {...listeners}
+            >
+              <GripVertical className="h-3.5 w-3.5" />
+            </button>
+            <div className="truncate font-medium leading-tight">
+              {lead.fields["Full Name"] ?? "—"}
+            </div>
+          </div>
+          {overdue && <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-destructive" />}
+        </div>
+        <div className="truncate text-xs text-muted-foreground">{lead.fields.Email ?? "—"}</div>
+        <div className="flex items-center justify-between text-xs">
+          <span className={urgencyTextClass(lead.fields.Urgency)}>
+            {lead.fields.Urgency ?? "—"}
+          </span>
+          <span className="font-medium">{leadValueLabel(lead.fields["Lead Value (€)"])}</span>
+        </div>
+        {lead.fields["Client Code"] && (
+          <div className="truncate text-xs text-muted-foreground">{lead.fields["Client Code"]}</div>
+        )}
+        <select
+          value={lead.fields.Stage ?? ""}
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) => {
+            e.stopPropagation();
+            quickUpdate({ leadId: lead.id, stage: e.target.value });
+          }}
+          className={`w-full rounded border px-2 py-1 text-xs ${stageStyle(lead.fields.Stage)}`}
+        >
+          {CLIENT_STAGES.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </select>
+        <Input
+          value={nextActionDraft}
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) => setNextActionDraft(e.target.value)}
+          onBlur={commitNextAction}
+          placeholder="Next action…"
+          className="h-7 text-xs"
+        />
+        <Input
+          type="date"
+          value={
+            lead.fields["Next Action Date"] ? lead.fields["Next Action Date"].slice(0, 10) : ""
+          }
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) => {
+            e.stopPropagation();
+            quickUpdate({ leadId: lead.id, nextActionDate: e.target.value || null });
+          }}
+          className="h-7 text-xs"
+        />
+      </CardContent>
+    </Card>
+  );
+}
+
+// One row in the list view. Same quickUpdate mutation as the board; no drag
+// here (grouped-by-stage sections plus the dropdown already cover it).
+function LeadListRow({
+  lead,
+  clientJobs,
+  onOpen,
+  quickUpdate,
+}: {
+  lead: Lead;
+  clientJobs: Job[];
+  onOpen: (lead: Lead) => void;
+  quickUpdate: (vars: QuickUpdateVars) => void;
+}) {
+  const overdue = isOverdue(lead);
+  const [nextActionDraft, setNextActionDraft] = useState(lead.fields["Next Action"] ?? "");
+
+  useEffect(() => {
+    setNextActionDraft(lead.fields["Next Action"] ?? "");
+  }, [lead.id, lead.fields["Next Action"]]);
+
+  const commitNextAction = () => {
+    if (nextActionDraft !== (lead.fields["Next Action"] ?? "")) {
+      quickUpdate({ leadId: lead.id, nextAction: nextActionDraft });
+    }
+  };
+
+  return (
+    <tr className={`border-t border-border ${overdue ? "bg-destructive/5" : ""}`}>
+      <td className="px-3 py-2 font-medium">{lead.fields["Full Name"] ?? "—"}</td>
+      <td className="px-3 py-2 text-muted-foreground">{lead.fields.Email ?? "—"}</td>
+      <td className="px-3 py-2">
+        <select
+          value={lead.fields.Stage ?? ""}
+          onChange={(e) => quickUpdate({ leadId: lead.id, stage: e.target.value })}
+          className={`rounded border px-2 py-1 text-xs ${stageStyle(lead.fields.Stage)}`}
+        >
+          {CLIENT_STAGES.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </select>
+      </td>
+      <td className={`px-3 py-2 ${urgencyTextClass(lead.fields.Urgency)}`}>
+        {lead.fields.Urgency ?? "—"}
+      </td>
+      <td className="px-3 py-2">{leadValueLabel(lead.fields["Lead Value (€)"])}</td>
+      <td className="px-3 py-2 text-xs text-muted-foreground">
+        {clientJobs.length > 0 ? (
+          <div>
+            {clientJobs
+              .map((j) => `${j.fields["Job Code"] ?? "Job"} (${j.fields.Status ?? "—"})`)
+              .join(", ")}
+          </div>
+        ) : (
+          "No jobs yet"
+        )}
+      </td>
+      <td className="px-3 py-2">
+        <div className="flex flex-col gap-1">
+          <Input
+            value={nextActionDraft}
+            onChange={(e) => setNextActionDraft(e.target.value)}
+            onBlur={commitNextAction}
+            placeholder="Next action…"
+            className="h-7 text-xs"
+          />
+          <Input
+            type="date"
+            value={
+              lead.fields["Next Action Date"] ? lead.fields["Next Action Date"].slice(0, 10) : ""
+            }
+            onChange={(e) =>
+              quickUpdate({ leadId: lead.id, nextActionDate: e.target.value || null })
+            }
+            className={`h-7 text-xs ${overdue ? "border-destructive text-destructive" : ""}`}
+          />
+        </div>
+      </td>
+      <td className="px-3 py-2">
+        <Button size="sm" variant="outline" onClick={() => onOpen(lead)}>
+          Edit
+        </Button>
+      </td>
+    </tr>
   );
 }
 
@@ -654,12 +868,12 @@ function LeadEditDialog({
   onClose,
   onSave,
   saving,
+  onQuickUpdate,
 }: {
   lead: Lead;
   clientJobs: Job[];
   onClose: () => void;
   onSave: (vars: {
-    stage?: string;
     urgency?: string | null;
     leadValue?: number | null;
     notes?: string;
@@ -679,6 +893,14 @@ function LeadEditDialog({
     parkedReason?: string;
   }) => void;
   saving: boolean;
+  // Ticket B2 — Stage / Next Action / Next Action Date save instantly
+  // (optimistic, same mutation the board uses) instead of waiting for the
+  // batch Save button below.
+  onQuickUpdate: (vars: {
+    stage?: string;
+    nextAction?: string;
+    nextActionDate?: string | null;
+  }) => void;
 }) {
   const [stage, setStage] = useState(lead.fields.Stage ?? "Potential");
   const [urgency, setUrgency] = useState(lead.fields.Urgency ?? "");
@@ -700,6 +922,23 @@ function LeadEditDialog({
   const [balanceDue, setBalanceDue] = useState(euroField(lead.fields["Balance Due €"]));
   const [partnerFee, setPartnerFee] = useState(euroField(lead.fields["Partner Fee €"]));
   const [parkedReason, setParkedReason] = useState(lead.fields["Parked Reason"] ?? "");
+  const [nextActionDraft, setNextActionDraft] = useState(lead.fields["Next Action"] ?? "");
+  const [nextActionDate, setNextActionDate] = useState(
+    lead.fields["Next Action Date"] ? lead.fields["Next Action Date"].slice(0, 10) : "",
+  );
+
+  useEffect(() => {
+    setNextActionDraft(lead.fields["Next Action"] ?? "");
+    setNextActionDate(
+      lead.fields["Next Action Date"] ? lead.fields["Next Action Date"].slice(0, 10) : "",
+    );
+  }, [lead.id, lead.fields["Next Action"], lead.fields["Next Action Date"]]);
+
+  const commitNextAction = () => {
+    if (nextActionDraft !== (lead.fields["Next Action"] ?? "")) {
+      onQuickUpdate({ nextAction: nextActionDraft });
+    }
+  };
 
   const showMoney = MONEY_RELEVANT_STAGES.has(stage);
 
@@ -788,7 +1027,11 @@ function LeadEditDialog({
               <Label>Stage</Label>
               <select
                 value={stage}
-                onChange={(e) => setStage(e.target.value)}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setStage(next);
+                  onQuickUpdate({ stage: next });
+                }}
                 className={`mt-1 w-full rounded border px-2 py-2 text-sm ${stageStyle(stage)}`}
               >
                 {CLIENT_STAGES.map((s) => (
@@ -797,6 +1040,29 @@ function LeadEditDialog({
                   </option>
                 ))}
               </select>
+            </div>
+            <div>
+              <Label>Next action</Label>
+              <Input
+                value={nextActionDraft}
+                onChange={(e) => setNextActionDraft(e.target.value)}
+                onBlur={commitNextAction}
+                placeholder="Next action…"
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label>Next action date</Label>
+              <Input
+                type="date"
+                value={nextActionDate}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setNextActionDate(next);
+                  onQuickUpdate({ nextActionDate: next || null });
+                }}
+                className="mt-1"
+              />
             </div>
             <div>
               <Label>Urgency</Label>
@@ -921,7 +1187,6 @@ function LeadEditDialog({
             disabled={saving}
             onClick={() =>
               onSave({
-                stage,
                 urgency: urgency === "" ? null : urgency,
                 leadValue: leadValue === "" ? null : Number(leadValue),
                 notes,

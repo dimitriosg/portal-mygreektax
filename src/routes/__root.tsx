@@ -21,6 +21,7 @@ import { isPasswordRecoveryPending } from "@/lib/auth-recovery";
 import { getErrorMessage, isAuthSessionError } from "@/lib/auth-errors";
 import { createErrorReferenceId, debugError, isDebugEnabled } from "@/lib/debug";
 import { listJobs } from "@/lib/jobs.functions";
+import { listLeads } from "@/lib/leads.functions";
 
 function isPastDueDate(value: string | undefined) {
   if (!value) return false;
@@ -282,6 +283,28 @@ function AppShell() {
       ).length,
     [overdueJobs],
   );
+
+  // Pipeline nav badge (Ticket B4): new Potential leads with no Next Action
+  // Date set yet — the "check Airtable to see what just came in" replacement.
+  // Shares the exact same query key as /leads' own useQuery, so this query
+  // and the Pipeline page's query are the same cache entry: navigating to
+  // /leads doesn't refetch, and any optimistic edit made there (Stage,
+  // Next Action, Next Action Date) updates this badge immediately too.
+  const fetchLeadsForBadge = useServerFn(listLeads);
+  const potentialLeadsQuery = useQuery({
+    queryKey: ["leads", "admin"],
+    queryFn: () => fetchLeadsForBadge(),
+    enabled: !loading && !!user && sessionReady && accessStatus === "resolved" && isAdmin,
+    throwOnError: false,
+  });
+  const newLeadsNeedingActionCount = useMemo(() => {
+    const leads = Array.isArray(potentialLeadsQuery.data?.leads)
+      ? potentialLeadsQuery.data.leads
+      : [];
+    return leads.filter(
+      (lead) => lead.fields.Stage === "Potential" && !lead.fields["Next Action Date"],
+    ).length;
+  }, [potentialLeadsQuery.data?.leads]);
   useEffect(() => {
     if (!user || !sessionReady) {
       setRecoveryPending(false);
@@ -356,7 +379,17 @@ function AppShell() {
                 )}
                 {isAdmin && (
                   <Link to="/leads" activeProps={{ className: "font-semibold" }}>
-                    Pipeline
+                    <span className="inline-flex items-center gap-2">
+                      <span>Pipeline</span>
+                      {newLeadsNeedingActionCount > 0 && (
+                        <span
+                          className="rounded-full bg-destructive text-white text-xs h-5 w-5 flex items-center justify-center"
+                          title={`${newLeadsNeedingActionCount} new lead(s) with no next action set`}
+                        >
+                          {newLeadsNeedingActionCount}
+                        </span>
+                      )}
+                    </span>
                   </Link>
                 )}
                 {isRealAdmin && impersonatingId && (
