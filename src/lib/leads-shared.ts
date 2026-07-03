@@ -7,8 +7,8 @@ export const CLIENT_STAGES = [
   "Potential",
   "Quoted",
   "Active",
-  "Parked",
   "Complete",
+  "Parked",
   "Lost",
 ] as const;
 
