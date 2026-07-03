@@ -396,6 +396,7 @@ function AppShell() {
           <nav className="flex flex-wrap items-center gap-3 sm:gap-4 text-sm">
             {showAuthenticatedNav ? (
               <>
+                <OnlineStatusBadge />
                 <Link to="/dashboard" activeProps={{ className: "font-semibold" }}>
                   <span className="inline-flex items-center gap-2">
                     <span>Dashboard</span>
@@ -409,7 +410,6 @@ function AppShell() {
                       )}
                   </span>
                 </Link>
-                <OnlineStatusBadge />
                 {isAdmin && (
                   <Link to="/admin" activeProps={{ className: "font-semibold" }}>
                     Admin
