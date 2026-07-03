@@ -63,6 +63,8 @@ export const updateLead = createServerFn({ method: "POST" })
       balanceDue?: number | null;
       partnerFee?: number | null;
       parkedReason?: string;
+      nextAction?: string;
+      nextActionDate?: string | null;
     }) =>
       z
         .object({
@@ -85,6 +87,8 @@ export const updateLead = createServerFn({ method: "POST" })
           balanceDue: z.number().min(0).max(1_000_000).nullable().optional(),
           partnerFee: z.number().min(0).max(1_000_000).nullable().optional(),
           parkedReason: z.string().max(500).optional(),
+          nextAction: z.string().max(2000).optional(),
+          nextActionDate: z.string().nullable().optional(),
         })
         .parse(d),
   )
@@ -118,6 +122,8 @@ export const updateLead = createServerFn({ method: "POST" })
     if (data.balanceDue !== undefined) fields["Balance Due €"] = data.balanceDue;
     if (data.partnerFee !== undefined) fields["Partner Fee €"] = data.partnerFee;
     if (data.parkedReason !== undefined) fields["Parked Reason"] = data.parkedReason;
+    if (data.nextAction !== undefined) fields["Next Action"] = data.nextAction;
+    if (data.nextActionDate !== undefined) fields["Next Action Date"] = data.nextActionDate;
 
     const updated = (await airtablePatch(
       TABLES.clients,
