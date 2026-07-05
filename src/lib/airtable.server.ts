@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // Server-only CRM data layer.
 //
 // HISTORY: this module used to call the Airtable REST API. As of the Jul 2026
@@ -212,7 +213,10 @@ function rowToRecord(cfg: TableConfig, row: Record<string, unknown>): AirtableRe
 }
 
 // Airtable-shaped fields object -> Postgres columns (for writes)
-function fieldsToColumns(cfg: TableConfig, fields: Record<string, unknown>): Record<string, unknown> {
+function fieldsToColumns(
+  cfg: TableConfig,
+  fields: Record<string, unknown>,
+): Record<string, unknown> {
   const cols: Record<string, unknown> = {};
   for (const [name, value] of Object.entries(fields)) {
     const def = cfg.fields[name];
@@ -240,17 +244,17 @@ function fail(op: string, table: string, error: unknown): never {
  *  - airtableGet(`${TABLES.x}/${id}`)  -> single AirtableRecord
  *  - airtableGet(TABLES.x, query)      -> { records }  (supports filterByFormula on Email)
  */
-export async function airtableGet(path: string, query?: AirtableQuery, _baseId?: string): Promise<any> {
+export async function airtableGet(
+  path: string,
+  query?: AirtableQuery,
+  _baseId?: string,
+): Promise<any> {
   const slash = path.indexOf("/");
   if (slash !== -1) {
     const table = path.slice(0, slash);
     const id = path.slice(slash + 1);
     const cfg = configFor(table);
-    const { data, error } = await db
-      .from(cfg.readFrom)
-      .select("*")
-      .eq("id", id)
-      .maybeSingle();
+    const { data, error } = await db.from(cfg.readFrom).select("*").eq("id", id).maybeSingle();
     if (error) fail("GET", table, error);
     if (!data) {
       // Not found: mirror Airtable's 404 as an error so callers that expect a
@@ -264,7 +268,9 @@ export async function airtableGet(path: string, query?: AirtableQuery, _baseId?:
   const cfg = configFor(path);
   const { data, error } = await db.from(cfg.readFrom).select("*");
   if (error) fail("GET", path, error);
-  let records = (data ?? []).map((r: Record<string, unknown>) => rowToRecord(cfg, r as Record<string, unknown>));
+  let records = (data ?? []).map((r: Record<string, unknown>) =>
+    rowToRecord(cfg, r as Record<string, unknown>),
+  );
   records = applyFormula(records, query?.filterByFormula);
   const max = query?.maxRecords ? parseInt(String(query.maxRecords), 10) : undefined;
   if (max && records.length > max) records = records.slice(0, max);
@@ -282,7 +288,9 @@ export async function airtableListAll<T = Record<string, unknown>>(
     .select("*")
     .order("created_at", { ascending: true });
   if (error) fail("LIST", table, error);
-  let records = (data ?? []).map((r: Record<string, unknown>) => rowToRecord(cfg, r as Record<string, unknown>));
+  let records = (data ?? []).map((r: Record<string, unknown>) =>
+    rowToRecord(cfg, r as Record<string, unknown>),
+  );
   records = applyFormula(records, query?.filterByFormula);
   return { records: records as AirtableRecord<T>[] };
 }
@@ -313,11 +321,7 @@ export async function airtablePost(
 ): Promise<any> {
   const cfg = configFor(table);
   const cols = fieldsToColumns(cfg, fields);
-  const { data: inserted, error } = await db
-    .from(cfg.writeTo)
-    .insert(cols)
-    .select("id")
-    .single();
+  const { data: inserted, error } = await db.from(cfg.writeTo).insert(cols).select("id").single();
   if (error) fail("POST", table, error);
   const id = (inserted as { id: string }).id;
   const { data, error: readErr } = await db
