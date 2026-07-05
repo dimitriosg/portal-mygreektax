@@ -16,6 +16,7 @@ import { Route as LeadsRouteImport } from './routes/leads'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as WebhooksLeadIntakeRouteImport } from './routes/webhooks/lead-intake'
 import { Route as TrackTokenRouteImport } from './routes/track.$token'
 import { Route as JobsJobIdRouteImport } from './routes/jobs.$jobId'
 import { Route as InviteTokenRouteImport } from './routes/invite.$token'
@@ -63,6 +64,11 @@ const AdminRoute = AdminRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WebhooksLeadIntakeRoute = WebhooksLeadIntakeRouteImport.update({
+  id: '/webhooks/lead-intake',
+  path: '/webhooks/lead-intake',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TrackTokenRoute = TrackTokenRouteImport.update({
@@ -148,6 +154,7 @@ export interface FileRoutesByFullPath {
   '/invite/$token': typeof InviteTokenRoute
   '/jobs/$jobId': typeof JobsJobIdRoute
   '/track/$token': typeof TrackTokenRoute
+  '/webhooks/lead-intake': typeof WebhooksLeadIntakeRoute
   '/lovable/email/suppression': typeof LovableEmailSuppressionRoute
   '/lovable/email/auth/preview': typeof LovableEmailAuthPreviewRoute
   '/lovable/email/auth/webhook': typeof LovableEmailAuthWebhookRoute
@@ -170,6 +177,7 @@ export interface FileRoutesByTo {
   '/invite/$token': typeof InviteTokenRoute
   '/jobs/$jobId': typeof JobsJobIdRoute
   '/track/$token': typeof TrackTokenRoute
+  '/webhooks/lead-intake': typeof WebhooksLeadIntakeRoute
   '/lovable/email/suppression': typeof LovableEmailSuppressionRoute
   '/lovable/email/auth/preview': typeof LovableEmailAuthPreviewRoute
   '/lovable/email/auth/webhook': typeof LovableEmailAuthWebhookRoute
@@ -193,6 +201,7 @@ export interface FileRoutesById {
   '/invite/$token': typeof InviteTokenRoute
   '/jobs/$jobId': typeof JobsJobIdRoute
   '/track/$token': typeof TrackTokenRoute
+  '/webhooks/lead-intake': typeof WebhooksLeadIntakeRoute
   '/lovable/email/suppression': typeof LovableEmailSuppressionRoute
   '/lovable/email/auth/preview': typeof LovableEmailAuthPreviewRoute
   '/lovable/email/auth/webhook': typeof LovableEmailAuthWebhookRoute
@@ -217,6 +226,7 @@ export interface FileRouteTypes {
     | '/invite/$token'
     | '/jobs/$jobId'
     | '/track/$token'
+    | '/webhooks/lead-intake'
     | '/lovable/email/suppression'
     | '/lovable/email/auth/preview'
     | '/lovable/email/auth/webhook'
@@ -239,6 +249,7 @@ export interface FileRouteTypes {
     | '/invite/$token'
     | '/jobs/$jobId'
     | '/track/$token'
+    | '/webhooks/lead-intake'
     | '/lovable/email/suppression'
     | '/lovable/email/auth/preview'
     | '/lovable/email/auth/webhook'
@@ -261,6 +272,7 @@ export interface FileRouteTypes {
     | '/invite/$token'
     | '/jobs/$jobId'
     | '/track/$token'
+    | '/webhooks/lead-intake'
     | '/lovable/email/suppression'
     | '/lovable/email/auth/preview'
     | '/lovable/email/auth/webhook'
@@ -282,6 +294,7 @@ export interface RootRouteChildren {
   InviteTokenRoute: typeof InviteTokenRoute
   JobsJobIdRoute: typeof JobsJobIdRoute
   TrackTokenRoute: typeof TrackTokenRoute
+  WebhooksLeadIntakeRoute: typeof WebhooksLeadIntakeRoute
   LovableEmailSuppressionRoute: typeof LovableEmailSuppressionRoute
   LovableEmailAuthPreviewRoute: typeof LovableEmailAuthPreviewRoute
   LovableEmailAuthWebhookRoute: typeof LovableEmailAuthWebhookRoute
@@ -340,6 +353,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/webhooks/lead-intake': {
+      id: '/webhooks/lead-intake'
+      path: '/webhooks/lead-intake'
+      fullPath: '/webhooks/lead-intake'
+      preLoaderRoute: typeof WebhooksLeadIntakeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/track/$token': {
@@ -460,6 +480,7 @@ const rootRouteChildren: RootRouteChildren = {
   InviteTokenRoute: InviteTokenRoute,
   JobsJobIdRoute: JobsJobIdRoute,
   TrackTokenRoute: TrackTokenRoute,
+  WebhooksLeadIntakeRoute: WebhooksLeadIntakeRoute,
   LovableEmailSuppressionRoute: LovableEmailSuppressionRoute,
   LovableEmailAuthPreviewRoute: LovableEmailAuthPreviewRoute,
   LovableEmailAuthWebhookRoute: LovableEmailAuthWebhookRoute,

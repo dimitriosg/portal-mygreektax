@@ -105,16 +105,17 @@
   --sidebar-border: oklch(0.929 0.013 255.508);
   --sidebar-ring: oklch(0.704 0.04 256.788);
   /* MyGreekTax brand: amber gold, navy ink, cream paper, olive accent */
-  --brand: oklch(0.66 0.12 75);            /* amber #B8812E */
+  --brand: oklch(0.66 0.12 75); /* amber #B8812E */
   --brand-foreground: oklch(0.97 0.02 85); /* cream */
-  --brand-muted: oklch(0.95 0.03 80);      /* tinted cream */
-  --navy: oklch(0.28 0.05 260);            /* deep ink #1F2A44 */
-  --cream: oklch(0.965 0.018 85);          /* #F7F3EE */
-  --olive: oklch(0.6 0.06 130);            /* #7A8A5A */
+  --brand-muted: oklch(0.95 0.03 80); /* tinted cream */
+  --navy: oklch(0.28 0.05 260); /* deep ink #1F2A44 */
+  --cream: oklch(0.965 0.018 85); /* #F7F3EE */
+  --olive: oklch(0.6 0.06 130); /* #7A8A5A */
   --success: oklch(0.6 0.08 145);
   --warning: oklch(0.74 0.16 70);
   --gradient-hero: linear-gradient(180deg, oklch(0.965 0.018 85) 0%, oklch(0.985 0.01 85) 100%);
-  --shadow-soft: 0 1px 2px oklch(0.28 0.05 260 / 0.05), 0 12px 32px -16px oklch(0.28 0.05 260 / 0.18);
+  --shadow-soft:
+    0 1px 2px oklch(0.28 0.05 260 / 0.05), 0 12px 32px -16px oklch(0.28 0.05 260 / 0.18);
 }
 
 .dark {
@@ -174,9 +175,15 @@
 }
 
 @keyframes shimmer {
-  0% { opacity: 1; }
-  50% { opacity: 0.55; }
-  100% { opacity: 1; }
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+  100% {
+    opacity: 1;
+  }
 }
 
 .animate-shimmer {
