@@ -7,7 +7,9 @@ import { describeSupabaseToken, getSupabaseProjectHost } from "./auth-diagnostic
 import type { Database } from "./types";
 
 type AuthValidationSource =
-  "publishable_get_user" | "publishable_rest_user" | "service_role_rest_user";
+  | "publishable_get_user"
+  | "publishable_rest_user"
+  | "service_role_rest_user";
 
 type AuthValidationAttempt = {
   source: AuthValidationSource;
