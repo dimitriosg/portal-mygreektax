@@ -561,10 +561,7 @@ function LeadsPage() {
           canDelete={isAdmin}
           deleting={removeLead.isPending}
           onDelete={() =>
-            removeLead.mutate(
-              { leadId: editingLead.id },
-              { onSuccess: () => setEditingLead(null) },
-            )
+            removeLead.mutate({ leadId: editingLead.id }, { onSuccess: () => setEditingLead(null) })
           }
         />
       )}
@@ -1037,7 +1034,9 @@ function LeadEditDialog({
   const [balanceDue, setBalanceDue] = useState(euroField(lead.fields["Balance Due €"]));
   const [partnerFee, setPartnerFee] = useState(euroField(lead.fields["Partner Fee €"]));
   const [parkedReason, setParkedReason] = useState(lead.fields["Parked Reason"] ?? "");
-  const [clientVisibleNote, setClientVisibleNote] = useState(lead.fields["Client Visible Note"] ?? "");
+  const [clientVisibleNote, setClientVisibleNote] = useState(
+    lead.fields["Client Visible Note"] ?? "",
+  );
   const [threadId, setThreadId] = useState(lead.fields["Thread ID"] ?? "");
   const [nextActionDraft, setNextActionDraft] = useState(lead.fields["Next Action"] ?? "");
   const [nextActionDate, setNextActionDate] = useState(
@@ -1072,7 +1071,11 @@ function LeadEditDialog({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label>Full name</Label>
-              <Input value={fullName} onChange={(e) => setFullName(e.target.value)} className="mt-1" />
+              <Input
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                className="mt-1"
+              />
             </div>
             <div>
               <Label>Client code</Label>
@@ -1335,7 +1338,11 @@ function LeadEditDialog({
           </div>
           <div>
             <Label>Thread ID</Label>
-            <Input value={threadId} onChange={(e) => setThreadId(e.target.value)} className="mt-1" />
+            <Input
+              value={threadId}
+              onChange={(e) => setThreadId(e.target.value)}
+              className="mt-1"
+            />
           </div>
           {canDelete && (
             <div className="rounded border border-destructive/30 bg-destructive/5 p-3">

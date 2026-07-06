@@ -203,7 +203,8 @@ export const updateLead = createServerFn({ method: "POST" })
     if (data.clientCode !== undefined) fields["Client Code"] = data.clientCode;
     if (data.status !== undefined) fields.Status = data.status;
     if (data.source !== undefined) fields.Source = data.source;
-    if (data.clientVisibleNote !== undefined) fields["Client Visible Note"] = data.clientVisibleNote;
+    if (data.clientVisibleNote !== undefined)
+      fields["Client Visible Note"] = data.clientVisibleNote;
     if (data.threadId !== undefined) fields["Thread ID"] = data.threadId;
 
     const updated = (await airtablePatch(
