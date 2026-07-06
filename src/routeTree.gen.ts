@@ -17,6 +17,7 @@ import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as WebhooksLeadIntakeRouteImport } from './routes/webhooks/lead-intake'
+import { Route as WebhooksConversationLogRouteImport } from './routes/webhooks/conversation-log'
 import { Route as TrackTokenRouteImport } from './routes/track.$token'
 import { Route as JobsJobIdRouteImport } from './routes/jobs.$jobId'
 import { Route as InviteTokenRouteImport } from './routes/invite.$token'
@@ -29,7 +30,6 @@ import { Route as LovableEmailTransactionalPreviewRouteImport } from './routes/l
 import { Route as LovableEmailQueueProcessRouteImport } from './routes/lovable/email/queue/process'
 import { Route as LovableEmailAuthWebhookRouteImport } from './routes/lovable/email/auth/webhook'
 import { Route as LovableEmailAuthPreviewRouteImport } from './routes/lovable/email/auth/preview'
-import { Route as WebhooksLeadIntakeRouteImport } from './routes/webhooks/lead-intake'
 
 const UnsubscribeRoute = UnsubscribeRouteImport.update({
   id: '/unsubscribe',
@@ -69,6 +69,11 @@ const IndexRoute = IndexRouteImport.update({
 const WebhooksLeadIntakeRoute = WebhooksLeadIntakeRouteImport.update({
   id: '/webhooks/lead-intake',
   path: '/webhooks/lead-intake',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WebhooksConversationLogRoute = WebhooksConversationLogRouteImport.update({
+  id: '/webhooks/conversation-log',
+  path: '/webhooks/conversation-log',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TrackTokenRoute = TrackTokenRouteImport.update({
@@ -134,11 +139,6 @@ const LovableEmailAuthPreviewRoute = LovableEmailAuthPreviewRouteImport.update({
   path: '/lovable/email/auth/preview',
   getParentRoute: () => rootRouteImport,
 } as any)
-const WebhooksLeadIntakeRoute = WebhooksLeadIntakeRouteImport.update({
-  id: '/webhooks/lead-intake',
-  path: '/webhooks/lead-intake',
-  getParentRoute: () => rootRouteImport,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -154,6 +154,7 @@ export interface FileRoutesByFullPath {
   '/invite/$token': typeof InviteTokenRoute
   '/jobs/$jobId': typeof JobsJobIdRoute
   '/track/$token': typeof TrackTokenRoute
+  '/webhooks/conversation-log': typeof WebhooksConversationLogRoute
   '/webhooks/lead-intake': typeof WebhooksLeadIntakeRoute
   '/lovable/email/suppression': typeof LovableEmailSuppressionRoute
   '/lovable/email/auth/preview': typeof LovableEmailAuthPreviewRoute
@@ -161,7 +162,6 @@ export interface FileRoutesByFullPath {
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
   '/lovable/email/transactional/preview': typeof LovableEmailTransactionalPreviewRoute
   '/lovable/email/transactional/send': typeof LovableEmailTransactionalSendRoute
-  '/webhooks/lead-intake': typeof WebhooksLeadIntakeRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -177,6 +177,7 @@ export interface FileRoutesByTo {
   '/invite/$token': typeof InviteTokenRoute
   '/jobs/$jobId': typeof JobsJobIdRoute
   '/track/$token': typeof TrackTokenRoute
+  '/webhooks/conversation-log': typeof WebhooksConversationLogRoute
   '/webhooks/lead-intake': typeof WebhooksLeadIntakeRoute
   '/lovable/email/suppression': typeof LovableEmailSuppressionRoute
   '/lovable/email/auth/preview': typeof LovableEmailAuthPreviewRoute
@@ -184,7 +185,6 @@ export interface FileRoutesByTo {
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
   '/lovable/email/transactional/preview': typeof LovableEmailTransactionalPreviewRoute
   '/lovable/email/transactional/send': typeof LovableEmailTransactionalSendRoute
-  '/webhooks/lead-intake': typeof WebhooksLeadIntakeRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -201,6 +201,7 @@ export interface FileRoutesById {
   '/invite/$token': typeof InviteTokenRoute
   '/jobs/$jobId': typeof JobsJobIdRoute
   '/track/$token': typeof TrackTokenRoute
+  '/webhooks/conversation-log': typeof WebhooksConversationLogRoute
   '/webhooks/lead-intake': typeof WebhooksLeadIntakeRoute
   '/lovable/email/suppression': typeof LovableEmailSuppressionRoute
   '/lovable/email/auth/preview': typeof LovableEmailAuthPreviewRoute
@@ -208,7 +209,6 @@ export interface FileRoutesById {
   '/lovable/email/queue/process': typeof LovableEmailQueueProcessRoute
   '/lovable/email/transactional/preview': typeof LovableEmailTransactionalPreviewRoute
   '/lovable/email/transactional/send': typeof LovableEmailTransactionalSendRoute
-  '/webhooks/lead-intake': typeof WebhooksLeadIntakeRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -226,6 +226,7 @@ export interface FileRouteTypes {
     | '/invite/$token'
     | '/jobs/$jobId'
     | '/track/$token'
+    | '/webhooks/conversation-log'
     | '/webhooks/lead-intake'
     | '/lovable/email/suppression'
     | '/lovable/email/auth/preview'
@@ -233,7 +234,6 @@ export interface FileRouteTypes {
     | '/lovable/email/queue/process'
     | '/lovable/email/transactional/preview'
     | '/lovable/email/transactional/send'
-    | '/webhooks/lead-intake'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -249,6 +249,7 @@ export interface FileRouteTypes {
     | '/invite/$token'
     | '/jobs/$jobId'
     | '/track/$token'
+    | '/webhooks/conversation-log'
     | '/webhooks/lead-intake'
     | '/lovable/email/suppression'
     | '/lovable/email/auth/preview'
@@ -256,7 +257,6 @@ export interface FileRouteTypes {
     | '/lovable/email/queue/process'
     | '/lovable/email/transactional/preview'
     | '/lovable/email/transactional/send'
-    | '/webhooks/lead-intake'
   id:
     | '__root__'
     | '/'
@@ -272,6 +272,7 @@ export interface FileRouteTypes {
     | '/invite/$token'
     | '/jobs/$jobId'
     | '/track/$token'
+    | '/webhooks/conversation-log'
     | '/webhooks/lead-intake'
     | '/lovable/email/suppression'
     | '/lovable/email/auth/preview'
@@ -279,7 +280,6 @@ export interface FileRouteTypes {
     | '/lovable/email/queue/process'
     | '/lovable/email/transactional/preview'
     | '/lovable/email/transactional/send'
-    | '/webhooks/lead-intake'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -294,6 +294,7 @@ export interface RootRouteChildren {
   InviteTokenRoute: typeof InviteTokenRoute
   JobsJobIdRoute: typeof JobsJobIdRoute
   TrackTokenRoute: typeof TrackTokenRoute
+  WebhooksConversationLogRoute: typeof WebhooksConversationLogRoute
   WebhooksLeadIntakeRoute: typeof WebhooksLeadIntakeRoute
   LovableEmailSuppressionRoute: typeof LovableEmailSuppressionRoute
   LovableEmailAuthPreviewRoute: typeof LovableEmailAuthPreviewRoute
@@ -301,7 +302,6 @@ export interface RootRouteChildren {
   LovableEmailQueueProcessRoute: typeof LovableEmailQueueProcessRoute
   LovableEmailTransactionalPreviewRoute: typeof LovableEmailTransactionalPreviewRoute
   LovableEmailTransactionalSendRoute: typeof LovableEmailTransactionalSendRoute
-  WebhooksLeadIntakeRoute: typeof WebhooksLeadIntakeRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -360,6 +360,13 @@ declare module '@tanstack/react-router' {
       path: '/webhooks/lead-intake'
       fullPath: '/webhooks/lead-intake'
       preLoaderRoute: typeof WebhooksLeadIntakeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/webhooks/conversation-log': {
+      id: '/webhooks/conversation-log'
+      path: '/webhooks/conversation-log'
+      fullPath: '/webhooks/conversation-log'
+      preLoaderRoute: typeof WebhooksConversationLogRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/track/$token': {
@@ -446,13 +453,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LovableEmailAuthPreviewRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/webhooks/lead-intake': {
-      id: '/webhooks/lead-intake'
-      path: '/webhooks/lead-intake'
-      fullPath: '/webhooks/lead-intake'
-      preLoaderRoute: typeof WebhooksLeadIntakeRouteImport
-      parentRoute: typeof rootRouteImport
-    }
   }
 }
 
@@ -480,6 +480,7 @@ const rootRouteChildren: RootRouteChildren = {
   InviteTokenRoute: InviteTokenRoute,
   JobsJobIdRoute: JobsJobIdRoute,
   TrackTokenRoute: TrackTokenRoute,
+  WebhooksConversationLogRoute: WebhooksConversationLogRoute,
   WebhooksLeadIntakeRoute: WebhooksLeadIntakeRoute,
   LovableEmailSuppressionRoute: LovableEmailSuppressionRoute,
   LovableEmailAuthPreviewRoute: LovableEmailAuthPreviewRoute,
@@ -487,7 +488,6 @@ const rootRouteChildren: RootRouteChildren = {
   LovableEmailQueueProcessRoute: LovableEmailQueueProcessRoute,
   LovableEmailTransactionalPreviewRoute: LovableEmailTransactionalPreviewRoute,
   LovableEmailTransactionalSendRoute: LovableEmailTransactionalSendRoute,
-  WebhooksLeadIntakeRoute: WebhooksLeadIntakeRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
