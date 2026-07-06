@@ -83,9 +83,7 @@ export function formatClientCode(sequence: number): string {
 
 /** I/O -- reads every existing Client Code fresh (Supabase, via the RLS-bypassing admin client) and returns the next candidate code. */
 export async function generateNextClientCode(): Promise<string> {
-  const { data, error } = await supabaseAdmin
-    .from(CLIENTS_TABLE)
-    .select(CLIENT_CODE_COLUMN);
+  const { data, error } = await supabaseAdmin.from(CLIENTS_TABLE).select(CLIENT_CODE_COLUMN);
 
   if (error) {
     throw new Error(`[client-code] failed to read existing codes: ${error.message}`);
@@ -115,9 +113,7 @@ export async function generateNextClientCode(): Promise<string> {
  * column, etc.) is rethrown as-is so the caller's catch block sees the real
  * reason instead of a swallowed collision-retry loop.
  */
-export async function createClientWithCode(
-  fields: Record<string, unknown>,
-): Promise<ClientRecord> {
+export async function createClientWithCode(fields: Record<string, unknown>): Promise<ClientRecord> {
   for (let attempt = 0; attempt < 2; attempt++) {
     const code = await generateNextClientCode();
 
@@ -132,13 +128,10 @@ export async function createClientWithCode(
     }
 
     const isCollision =
-      insertError?.code === UNIQUE_VIOLATION &&
-      insertError.message?.includes(CLIENT_CODE_COLUMN);
+      insertError?.code === UNIQUE_VIOLATION && insertError.message?.includes(CLIENT_CODE_COLUMN);
 
     if (isCollision && attempt === 0) {
-      console.warn(
-        `[client-code] Collision on code ${code}, retrying once with a fresh code.`,
-      );
+      console.warn(`[client-code] Collision on code ${code}, retrying once with a fresh code.`);
       continue;
     }
 
