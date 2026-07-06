@@ -142,3 +142,9 @@ export async function createClientWithCode(fields: Record<string, unknown>): Pro
 
   throw new Error("[client-code] failed to create client after retry");
 }
+
+export async function deleteClient(id: string): Promise<{ ok: true }> {
+  const { error } = await supabaseAdmin.from(CLIENTS_TABLE).delete().eq("id", id);
+  if (error) throw new Error(error.message);
+  return { ok: true };
+}
