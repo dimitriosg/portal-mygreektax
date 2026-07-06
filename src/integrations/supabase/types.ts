@@ -377,7 +377,7 @@ export type Database = {
           ordered_job_ids?: string[];
           scope_key: string;
           updated_at?: string;
-          user_id: string;
+          user_id?: string;
         };
         Update: {
           created_at?: string;
@@ -393,7 +393,7 @@ export type Database = {
         Row: {
           airtable_accountant_id: string | null;
           consumed_at: string | null;
-          consumed_user_id: string | null;
+          consumed_user_id?: string | null;
           created_at: string;
           created_by: string;
           email: string;
@@ -436,7 +436,7 @@ export type Database = {
           airtable_accountant_id: string;
           created_at: string;
           disabled_at: string | null;
-          disabled_by: string | null;
+          disabled_by?: string | null;
           email: string;
           full_name: string | null;
           user_id: string;
@@ -546,7 +546,7 @@ export type Database = {
         };
         Update: {
           id?: string;
-          role?: Database["public"]["Enums"]["app_role"];
+          role?: string;
           user_id?: string;
         };
         Relationships: [];
