@@ -20,6 +20,7 @@ import {
   createLead,
   listLeadThread,
   listLeadActivity,
+  deleteLead,
 } from "@/lib/leads.functions";
 import { listJobs } from "@/lib/jobs.functions";
 import { useAuth } from "@/lib/auth-context";
@@ -147,6 +148,7 @@ function LeadsPage() {
   const fetchLeads = useServerFn(listLeads);
   const updateLeadFn = useServerFn(updateLead);
   const createLeadFn = useServerFn(createLead);
+  const deleteLeadFn = useServerFn(deleteLead);
   const fetchJobs = useServerFn(listJobs);
   const qc = useQueryClient();
 
@@ -189,6 +191,29 @@ function LeadsPage() {
       toast.success("Lead added");
     },
     onError: handleMutationError,
+  });
+
+  const removeLead = useMutation({
+    mutationFn: (vars: { leadId: string }) => deleteLeadFn({ data: vars }),
+    onMutate: async (vars) => {
+      await qc.cancelQueries({ queryKey: ["leads", "admin"] });
+      const previous = qc.getQueryData<{ leads: Lead[] }>(["leads", "admin"]);
+      qc.setQueryData<{ leads: Lead[] } | undefined>(["leads", "admin"], (old) => {
+        if (!old) return old;
+        return { leads: old.leads.filter((lead) => lead.id !== vars.leadId) };
+      });
+      return { previous };
+    },
+    onError: (error, _vars, context) => {
+      if (context?.previous) qc.setQueryData(["leads", "admin"], context.previous);
+      handleMutationError(error);
+    },
+    onSuccess: () => {
+      toast.success("Lead deleted");
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ["leads"] });
+    },
   });
 
   // Ticket B2: Stage, Next Action, and Next Action Date each write back
@@ -533,6 +558,11 @@ function LeadsPage() {
           }
           saving={update.isPending}
           onQuickUpdate={(vars) => quickUpdate.mutate({ leadId: editingLead.id, ...vars })}
+          canDelete={isAdmin}
+          deleting={removeLead.isPending}
+          onDelete={() =>
+            removeLead.mutate({ leadId: editingLead.id }, { onSuccess: () => setEditingLead(null) })
+          }
         />
       )}
 
@@ -935,11 +965,16 @@ function LeadEditDialog({
   onSave,
   saving,
   onQuickUpdate,
+  canDelete,
+  deleting,
+  onDelete,
 }: {
   lead: Lead;
   clientJobs: Job[];
   onClose: () => void;
   onSave: (vars: {
+    fullName?: string;
+    clientCode?: string;
     urgency?: string | null;
     leadValue?: number | null;
     notes?: string;
@@ -957,8 +992,15 @@ function LeadEditDialog({
     balanceDue?: number | null;
     partnerFee?: number | null;
     parkedReason?: string;
+    status?: string;
+    source?: string;
+    clientVisibleNote?: string;
+    threadId?: string;
   }) => void;
   saving: boolean;
+  canDelete: boolean;
+  deleting: boolean;
+  onDelete: () => void;
   // Ticket B2 — Stage / Next Action / Next Action Date save instantly
   // (optimistic, same mutation the board uses) instead of waiting for the
   // batch Save button below.
@@ -968,6 +1010,10 @@ function LeadEditDialog({
     nextActionDate?: string | null;
   }) => void;
 }) {
+  const [fullName, setFullName] = useState(lead.fields["Full Name"] ?? "");
+  const [clientCode, setClientCode] = useState(lead.fields["Client Code"] ?? "");
+  const [status, setStatus] = useState(lead.fields.Status ?? "");
+  const [source, setSource] = useState(lead.fields.Source ?? "");
   const [stage, setStage] = useState(lead.fields.Stage ?? "Potential");
   const [urgency, setUrgency] = useState(lead.fields.Urgency ?? "");
   const [leadValue, setLeadValue] = useState(euroField(lead.fields["Lead Value (€)"]));
@@ -988,10 +1034,16 @@ function LeadEditDialog({
   const [balanceDue, setBalanceDue] = useState(euroField(lead.fields["Balance Due €"]));
   const [partnerFee, setPartnerFee] = useState(euroField(lead.fields["Partner Fee €"]));
   const [parkedReason, setParkedReason] = useState(lead.fields["Parked Reason"] ?? "");
+  const [clientVisibleNote, setClientVisibleNote] = useState(
+    lead.fields["Client Visible Note"] ?? "",
+  );
+  const [threadId, setThreadId] = useState(lead.fields["Thread ID"] ?? "");
   const [nextActionDraft, setNextActionDraft] = useState(lead.fields["Next Action"] ?? "");
   const [nextActionDate, setNextActionDate] = useState(
     lead.fields["Next Action Date"] ? lead.fields["Next Action Date"].slice(0, 10) : "",
   );
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [deleteConfirmationText, setDeleteConfirmationText] = useState("");
 
   useEffect(() => {
     setNextActionDraft(lead.fields["Next Action"] ?? "");
@@ -1007,6 +1059,7 @@ function LeadEditDialog({
   };
 
   const showMoney = MONEY_RELEVANT_STAGES.has(stage);
+  const canConfirmDelete = deleteConfirmationText === "DELETE";
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
@@ -1016,6 +1069,22 @@ function LeadEditDialog({
         </DialogHeader>
         <div className="max-h-[70vh] space-y-3 overflow-y-auto pr-1">
           <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Full name</Label>
+              <Input
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label>Client code</Label>
+              <Input
+                value={clientCode}
+                onChange={(e) => setClientCode(e.target.value)}
+                className="mt-1"
+              />
+            </div>
             <div>
               <Label>Email</Label>
               <Input value={email} onChange={(e) => setEmail(e.target.value)} className="mt-1" />
@@ -1052,6 +1121,14 @@ function LeadEditDialog({
                 onChange={(e) => setCaseCode(e.target.value)}
                 className="mt-1"
               />
+            </div>
+            <div>
+              <Label>Status</Label>
+              <Input value={status} onChange={(e) => setStatus(e.target.value)} className="mt-1" />
+            </div>
+            <div>
+              <Label>Source</Label>
+              <Input value={source} onChange={(e) => setSource(e.target.value)} className="mt-1" />
             </div>
             <label className="col-span-2 mt-1 flex items-center gap-2 text-sm">
               <input
@@ -1251,6 +1328,41 @@ function LeadEditDialog({
               className="mt-1 min-h-[100px]"
             />
           </div>
+          <div>
+            <Label>Client visible note</Label>
+            <Textarea
+              value={clientVisibleNote}
+              onChange={(e) => setClientVisibleNote(e.target.value)}
+              className="mt-1 min-h-[80px]"
+            />
+          </div>
+          <div>
+            <Label>Thread ID</Label>
+            <Input
+              value={threadId}
+              onChange={(e) => setThreadId(e.target.value)}
+              className="mt-1"
+            />
+          </div>
+          {canDelete && (
+            <div className="rounded border border-destructive/30 bg-destructive/5 p-3">
+              <div className="text-xs font-semibold uppercase tracking-wide text-destructive">
+                Danger zone
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Permanently remove this lead from the pipeline.
+              </p>
+              <Button
+                type="button"
+                variant="destructive"
+                className="mt-3"
+                disabled={deleting}
+                onClick={() => setConfirmDeleteOpen(true)}
+              >
+                Delete lead
+              </Button>
+            </div>
+          )}
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>
@@ -1260,6 +1372,8 @@ function LeadEditDialog({
             disabled={saving}
             onClick={() =>
               onSave({
+                fullName: fullName || undefined,
+                clientCode: clientCode || undefined,
                 urgency: urgency === "" ? null : urgency,
                 leadValue: leadValue === "" ? null : Number(leadValue),
                 notes,
@@ -1271,6 +1385,8 @@ function LeadEditDialog({
                 taxisnetAccess,
                 cadence: cadence || undefined,
                 caseCode: caseCode || undefined,
+                status: status || undefined,
+                source: source || undefined,
                 parkedReason: stage === "Parked" ? parkedReason : undefined,
                 quoteSentDate: showMoney
                   ? quoteSentDate === ""
@@ -1285,6 +1401,8 @@ function LeadEditDialog({
                 deposit: showMoney ? (deposit === "" ? null : Number(deposit)) : undefined,
                 balanceDue: showMoney ? (balanceDue === "" ? null : Number(balanceDue)) : undefined,
                 partnerFee: showMoney ? (partnerFee === "" ? null : Number(partnerFee)) : undefined,
+                clientVisibleNote: clientVisibleNote || undefined,
+                threadId: threadId || undefined,
               })
             }
           >
@@ -1292,6 +1410,41 @@ function LeadEditDialog({
           </Button>
         </DialogFooter>
       </DialogContent>
+      <Dialog
+        open={confirmDeleteOpen}
+        onOpenChange={(open) => {
+          setConfirmDeleteOpen(open);
+          if (!open) setDeleteConfirmationText("");
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete lead</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Type <span className="font-semibold text-foreground">DELETE</span> to confirm.
+            </p>
+            <Input
+              value={deleteConfirmationText}
+              onChange={(e) => setDeleteConfirmationText(e.target.value)}
+              placeholder="DELETE"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setConfirmDeleteOpen(false)} disabled={deleting}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={deleting || !canConfirmDelete}
+              onClick={onDelete}
+            >
+              {deleting ? "Deleting…" : "Delete lead"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   );
 }
