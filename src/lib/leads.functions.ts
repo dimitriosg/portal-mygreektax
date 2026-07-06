@@ -28,7 +28,7 @@ const RECORD_ID = z
   .string()
   .min(1)
   .max(80)
-  .regex(/^rec[A-Za-z0-9]+$/, "Invalid record id");
+  .regex(/^[0-9a-fA-F-]{36}$/, "Invalid record id");
 
 // Ticket C, Part 2 — every updateLead field except Stage (Stage keeps its
 // own lead_stage_changed event above, unchanged from Ticket B), mapped to

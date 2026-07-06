@@ -67,6 +67,7 @@ No daily digest changes — these are time-sensitive enough to warrant immediate
 ## Files
 
 **New**
+
 - `supabase/migrations/<ts>_job_change_requests.sql` — table, RLS, helper fn, indexes
 - `src/routes/admin.change-requests.tsx` — admin review page
 - `src/components/job/admin-edit-panel.tsx` — full admin edit form (extracted to keep `jobs.$jobId.tsx` manageable)
@@ -76,6 +77,7 @@ No daily digest changes — these are time-sensitive enough to warrant immediate
 - `src/lib/email-templates/change-request-decision.tsx` — partner notification email
 
 **Edited**
+
 - `src/lib/jobs.functions.ts` — extend `updateJob`; add `requestJobChange`, `cancelChangeRequest`, `decideChangeRequest`, `listChangeRequests`, `listJobChangeRequests`, `getPendingRequestCount`
 - `src/routes/jobs.$jobId.tsx` — render clarified partner/admin panels and keep admin approval actions on job-level change requests
 - `src/routes/admin.tsx` — Change requests link + badge
