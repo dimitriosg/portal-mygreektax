@@ -127,6 +127,12 @@ export async function createClientWithCode(fields: Record<string, unknown>): Pro
       return created as ClientRecord;
     }
 
+    export async function deleteClient(id: string): Promise<{ ok: true }> {
+      const { error } = await supabaseAdmin.from(CLIENTS_TABLE).delete().eq("id", id);
+      if (error) throw new Error(error.message);
+      return { ok: true };
+    }
+
     const isCollision =
       insertError?.code === UNIQUE_VIOLATION && insertError.message?.includes(CLIENT_CODE_COLUMN);
 

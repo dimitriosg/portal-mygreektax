@@ -11,7 +11,7 @@ import {
   type ClientFields,
   type MessageFields,
 } from "./airtable.server";
-import { createClientWithCode } from "./client-code.server";
+import { createClientWithCode, deleteClient } from "./client-code.server";
 import { CLIENT_STAGES, LEAD_URGENCY_OPTIONS } from "./leads-shared";
 import { requireAdminAccess } from "./access-context.server";
 import { logActivityEvent } from "./activity.server";
@@ -56,7 +56,13 @@ const UPDATE_LEAD_LOG_FIELDS: ReadonlyArray<{
     | "partnerFee"
     | "parkedReason"
     | "nextAction"
-    | "nextActionDate";
+    | "nextActionDate"
+    | "fullName"
+    | "clientCode"
+    | "status"
+    | "source"
+    | "clientVisibleNote"
+    | "threadId";
   airtableField: string;
 }> = [
   { key: "urgency", airtableField: "Urgency" },
@@ -78,6 +84,12 @@ const UPDATE_LEAD_LOG_FIELDS: ReadonlyArray<{
   { key: "parkedReason", airtableField: "Parked Reason" },
   { key: "nextAction", airtableField: "Next Action" },
   { key: "nextActionDate", airtableField: "Next Action Date" },
+  { key: "fullName", airtableField: "Full Name" },
+  { key: "clientCode", airtableField: "Client Code" },
+  { key: "status", airtableField: "Status" },
+  { key: "source", airtableField: "Source" },
+  { key: "clientVisibleNote", airtableField: "Client Visible Note" },
+  { key: "threadId", airtableField: "Thread ID" },
 ];
 
 export const listLeads = createServerFn({ method: "GET" })
@@ -116,6 +128,12 @@ export const updateLead = createServerFn({ method: "POST" })
       parkedReason?: string;
       nextAction?: string;
       nextActionDate?: string | null;
+      fullName?: string;
+      clientCode?: string;
+      status?: string;
+      source?: string;
+      clientVisibleNote?: string;
+      threadId?: string;
     }) =>
       z
         .object({
@@ -140,6 +158,12 @@ export const updateLead = createServerFn({ method: "POST" })
           parkedReason: z.string().max(500).optional(),
           nextAction: z.string().max(2000).optional(),
           nextActionDate: z.string().nullable().optional(),
+          fullName: z.string().max(200).optional(),
+          clientCode: z.string().max(100).optional(),
+          status: z.string().max(100).optional(),
+          source: z.string().max(200).optional(),
+          clientVisibleNote: z.string().max(5000).optional(),
+          threadId: z.string().max(200).optional(),
         })
         .parse(d),
   )
@@ -175,6 +199,12 @@ export const updateLead = createServerFn({ method: "POST" })
     if (data.parkedReason !== undefined) fields["Parked Reason"] = data.parkedReason;
     if (data.nextAction !== undefined) fields["Next Action"] = data.nextAction;
     if (data.nextActionDate !== undefined) fields["Next Action Date"] = data.nextActionDate;
+    if (data.fullName !== undefined) fields["Full Name"] = data.fullName;
+    if (data.clientCode !== undefined) fields["Client Code"] = data.clientCode;
+    if (data.status !== undefined) fields.Status = data.status;
+    if (data.source !== undefined) fields.Source = data.source;
+    if (data.clientVisibleNote !== undefined) fields["Client Visible Note"] = data.clientVisibleNote;
+    if (data.threadId !== undefined) fields["Thread ID"] = data.threadId;
 
     const updated = (await airtablePatch(
       TABLES.clients,
@@ -225,6 +255,35 @@ export const updateLead = createServerFn({ method: "POST" })
     }
 
     return { lead: updated };
+  });
+
+export const deleteLead = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d: { leadId: string }) => z.object({ leadId: RECORD_ID }).parse(d))
+  .handler(async ({ data, context }) => {
+    await requireAdminAccess({
+      userId: context.userId,
+      email: context.claims.email as string | undefined,
+    });
+
+    const existing = (await airtableGet(
+      `${TABLES.clients}/${data.leadId}`,
+    )) as AirtableRecord<ClientFields>;
+
+    await logActivityEvent({
+      eventType: "lead_deleted",
+      actorUserId: context.userId,
+      actorEmail: context.claims.email as string | undefined,
+      subjectLabel: existing.fields["Full Name"] ?? data.leadId,
+      metadata: {
+        leadId: data.leadId,
+        client_code: existing.fields["Client Code"] ?? null,
+        full_name: existing.fields["Full Name"] ?? null,
+        email: existing.fields.Email ?? null,
+      },
+    });
+
+    return deleteClient(data.leadId);
   });
 
 export const createLead = createServerFn({ method: "POST" })

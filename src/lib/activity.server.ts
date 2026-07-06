@@ -13,6 +13,7 @@ export type ActivityEventType =
   | "lead_stage_changed"
   | "lead_field_changed"
   | "lead_created"
+  | "lead_deleted"
   | "tracking_link_created"
   | "tracking_link_regenerated"
   | "tracking_link_opened"
