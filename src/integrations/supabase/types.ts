@@ -41,6 +41,57 @@ export type Database = {
         };
         Relationships: [];
       };
+      clients: {
+        Row: {
+          id: string;
+          client_code: string | null;
+          airtable_id: string | null;
+          full_name: string | null;
+          email: string | null;
+          phone: string | null;
+          status: string | null;
+          stage: string | null;
+          source: string | null;
+          urgency: string | null;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+          last_activity: string | null;
+        };
+        Insert: {
+          id?: string;
+          client_code?: string | null;
+          airtable_id?: string | null;
+          full_name?: string | null;
+          email?: string | null;
+          phone?: string | null;
+          status?: string | null;
+          stage?: string | null;
+          source?: string | null;
+          urgency?: string | null;
+          notes?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          last_activity?: string | null;
+        };
+        Update: {
+          id?: string;
+          client_code?: string | null;
+          airtable_id?: string | null;
+          full_name?: string | null;
+          email?: string | null;
+          phone?: string | null;
+          status?: string | null;
+          stage?: string | null;
+          source?: string | null;
+          urgency?: string | null;
+          notes?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          last_activity?: string | null;
+        };
+        Relationships: [];
+      };
       client_token_events: {
         Row: {
           actor_email: string | null;
@@ -362,7 +413,7 @@ export type Database = {
           expires_at?: string;
           first_name: string;
           id?: string;
-          last_name: string;
+          last_name?: string;
           token_hash: string;
         };
         Update: {
@@ -423,7 +474,7 @@ export type Database = {
           email: string;
           id?: string;
           metadata?: Json | null;
-          reason: string;
+          reason?: string;
         };
         Update: {
           created_at?: string;
