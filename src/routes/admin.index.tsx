@@ -545,66 +545,68 @@ function AdminPage() {
                 />
               </PopoverContent>
             </Popover>
-            <label className="flex items-center gap-2 rounded border border-input px-2 py-2 text-sm">
-              <input
-                type="checkbox"
-                checked={hideCompleted}
-                onChange={(e) => setHideCompleted(e.target.checked)}
-              />
-              Hide Completed
-            </label>
-            <label className="flex items-center gap-2 rounded border border-input px-2 py-2 text-sm">
-              <input
-                type="checkbox"
-                checked={hideCancelled}
-                onChange={(e) => setHideCancelled(e.target.checked)}
-              />
-              Hide Cancelled
-            </label>
-            <label className="flex items-center gap-2 rounded border border-input px-2 py-2 text-sm">
-              <input
-                type="checkbox"
-                checked={hideToAssign}
-                onChange={(e) => setHideToAssign(e.target.checked)}
-              />
-              Hide To Assign
-            </label>
-            <label className="flex items-center gap-2 rounded border border-input px-2 py-2 text-sm">
-              <input
-                type="checkbox"
-                checked={activePartnerWorkOnly}
-                onChange={(e) => setActivePartnerWorkOnly(e.target.checked)}
-              />
-              Active partner work
-            </label>
-            {(filter ||
-              statusFilter ||
-              tierFilter ||
-              partnerFilter ||
-              slaRange?.from ||
-              hideCompleted ||
-              hideCancelled ||
-              hideToAssign ||
-              activePartnerWorkOnly) && (
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  setFilter("");
-                  setStatusFilter("");
-                  setTierFilter("");
-                  setPartnerFilter("");
-                  setSlaRange(undefined);
-                  setHideCompleted(false);
-                  setHideCancelled(false);
-                  setHideToAssign(false);
-                  setActivePartnerWorkOnly(false);
-                }}
-              >
-                Clear
-              </Button>
-            )}
           </div>
+        </div>
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <label className="flex items-center gap-2 rounded border border-input px-2 py-2 text-sm">
+            <input
+              type="checkbox"
+              checked={hideCompleted}
+              onChange={(e) => setHideCompleted(e.target.checked)}
+            />
+            Hide Completed
+          </label>
+          <label className="flex items-center gap-2 rounded border border-input px-2 py-2 text-sm">
+            <input
+              type="checkbox"
+              checked={hideCancelled}
+              onChange={(e) => setHideCancelled(e.target.checked)}
+            />
+            Hide Cancelled
+          </label>
+          <label className="flex items-center gap-2 rounded border border-input px-2 py-2 text-sm">
+            <input
+              type="checkbox"
+              checked={hideToAssign}
+              onChange={(e) => setHideToAssign(e.target.checked)}
+            />
+            Hide To Assign
+          </label>
+          <label className="flex items-center gap-2 rounded border border-input px-2 py-2 text-sm">
+            <input
+              type="checkbox"
+              checked={activePartnerWorkOnly}
+              onChange={(e) => setActivePartnerWorkOnly(e.target.checked)}
+            />
+            Active partner work
+          </label>
+          {(filter ||
+            statusFilter ||
+            tierFilter ||
+            partnerFilter ||
+            slaRange?.from ||
+            hideCompleted ||
+            hideCancelled ||
+            hideToAssign ||
+            activePartnerWorkOnly) && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setFilter("");
+                setStatusFilter("");
+                setTierFilter("");
+                setPartnerFilter("");
+                setSlaRange(undefined);
+                setHideCompleted(false);
+                setHideCancelled(false);
+                setHideToAssign(false);
+                setActivePartnerWorkOnly(false);
+              }}
+            >
+              Clear
+            </Button>
+          )}
         </div>
         {(hideCompleted || hideCancelled || hideToAssign || activePartnerWorkOnly) && (
           <p className="mb-2 text-xs text-muted-foreground">Filters active</p>
