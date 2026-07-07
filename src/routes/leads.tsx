@@ -22,7 +22,7 @@ import {
   listLeadActivity,
   deleteLead,
 } from "@/lib/leads.functions";
-import { listJobs } from "@/lib/jobs.functions";
+import { listJobs, listServices, listAccountants, createJob } from "@/lib/jobs.functions";
 import { useAuth } from "@/lib/auth-context";
 import { getErrorMessage, isAuthSessionError } from "@/lib/auth-errors";
 import { Card, CardContent } from "@/components/ui/card";
@@ -39,9 +39,16 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { CLIENT_STAGES, LEAD_URGENCY_OPTIONS } from "@/lib/leads-shared";
+import { JOB_STATUSES } from "@/lib/airtable-shared";
 import { toast } from "sonner";
 import { formatDate } from "@/lib/utils";
-import type { AirtableRecord, ClientFields, JobFields, MessageFields } from "@/lib/airtable.server";
+import type {
+  AirtableRecord,
+  AccountantFields,
+  ClientFields,
+  JobFields,
+  MessageFields,
+} from "@/lib/airtable.server";
 
 export const Route = createFileRoute("/leads")({ component: LeadsPage });
 
@@ -66,6 +73,8 @@ function stageStyle(stage?: string | null) {
 
 type Lead = AirtableRecord<ClientFields>;
 type Job = AirtableRecord<JobFields>;
+type Accountant = AirtableRecord<AccountantFields>;
+type ServiceOption = { id: string; code: string; tier: string; category: string; name: string };
 
 // Ticket B2 — the three fields that write back individually/optimistically,
 // from both the board and the detail dialog.
@@ -150,6 +159,9 @@ function LeadsPage() {
   const createLeadFn = useServerFn(createLead);
   const deleteLeadFn = useServerFn(deleteLead);
   const fetchJobs = useServerFn(listJobs);
+  const fetchServices = useServerFn(listServices);
+  const fetchAccountants = useServerFn(listAccountants);
+  const createJobFn = useServerFn(createJob);
   const qc = useQueryClient();
 
   const leadsQ = useQuery({
@@ -162,11 +174,23 @@ function LeadsPage() {
     queryFn: () => fetchJobs(),
     enabled: !!isAdmin && sessionReady,
   });
+  const servicesQ = useQuery({
+    queryKey: ["services"],
+    queryFn: () => fetchServices(),
+    enabled: !!isAdmin && sessionReady,
+  });
+  const accQ = useQuery({
+    queryKey: ["accountants"],
+    queryFn: () => fetchAccountants(),
+    enabled: !!isAdmin && sessionReady,
+  });
 
   useEffect(() => {
-    const authError = [leadsQ.error, jobsQ.error].find(isAuthSessionError);
+    const authError = [leadsQ.error, jobsQ.error, servicesQ.error, accQ.error].find(
+      isAuthSessionError,
+    );
     if (authError) navigate({ to: "/login", replace: true });
-  }, [leadsQ.error, jobsQ.error, navigate]);
+  }, [leadsQ.error, jobsQ.error, servicesQ.error, accQ.error, navigate]);
 
   const handleMutationError = (error: unknown) => {
     if (isAuthSessionError(error)) {
@@ -180,6 +204,15 @@ function LeadsPage() {
     mutationFn: (vars: Parameters<typeof updateLeadFn>[0]["data"]) => updateLeadFn({ data: vars }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["leads"] });
+    },
+    onError: handleMutationError,
+  });
+
+  const createJobMut = useMutation({
+    mutationFn: (vars: Parameters<typeof createJobFn>[0]["data"]) => createJobFn({ data: vars }),
+    onSuccess: () => {
+      toast.success("Job created");
+      qc.invalidateQueries({ queryKey: ["jobs"] });
     },
     onError: handleMutationError,
   });
@@ -375,8 +408,8 @@ function LeadsPage() {
           <h1 className="text-xl font-semibold">Pipeline</h1>
           <p className="text-sm text-muted-foreground">
             Your daily driver — every client from first contact through to a completed job, in one
-            place. Edits here write straight back to the Ops Airtable base. New leads from the web
-            form/inbox show up here directly (no separate CRM sync to wait on).
+            place. Edits save instantly. New leads from the web form and inbox appear here
+            automatically.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -562,6 +595,12 @@ function LeadsPage() {
           deleting={removeLead.isPending}
           onDelete={() =>
             removeLead.mutate({ leadId: editingLead.id }, { onSuccess: () => setEditingLead(null) })
+          }
+          services={servicesQ.data?.services ?? []}
+          accountants={accQ.data?.accountants ?? []}
+          creatingJob={createJobMut.isPending}
+          onCreateJob={(vars, onSuccess) =>
+            createJobMut.mutate({ clientId: editingLead.id, ...vars }, { onSuccess })
           }
         />
       )}
@@ -954,6 +993,15 @@ function LeadHistory({ leadId }: { leadId: string }) {
 // leads with no quote yet don't need an empty wall of € inputs.
 const MONEY_RELEVANT_STAGES = new Set(["Quoted", "Active", "Parked", "Complete"]);
 
+const DEFAULT_NEW_JOB_FORM = {
+  serviceId: "",
+  accountantId: "",
+  status: "To Assign" as (typeof JOB_STATUSES)[number],
+  slaDeadline: "",
+  dateSent: "",
+  partnerProgressNotes: "",
+};
+
 function euroField(value?: number | null) {
   return value !== undefined && value !== null ? String(value) : "";
 }
@@ -968,6 +1016,10 @@ function LeadEditDialog({
   canDelete,
   deleting,
   onDelete,
+  services,
+  accountants,
+  creatingJob,
+  onCreateJob,
 }: {
   lead: Lead;
   clientJobs: Job[];
@@ -1009,6 +1061,20 @@ function LeadEditDialog({
     nextAction?: string;
     nextActionDate?: string | null;
   }) => void;
+  services: ServiceOption[];
+  accountants: Accountant[];
+  creatingJob: boolean;
+  onCreateJob: (
+    vars: {
+      serviceId: string;
+      accountantId?: string;
+      status?: string;
+      slaDeadline?: string;
+      dateSent?: string;
+      partnerProgressNotes?: string;
+    },
+    onSuccess: () => void,
+  ) => void;
 }) {
   const [fullName, setFullName] = useState(lead.fields["Full Name"] ?? "");
   const [clientCode, setClientCode] = useState(lead.fields["Client Code"] ?? "");
@@ -1044,6 +1110,8 @@ function LeadEditDialog({
   );
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [deleteConfirmationText, setDeleteConfirmationText] = useState("");
+  const [newJobOpen, setNewJobOpen] = useState(false);
+  const [newJobForm, setNewJobForm] = useState(DEFAULT_NEW_JOB_FORM);
 
   useEffect(() => {
     setNextActionDraft(lead.fields["Next Action"] ?? "");
@@ -1065,7 +1133,12 @@ function LeadEditDialog({
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>{lead.fields["Full Name"] ?? "Lead"}</DialogTitle>
+          <div className="flex items-center justify-between gap-2 pr-6">
+            <DialogTitle>{lead.fields["Full Name"] ?? "Lead"}</DialogTitle>
+            <Button size="sm" onClick={() => setNewJobOpen(true)}>
+              + New job
+            </Button>
+          </div>
         </DialogHeader>
         <div className="max-h-[70vh] space-y-3 overflow-y-auto pr-1">
           <div className="grid grid-cols-2 gap-3">
@@ -1441,6 +1514,131 @@ function LeadEditDialog({
               onClick={onDelete}
             >
               {deleting ? "Deleting…" : "Delete lead"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={newJobOpen}
+        onOpenChange={(open) => {
+          setNewJobOpen(open);
+          if (!open) setNewJobForm(DEFAULT_NEW_JOB_FORM);
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Create new job</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label>Client</Label>
+              <div className="rounded border border-input bg-muted/30 px-2 py-2 text-sm text-muted-foreground">
+                {lead.fields["Full Name"] ?? lead.fields["Client Code"] ?? lead.id}
+                {lead.fields["Client Code"] ? ` (${lead.fields["Client Code"]})` : ""}
+              </div>
+            </div>
+            <div className="space-y-1">
+              <Label>Service</Label>
+              <select
+                value={newJobForm.serviceId}
+                onChange={(e) => setNewJobForm({ ...newJobForm, serviceId: e.target.value })}
+                className="w-full rounded border border-input bg-background px-2 py-2 text-sm"
+              >
+                <option value="">— Select service —</option>
+                {services.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {[s.code, s.name, s.tier, s.category].filter(Boolean).join(" / ")}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <Label>Assign partner (optional)</Label>
+              <select
+                value={newJobForm.accountantId}
+                onChange={(e) => setNewJobForm({ ...newJobForm, accountantId: e.target.value })}
+                className="w-full rounded border border-input bg-background px-2 py-2 text-sm"
+              >
+                <option value="">— Unassigned —</option>
+                {accountants.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.fields.Name ?? a.id}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label>Status</Label>
+                <select
+                  value={newJobForm.status}
+                  onChange={(e) =>
+                    setNewJobForm({
+                      ...newJobForm,
+                      status: e.target.value as (typeof JOB_STATUSES)[number],
+                    })
+                  }
+                  className="w-full rounded border border-input bg-background px-2 py-2 text-sm"
+                >
+                  {JOB_STATUSES.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <Label>SLA deadline</Label>
+                <Input
+                  type="date"
+                  value={newJobForm.slaDeadline}
+                  onChange={(e) => setNewJobForm({ ...newJobForm, slaDeadline: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <Label>Date sent</Label>
+              <Input
+                type="date"
+                value={newJobForm.dateSent}
+                onChange={(e) => setNewJobForm({ ...newJobForm, dateSent: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>Partner / progress notes</Label>
+              <Textarea
+                value={newJobForm.partnerProgressNotes}
+                onChange={(e) =>
+                  setNewJobForm({ ...newJobForm, partnerProgressNotes: e.target.value })
+                }
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setNewJobOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={!newJobForm.serviceId || creatingJob}
+              onClick={() =>
+                onCreateJob(
+                  {
+                    serviceId: newJobForm.serviceId,
+                    accountantId: newJobForm.accountantId || undefined,
+                    status: newJobForm.status,
+                    slaDeadline: newJobForm.slaDeadline || undefined,
+                    dateSent: newJobForm.dateSent || undefined,
+                    partnerProgressNotes: newJobForm.partnerProgressNotes || undefined,
+                  },
+                  () => {
+                    setNewJobOpen(false);
+                    setNewJobForm(DEFAULT_NEW_JOB_FORM);
+                  },
+                )
+              }
+            >
+              {creatingJob ? "Creating…" : "Create job"}
             </Button>
           </DialogFooter>
         </DialogContent>

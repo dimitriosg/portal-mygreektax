@@ -2,27 +2,20 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
-import {
-  airtableGet,
-  airtableListAll,
-  airtablePatch,
-  TABLES,
-  type AirtableRecord,
-  type ClientFields,
-  type MessageFields,
-} from "./airtable.server";
+import type { AirtableRecord, ClientFields, MessageFields } from "./airtable.server";
 import { createClientWithCode, deleteClient } from "./client-code.server";
 import { CLIENT_STAGES, LEAD_URGENCY_OPTIONS } from "./leads-shared";
 import { requireAdminAccess } from "./access-context.server";
 import { logActivityEvent } from "./activity.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import type { Database } from "@/integrations/supabase/types";
 
 // Internal-only pipeline view (Jim only) — every endpoint here requires admin
-// access. As of Task 4 (single-base consolidation) a "lead" is just a Client
-// record with Stage = "Potential"; there is no separate CRM base or Lead
-// entity, and no linking step — the record IS the client from day one.
-// Unlike Jobs, there is no partner-facing variant and no change-request workflow:
-// the admin is both requester and approver, so writes go straight to Airtable.
+// access. A "lead" is just a Client record with Stage = "Potential"; there is
+// no separate CRM base. All data lives in the Supabase public.clients table.
+
+type ClientRow = Database["public"]["Tables"]["clients"]["Row"];
+type MessageRow = Database["public"]["Tables"]["messages"]["Row"];
 
 const RECORD_ID = z
   .string()
@@ -30,12 +23,68 @@ const RECORD_ID = z
   .max(80)
   .regex(/^[0-9a-fA-F-]{36}$/, "Invalid record id");
 
-// Ticket C, Part 2 — every updateLead field except Stage (Stage keeps its
-// own lead_stage_changed event above, unchanged from Ticket B), mapped to
-// the Airtable field name it writes. Drives the generic diff-and-log loop
-// in updateLead's handler so every field the dialog's Save button and the
-// pipeline's quickUpdate can touch ends up in the one activity_events
-// stream — not a second table, not a second log.
+// ---------------------------------------------------------------------------
+// Mapping layer: Supabase snake_case rows ↔ AirtableRecord<ClientFields>
+// shape that the frontend (src/routes/leads.tsx) already consumes.
+// ---------------------------------------------------------------------------
+
+function rowToLead(row: ClientRow): AirtableRecord<ClientFields> {
+  return {
+    id: row.id,
+    createdTime: row.created_at,
+    fields: {
+      "Full Name": row.full_name ?? undefined,
+      "Client Code": row.client_code ?? undefined,
+      Email: row.email ?? undefined,
+      Phone: row.phone ?? undefined,
+      Status: row.status ?? undefined,
+      Notes: row.notes ?? undefined,
+      Stage: row.stage ?? undefined,
+      Source: row.source ?? undefined,
+      Urgency: row.urgency ?? undefined,
+      "Lead Value (€)": row.lead_value ?? undefined,
+      "Lost Reason": row.lost_reason ?? undefined,
+      "Next Action": row.next_action ?? undefined,
+      "Next Action Date": row.next_action_date ?? undefined,
+      "Last activity": row.last_activity ?? undefined,
+      Nationality: row.nationality ?? undefined,
+      AFM: row.afm ?? undefined,
+      "TAXISnet Access": row.taxisnet_access ?? undefined,
+      Cadence: row.cadence ?? undefined,
+      "Case Code": row.case_code ?? undefined,
+      "Quote Sent Date": row.quote_sent_date ?? undefined,
+      "Quote Amount €": row.quote_amount ?? undefined,
+      "Deposit €": row.deposit ?? undefined,
+      "Balance Due €": row.balance_due ?? undefined,
+      "Partner Fee €": row.partner_fee ?? undefined,
+      "Parked Reason": row.parked_reason ?? undefined,
+      "Client Visible Note": row.client_visible_note ?? undefined,
+      "Thread ID": row.thread_id ?? undefined,
+    },
+  };
+}
+
+function rowToMessage(row: MessageRow): AirtableRecord<MessageFields> {
+  return {
+    id: row.id,
+    createdTime: row.created_at,
+    fields: {
+      "Message ID": row.message_id ?? undefined,
+      Client: row.client_id ? [row.client_id] : undefined,
+      Direction: row.direction ?? undefined,
+      Timestamp: row.ts ?? undefined,
+      Subject: row.subject ?? undefined,
+      Body: row.body ?? undefined,
+      "Thread ID": row.thread_id ?? undefined,
+      From: row.from_addr ?? undefined,
+      To: row.to_addr ?? undefined,
+    },
+  };
+}
+
+// Ticket C, Part 2 — maps each updateLead camelCase input key to both its
+// Airtable-cased UI field name (used for activity logging metadata.field) and
+// its snake_case Supabase column name (used for the actual DB write).
 const UPDATE_LEAD_LOG_FIELDS: ReadonlyArray<{
   key:
     | "urgency"
@@ -64,32 +113,33 @@ const UPDATE_LEAD_LOG_FIELDS: ReadonlyArray<{
     | "clientVisibleNote"
     | "threadId";
   airtableField: string;
+  column: string;
 }> = [
-  { key: "urgency", airtableField: "Urgency" },
-  { key: "leadValue", airtableField: "Lead Value (€)" },
-  { key: "notes", airtableField: "Notes" },
-  { key: "lostReason", airtableField: "Lost Reason" },
-  { key: "email", airtableField: "Email" },
-  { key: "phone", airtableField: "Phone" },
-  { key: "nationality", airtableField: "Nationality" },
-  { key: "afm", airtableField: "AFM" },
-  { key: "taxisnetAccess", airtableField: "TAXISnet Access" },
-  { key: "cadence", airtableField: "Cadence" },
-  { key: "caseCode", airtableField: "Case Code" },
-  { key: "quoteSentDate", airtableField: "Quote Sent Date" },
-  { key: "quoteAmount", airtableField: "Quote Amount €" },
-  { key: "deposit", airtableField: "Deposit €" },
-  { key: "balanceDue", airtableField: "Balance Due €" },
-  { key: "partnerFee", airtableField: "Partner Fee €" },
-  { key: "parkedReason", airtableField: "Parked Reason" },
-  { key: "nextAction", airtableField: "Next Action" },
-  { key: "nextActionDate", airtableField: "Next Action Date" },
-  { key: "fullName", airtableField: "Full Name" },
-  { key: "clientCode", airtableField: "Client Code" },
-  { key: "status", airtableField: "Status" },
-  { key: "source", airtableField: "Source" },
-  { key: "clientVisibleNote", airtableField: "Client Visible Note" },
-  { key: "threadId", airtableField: "Thread ID" },
+  { key: "urgency", airtableField: "Urgency", column: "urgency" },
+  { key: "leadValue", airtableField: "Lead Value (€)", column: "lead_value" },
+  { key: "notes", airtableField: "Notes", column: "notes" },
+  { key: "lostReason", airtableField: "Lost Reason", column: "lost_reason" },
+  { key: "email", airtableField: "Email", column: "email" },
+  { key: "phone", airtableField: "Phone", column: "phone" },
+  { key: "nationality", airtableField: "Nationality", column: "nationality" },
+  { key: "afm", airtableField: "AFM", column: "afm" },
+  { key: "taxisnetAccess", airtableField: "TAXISnet Access", column: "taxisnet_access" },
+  { key: "cadence", airtableField: "Cadence", column: "cadence" },
+  { key: "caseCode", airtableField: "Case Code", column: "case_code" },
+  { key: "quoteSentDate", airtableField: "Quote Sent Date", column: "quote_sent_date" },
+  { key: "quoteAmount", airtableField: "Quote Amount €", column: "quote_amount" },
+  { key: "deposit", airtableField: "Deposit €", column: "deposit" },
+  { key: "balanceDue", airtableField: "Balance Due €", column: "balance_due" },
+  { key: "partnerFee", airtableField: "Partner Fee €", column: "partner_fee" },
+  { key: "parkedReason", airtableField: "Parked Reason", column: "parked_reason" },
+  { key: "nextAction", airtableField: "Next Action", column: "next_action" },
+  { key: "nextActionDate", airtableField: "Next Action Date", column: "next_action_date" },
+  { key: "fullName", airtableField: "Full Name", column: "full_name" },
+  { key: "clientCode", airtableField: "Client Code", column: "client_code" },
+  { key: "status", airtableField: "Status", column: "status" },
+  { key: "source", airtableField: "Source", column: "source" },
+  { key: "clientVisibleNote", airtableField: "Client Visible Note", column: "client_visible_note" },
+  { key: "threadId", airtableField: "Thread ID", column: "thread_id" },
 ];
 
 export const listLeads = createServerFn({ method: "GET" })
@@ -99,8 +149,12 @@ export const listLeads = createServerFn({ method: "GET" })
       userId: context.userId,
       email: context.claims.email as string | undefined,
     });
-    const data = await airtableListAll<ClientFields>(TABLES.clients, { pageSize: "100" });
-    return { leads: data.records as AirtableRecord<ClientFields>[] };
+    const { data: rows, error } = await supabaseAdmin
+      .from("clients")
+      .select("*")
+      .order("created_at", { ascending: false });
+    if (error) throw new Error(`Failed to list leads: ${error.message}`);
+    return { leads: (rows ?? []).map(rowToLead) };
   });
 
 export const updateLead = createServerFn({ method: "POST" })
@@ -173,45 +227,37 @@ export const updateLead = createServerFn({ method: "POST" })
       email: context.claims.email as string | undefined,
     });
 
-    const existing = (await airtableGet(
-      `${TABLES.clients}/${data.leadId}`,
-    )) as AirtableRecord<ClientFields>;
+    // Fetch existing row from Supabase for diff-and-log.
+    const { data: existingRow, error: fetchErr } = await supabaseAdmin
+      .from("clients")
+      .select("*")
+      .eq("id", data.leadId)
+      .single();
+    if (fetchErr || !existingRow)
+      throw new Error(`Lead not found: ${fetchErr?.message ?? data.leadId}`);
+
+    const existing = rowToLead(existingRow);
     const previousStage = existing.fields.Stage ?? null;
 
-    const fields: Record<string, unknown> = {};
-    if (data.stage !== undefined) fields["Stage"] = data.stage;
-    if (data.urgency !== undefined) fields["Urgency"] = data.urgency;
-    if (data.leadValue !== undefined) fields["Lead Value (€)"] = data.leadValue;
-    if (data.notes !== undefined) fields["Notes"] = data.notes;
-    if (data.lostReason !== undefined) fields["Lost Reason"] = data.lostReason;
-    if (data.email !== undefined) fields["Email"] = data.email;
-    if (data.phone !== undefined) fields["Phone"] = data.phone;
-    if (data.nationality !== undefined) fields["Nationality"] = data.nationality;
-    if (data.afm !== undefined) fields["AFM"] = data.afm;
-    if (data.taxisnetAccess !== undefined) fields["TAXISnet Access"] = data.taxisnetAccess;
-    if (data.cadence !== undefined) fields["Cadence"] = data.cadence;
-    if (data.caseCode !== undefined) fields["Case Code"] = data.caseCode;
-    if (data.quoteSentDate !== undefined) fields["Quote Sent Date"] = data.quoteSentDate;
-    if (data.quoteAmount !== undefined) fields["Quote Amount €"] = data.quoteAmount;
-    if (data.deposit !== undefined) fields["Deposit €"] = data.deposit;
-    if (data.balanceDue !== undefined) fields["Balance Due €"] = data.balanceDue;
-    if (data.partnerFee !== undefined) fields["Partner Fee €"] = data.partnerFee;
-    if (data.parkedReason !== undefined) fields["Parked Reason"] = data.parkedReason;
-    if (data.nextAction !== undefined) fields["Next Action"] = data.nextAction;
-    if (data.nextActionDate !== undefined) fields["Next Action Date"] = data.nextActionDate;
-    if (data.fullName !== undefined) fields["Full Name"] = data.fullName;
-    if (data.clientCode !== undefined) fields["Client Code"] = data.clientCode;
-    if (data.status !== undefined) fields.Status = data.status;
-    if (data.source !== undefined) fields.Source = data.source;
-    if (data.clientVisibleNote !== undefined)
-      fields["Client Visible Note"] = data.clientVisibleNote;
-    if (data.threadId !== undefined) fields["Thread ID"] = data.threadId;
+    // Build snake_case update payload for Supabase.
+    type ClientUpdate = Database["public"]["Tables"]["clients"]["Update"];
+    const cols: ClientUpdate = {};
+    if (data.stage !== undefined) cols.stage = data.stage;
+    for (const { key, column } of UPDATE_LEAD_LOG_FIELDS) {
+      const val = (data as Record<string, unknown>)[key];
+      if (val !== undefined) (cols as Record<string, unknown>)[column] = val;
+    }
 
-    const updated = (await airtablePatch(
-      TABLES.clients,
-      data.leadId,
-      fields,
-    )) as AirtableRecord<ClientFields>;
+    const { data: updatedRow, error: updateErr } = await supabaseAdmin
+      .from("clients")
+      .update(cols)
+      .eq("id", data.leadId)
+      .select("*")
+      .single();
+    if (updateErr || !updatedRow)
+      throw new Error(`Failed to update lead: ${updateErr?.message ?? "no row"}`);
+
+    const updated = rowToLead(updatedRow);
 
     if (data.stage !== undefined && data.stage !== previousStage) {
       await logActivityEvent({
@@ -223,14 +269,7 @@ export const updateLead = createServerFn({ method: "POST" })
       });
     }
 
-    // Ticket C, Part 2 — audit log for every other field this handler can
-    // write, covering both the Ticket B inline quickUpdate calls (Next
-    // Action / Next Action Date) and the detail dialog's batch Save (the
-    // rest). Reuses the SAME logActivityEvent + activity_events stream as
-    // lead_stage_changed/lead_created above — no second logging system.
-    // Diffed against `existing` (fetched once, above) so a field only logs
-    // when its value actually changed, whether the caller sent one field
-    // (quickUpdate) or the whole form (batch Save).
+    // Audit log for every other field — diffed against existing row.
     type LoggableValue = string | number | boolean | null;
     const normalize = (v: unknown): LoggableValue =>
       v === undefined ? null : (v as LoggableValue);
@@ -267,9 +306,16 @@ export const deleteLead = createServerFn({ method: "POST" })
       email: context.claims.email as string | undefined,
     });
 
-    const existing = (await airtableGet(
-      `${TABLES.clients}/${data.leadId}`,
-    )) as AirtableRecord<ClientFields>;
+    // Fetch from Supabase for audit-log snapshot before deletion.
+    const { data: existingRow, error: fetchErr } = await supabaseAdmin
+      .from("clients")
+      .select("*")
+      .eq("id", data.leadId)
+      .single();
+    if (fetchErr || !existingRow)
+      throw new Error(`Lead not found: ${fetchErr?.message ?? data.leadId}`);
+
+    const existing = rowToLead(existingRow);
 
     await logActivityEvent({
       eventType: "lead_deleted",
@@ -317,14 +363,14 @@ export const createLead = createServerFn({ method: "POST" })
     // so numbering logic never gets reimplemented at a second call site.
     // Nationality is always XX here — set manually on review, not guessed.
     const created = await createClientWithCode({
-      "Full Name": data.leadName,
-      Email: data.email,
-      Phone: data.phone,
-      Urgency: data.urgency,
-      Notes: data.situation,
-      Stage: "Potential",
-      Status: "Prospect",
-      Source: "Manual entry",
+      full_name: data.leadName,
+      email: data.email,
+      phone: data.phone,
+      urgency: data.urgency,
+      notes: data.situation,
+      stage: "Potential",
+      status: "Prospect",
+      source: "Manual entry",
     });
 
     await logActivityEvent({
@@ -335,7 +381,7 @@ export const createLead = createServerFn({ method: "POST" })
       metadata: { leadId: created.id, source: "manual" },
     });
 
-    return { lead: created as AirtableRecord<ClientFields> };
+    return { lead: rowToLead(created as ClientRow) };
   });
 
 // Ticket C, Part 2b — read-only history for one client, newest first.
@@ -373,15 +419,15 @@ export const listLeadThread = createServerFn({ method: "GET" })
       email: context.claims.email as string | undefined,
     });
 
-    // Note: {Client} inside a filterByFormula resolves to the *primary field
-    // value* of the linked record(s), not the record id -- so filtering by record id
-    // via formula never matches. The REST API response itself does return the linked
-    // record ids directly on each row, so we fetch and filter client-side instead.
-    const messages = await airtableListAll<MessageFields>(TABLES.messages, {});
+    // Messages table exists in Supabase with client_id FK → clients.id.
+    const { data: rows, error } = await supabaseAdmin
+      .from("messages")
+      .select("*")
+      .eq("client_id", data.leadId)
+      .order("ts", { ascending: true });
+    if (error) throw new Error(`Failed to load message thread: ${error.message}`);
 
     return {
-      messages: messages.records.filter((r) =>
-        (r.fields.Client ?? []).includes(data.leadId),
-      ) as AirtableRecord<MessageFields>[],
+      messages: (rows ?? []).map(rowToMessage) as AirtableRecord<MessageFields>[],
     };
   });

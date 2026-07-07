@@ -70,16 +70,14 @@ function Page() {
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-6 sm:py-8 space-y-6">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Change requests</h1>
-          <p className="text-sm text-muted-foreground">
-            Partner-submitted job changes awaiting your review.
-          </p>
-        </div>
-        <Link to="/admin">
-          <Button variant="outline">Back to admin</Button>
+      <div>
+        <Link to="/admin" className="text-sm text-muted-foreground hover:text-foreground">
+          ← Back to admin
         </Link>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight">Change requests</h1>
+        <p className="text-sm text-muted-foreground">
+          Partner-submitted job changes awaiting your review.
+        </p>
       </div>
 
       <div className="flex flex-wrap gap-2">
