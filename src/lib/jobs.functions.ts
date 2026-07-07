@@ -334,6 +334,7 @@ export const updateJob = createServerFn({ method: "POST" })
       adminInternalNotes?: string;
       partnerProgressNotes?: string;
       clientVisibleNote?: string;
+      notes?: string;
       nextActionNeeded?: string;
       slaDeadline?: string | null;
       dateSent?: string | null;
@@ -352,6 +353,7 @@ export const updateJob = createServerFn({ method: "POST" })
           adminInternalNotes: z.string().max(5000).optional(),
           partnerProgressNotes: z.string().max(5000).optional(),
           clientVisibleNote: z.string().max(5000).optional(),
+          notes: z.string().max(5000).optional(),
           nextActionNeeded: z.enum(NEXT_ACTION_OPTIONS).optional(),
           slaDeadline: z.string().max(30).nullable().optional(),
           dateSent: z.string().max(30).nullable().optional(),
@@ -416,6 +418,9 @@ export const updateJob = createServerFn({ method: "POST" })
       }
       if (data.clientVisibleNote !== undefined) {
         fields["Client Visible Note"] = data.clientVisibleNote;
+      }
+      if (data.notes !== undefined) {
+        fields["Notes"] = data.notes;
       }
       if (manualNextActionNeeded !== undefined) {
         fields["Next Action Needed"] = manualNextActionNeeded;
