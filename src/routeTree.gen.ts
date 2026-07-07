@@ -16,6 +16,7 @@ import { Route as LeadsRouteImport } from './routes/leads'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as WebhooksLeadIntakeRouteImport } from './routes/webhooks/lead-intake'
 import { Route as WebhooksConversationLogRouteImport } from './routes/webhooks/conversation-log'
 import { Route as TrackTokenRouteImport } from './routes/track.$token'
@@ -65,6 +66,11 @@ const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AdminIndexRoute = AdminIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AdminRoute,
 } as any)
 const WebhooksLeadIntakeRoute = WebhooksLeadIntakeRouteImport.update({
   id: '/webhooks/lead-intake',
@@ -156,6 +162,7 @@ export interface FileRoutesByFullPath {
   '/track/$token': typeof TrackTokenRoute
   '/webhooks/conversation-log': typeof WebhooksConversationLogRoute
   '/webhooks/lead-intake': typeof WebhooksLeadIntakeRoute
+  '/admin/': typeof AdminIndexRoute
   '/lovable/email/suppression': typeof LovableEmailSuppressionRoute
   '/lovable/email/auth/preview': typeof LovableEmailAuthPreviewRoute
   '/lovable/email/auth/webhook': typeof LovableEmailAuthWebhookRoute
@@ -165,7 +172,6 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/admin': typeof AdminRouteWithChildren
   '/dashboard': typeof DashboardRoute
   '/leads': typeof LeadsRoute
   '/login': typeof LoginRoute
@@ -179,6 +185,7 @@ export interface FileRoutesByTo {
   '/track/$token': typeof TrackTokenRoute
   '/webhooks/conversation-log': typeof WebhooksConversationLogRoute
   '/webhooks/lead-intake': typeof WebhooksLeadIntakeRoute
+  '/admin': typeof AdminIndexRoute
   '/lovable/email/suppression': typeof LovableEmailSuppressionRoute
   '/lovable/email/auth/preview': typeof LovableEmailAuthPreviewRoute
   '/lovable/email/auth/webhook': typeof LovableEmailAuthWebhookRoute
@@ -203,6 +210,7 @@ export interface FileRoutesById {
   '/track/$token': typeof TrackTokenRoute
   '/webhooks/conversation-log': typeof WebhooksConversationLogRoute
   '/webhooks/lead-intake': typeof WebhooksLeadIntakeRoute
+  '/admin/': typeof AdminIndexRoute
   '/lovable/email/suppression': typeof LovableEmailSuppressionRoute
   '/lovable/email/auth/preview': typeof LovableEmailAuthPreviewRoute
   '/lovable/email/auth/webhook': typeof LovableEmailAuthWebhookRoute
@@ -228,6 +236,7 @@ export interface FileRouteTypes {
     | '/track/$token'
     | '/webhooks/conversation-log'
     | '/webhooks/lead-intake'
+    | '/admin/'
     | '/lovable/email/suppression'
     | '/lovable/email/auth/preview'
     | '/lovable/email/auth/webhook'
@@ -237,7 +246,6 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/admin'
     | '/dashboard'
     | '/leads'
     | '/login'
@@ -251,6 +259,7 @@ export interface FileRouteTypes {
     | '/track/$token'
     | '/webhooks/conversation-log'
     | '/webhooks/lead-intake'
+    | '/admin'
     | '/lovable/email/suppression'
     | '/lovable/email/auth/preview'
     | '/lovable/email/auth/webhook'
@@ -274,6 +283,7 @@ export interface FileRouteTypes {
     | '/track/$token'
     | '/webhooks/conversation-log'
     | '/webhooks/lead-intake'
+    | '/admin/'
     | '/lovable/email/suppression'
     | '/lovable/email/auth/preview'
     | '/lovable/email/auth/webhook'
@@ -354,6 +364,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/admin/': {
+      id: '/admin/'
+      path: '/'
+      fullPath: '/admin/'
+      preLoaderRoute: typeof AdminIndexRouteImport
+      parentRoute: typeof AdminRoute
     }
     '/webhooks/lead-intake': {
       id: '/webhooks/lead-intake'
@@ -459,11 +476,13 @@ declare module '@tanstack/react-router' {
 interface AdminRouteChildren {
   AdminChangeRequestsRoute: typeof AdminChangeRequestsRoute
   AdminTrackingLinksRoute: typeof AdminTrackingLinksRoute
+  AdminIndexRoute: typeof AdminIndexRoute
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
   AdminChangeRequestsRoute: AdminChangeRequestsRoute,
   AdminTrackingLinksRoute: AdminTrackingLinksRoute,
+  AdminIndexRoute: AdminIndexRoute,
 }
 
 const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
