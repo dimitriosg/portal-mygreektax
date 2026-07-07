@@ -317,14 +317,14 @@ export const createLead = createServerFn({ method: "POST" })
     // so numbering logic never gets reimplemented at a second call site.
     // Nationality is always XX here — set manually on review, not guessed.
     const created = await createClientWithCode({
-      "Full Name": data.leadName,
-      Email: data.email,
-      Phone: data.phone,
-      Urgency: data.urgency,
-      Notes: data.situation,
-      Stage: "Potential",
-      Status: "Prospect",
-      Source: "Manual entry",
+      full_name: data.leadName,
+      email: data.email,
+      phone: data.phone,
+      urgency: data.urgency,
+      notes: data.situation,
+      stage: "Potential",
+      status: "Prospect",
+      source: "Manual entry",
     });
 
     await logActivityEvent({
