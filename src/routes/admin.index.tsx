@@ -232,6 +232,7 @@ function AdminPage() {
   const [partnerFilter, setPartnerFilter] = useState<string>("");
   const [slaRange, setSlaRange] = useState<DateRange | undefined>(undefined);
   const [hideCompleted, setHideCompleted] = useState(false);
+  const [hideCancelled, setHideCancelled] = useState(false);
   const [hideToAssign, setHideToAssign] = useState(false);
   const [activePartnerWorkOnly, setActivePartnerWorkOnly] = useState(false);
 
@@ -254,6 +255,7 @@ function AdminPage() {
     return jobs.filter((job) => {
       if (statusFilter && job.fields.Status !== statusFilter) return false;
       if (hideCompleted && job.fields.Status === "Completed") return false;
+      if (hideCancelled && job.fields.Status === "Cancelled / NMF") return false;
       if (hideToAssign && job.fields.Status === "To Assign") return false;
       if (activePartnerWorkOnly && !ACTIVE_PARTNER_WORK_STATUSES.has(job.fields.Status ?? ""))
         return false;
@@ -554,6 +556,14 @@ function AdminPage() {
             <label className="flex items-center gap-2 rounded border border-input px-2 py-2 text-sm">
               <input
                 type="checkbox"
+                checked={hideCancelled}
+                onChange={(e) => setHideCancelled(e.target.checked)}
+              />
+              Hide Cancelled
+            </label>
+            <label className="flex items-center gap-2 rounded border border-input px-2 py-2 text-sm">
+              <input
+                type="checkbox"
                 checked={hideToAssign}
                 onChange={(e) => setHideToAssign(e.target.checked)}
               />
@@ -573,6 +583,7 @@ function AdminPage() {
               partnerFilter ||
               slaRange?.from ||
               hideCompleted ||
+              hideCancelled ||
               hideToAssign ||
               activePartnerWorkOnly) && (
               <Button
@@ -585,6 +596,7 @@ function AdminPage() {
                   setPartnerFilter("");
                   setSlaRange(undefined);
                   setHideCompleted(false);
+                  setHideCancelled(false);
                   setHideToAssign(false);
                   setActivePartnerWorkOnly(false);
                 }}
@@ -594,7 +606,7 @@ function AdminPage() {
             )}
           </div>
         </div>
-        {(hideCompleted || hideToAssign || activePartnerWorkOnly) && (
+        {(hideCompleted || hideCancelled || hideToAssign || activePartnerWorkOnly) && (
           <p className="mb-2 text-xs text-muted-foreground">Filters active</p>
         )}
         <div className="overflow-x-auto rounded-lg border border-border">
