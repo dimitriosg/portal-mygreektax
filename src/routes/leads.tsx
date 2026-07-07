@@ -408,8 +408,8 @@ function LeadsPage() {
           <h1 className="text-xl font-semibold">Pipeline</h1>
           <p className="text-sm text-muted-foreground">
             Your daily driver — every client from first contact through to a completed job, in one
-            place. Edits here write straight back to the Ops Airtable base. New leads from the web
-            form/inbox show up here directly (no separate CRM sync to wait on).
+            place. Edits save instantly. New leads from the web form and inbox appear here
+            automatically.
           </p>
         </div>
         <div className="flex items-center gap-2">
