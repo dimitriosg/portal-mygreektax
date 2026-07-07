@@ -15,6 +15,9 @@ import {
   requestJobChange,
   cancelChangeRequest,
   decideChangeRequest,
+  listClients,
+  listAccountants,
+  listServices,
 } from "@/lib/jobs.functions";
 import {
   isJobStatus,
@@ -27,6 +30,7 @@ import { useAuth } from "@/lib/auth-context";
 import { getErrorMessage, isAuthSessionError } from "@/lib/auth-errors";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { NextActionBadge, StatusBadge, TierBadge } from "@/lib/badges";
 import { toast } from "sonner";
@@ -62,6 +66,9 @@ function JobDetail() {
   const requestChangeFn = useServerFn(requestJobChange);
   const cancelRequestFn = useServerFn(cancelChangeRequest);
   const decideRequestFn = useServerFn(decideChangeRequest);
+  const fetchClients = useServerFn(listClients);
+  const fetchAccountants = useServerFn(listAccountants);
+  const fetchServices = useServerFn(listServices);
   const qc = useQueryClient();
 
   const { data, isLoading, error } = useQuery({
@@ -90,15 +97,47 @@ function JobDetail() {
     queryFn: () => listRequestsFn({ data: { jobId } }),
     enabled: !!user && sessionReady,
   });
+  const clientsQ = useQuery({
+    queryKey: ["clients"],
+    queryFn: () => fetchClients(),
+    enabled: !!isAdmin && sessionReady,
+  });
+  const accountantsQ = useQuery({
+    queryKey: ["accountants"],
+    queryFn: () => fetchAccountants(),
+    enabled: !!isAdmin && sessionReady,
+  });
+  const servicesQ = useQuery({
+    queryKey: ["services"],
+    queryFn: () => fetchServices(),
+    enabled: !!isAdmin && sessionReady,
+  });
 
   useEffect(() => {
-    const authError = [error, eventsQ.error, trackingQ.error, historyQ.error, requestsQ.error].find(
-      isAuthSessionError,
-    );
+    const authError = [
+      error,
+      eventsQ.error,
+      trackingQ.error,
+      historyQ.error,
+      requestsQ.error,
+      clientsQ.error,
+      accountantsQ.error,
+      servicesQ.error,
+    ].find(isAuthSessionError);
     if (authError) {
       navigate({ to: "/login", replace: true });
     }
-  }, [error, eventsQ.error, historyQ.error, navigate, requestsQ.error, trackingQ.error]);
+  }, [
+    error,
+    eventsQ.error,
+    historyQ.error,
+    navigate,
+    requestsQ.error,
+    trackingQ.error,
+    clientsQ.error,
+    accountantsQ.error,
+    servicesQ.error,
+  ]);
 
   const [reqValue, setReqValue] = useState("");
   const [reqReason, setReqReason] = useState("");
@@ -163,6 +202,14 @@ function JobDetail() {
   const [adminInternalNotes, setAdminInternalNotes] = useState<string>("");
   const [clientVisibleNote, setClientVisibleNote] = useState<string>("");
   const [nextActionNeeded, setNextActionNeeded] = useState<string>("");
+  const [dateSent, setDateSent] = useState<string>("");
+  const [slaDeadline, setSlaDeadline] = useState<string>("");
+  const [clientFee, setClientFee] = useState<string>("");
+  const [accountantFee, setAccountantFee] = useState<string>("");
+  const [notes, setNotes] = useState<string>("");
+  const [clientId, setClientId] = useState<string>("");
+  const [accountantId, setAccountantId] = useState<string>("");
+  const [serviceId, setServiceId] = useState<string>("");
 
   useEffect(() => {
     if (data?.job) {
@@ -176,10 +223,40 @@ function JobDetail() {
       setAdminInternalNotes(data.job.fields["Admin Internal Notes"] ?? "");
       setClientVisibleNote(data.job.fields["Client Visible Note"] ?? "");
       setNextActionNeeded(data.job.fields["Next Action Needed"] ?? "");
+      setDateSent(data.job.fields["Date Sent"] ?? "");
+      setSlaDeadline(data.job.fields["SLA Deadline"] ?? "");
+      setClientFee(
+        data.job.fields["Client Fee (\u20ac)"] != null
+          ? String(data.job.fields["Client Fee (\u20ac)"])
+          : "",
+      );
+      setAccountantFee(
+        data.job.fields["Accountant Fee (\u20ac)"] != null
+          ? String(data.job.fields["Accountant Fee (\u20ac)"])
+          : "",
+      );
+      setNotes(data.job.fields.Notes ?? "");
+      setClientId(data.job.fields.Client?.[0] ?? "");
+      setAccountantId(data.job.fields["Assigned Accountant"]?.[0] ?? "");
+      setServiceId(data.job.fields["Service Catalog"]?.[0] ?? "");
     }
   }, [data]);
 
   const previousStatus = data?.job?.fields.Status ?? "";
+  const previousDateSent = data?.job?.fields["Date Sent"] ?? "";
+  const previousSlaDeadline = data?.job?.fields["SLA Deadline"] ?? "";
+  const previousClientFee =
+    data?.job?.fields["Client Fee (\u20ac)"] != null
+      ? String(data.job.fields["Client Fee (\u20ac)"])
+      : "";
+  const previousAccountantFee =
+    data?.job?.fields["Accountant Fee (\u20ac)"] != null
+      ? String(data.job.fields["Accountant Fee (\u20ac)"])
+      : "";
+  const previousNotes = data?.job?.fields.Notes ?? "";
+  const previousClientId = data?.job?.fields.Client?.[0] ?? "";
+  const previousAccountantId = data?.job?.fields["Assigned Accountant"]?.[0] ?? "";
+  const previousServiceId = data?.job?.fields["Service Catalog"]?.[0] ?? "";
   const invalidateJobQueries = () => {
     qc.invalidateQueries({ queryKey: ["job", jobId] });
     qc.invalidateQueries({ queryKey: ["jobs"] });
@@ -200,6 +277,25 @@ function JobDetail() {
                 nextActionNeeded: isNextActionNeeded(nextActionNeeded)
                   ? nextActionNeeded
                   : undefined,
+                dateSent: dateSent !== previousDateSent ? dateSent || null : undefined,
+                slaDeadline: slaDeadline !== previousSlaDeadline ? slaDeadline || null : undefined,
+                clientFee:
+                  clientFee !== previousClientFee
+                    ? clientFee !== ""
+                      ? Number(clientFee)
+                      : null
+                    : undefined,
+                accountantFee:
+                  accountantFee !== previousAccountantFee
+                    ? accountantFee !== ""
+                      ? Number(accountantFee)
+                      : null
+                    : undefined,
+                notes: notes !== previousNotes ? notes : undefined,
+                clientId: clientId !== previousClientId ? clientId || null : undefined,
+                accountantId:
+                  accountantId !== previousAccountantId ? accountantId || null : undefined,
+                serviceId: serviceId !== previousServiceId ? serviceId || null : undefined,
               }
             : {}),
         },
@@ -461,6 +557,103 @@ function JobDetail() {
                   rows={4}
                   className="mt-1"
                 />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Notes</label>
+                <Textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  rows={4}
+                  className="mt-1"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-sm font-medium">Date sent</label>
+                  <Input
+                    type="date"
+                    value={dateSent}
+                    onChange={(e) => setDateSent(e.target.value)}
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium">SLA deadline</label>
+                  <Input
+                    type="date"
+                    value={slaDeadline}
+                    onChange={(e) => setSlaDeadline(e.target.value)}
+                    className="mt-1"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-sm font-medium">Client fee (€)</label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={clientFee}
+                    onChange={(e) => setClientFee(e.target.value)}
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium">Accountant fee (€)</label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={accountantFee}
+                    onChange={(e) => setAccountantFee(e.target.value)}
+                    className="mt-1"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="text-sm font-medium">Client</label>
+                <select
+                  value={clientId}
+                  onChange={(e) => setClientId(e.target.value)}
+                  className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                >
+                  <option value="">— Select client —</option>
+                  {(clientsQ.data?.clients ?? []).map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.fields["Full Name"] ?? c.fields["Client Code"] ?? c.id}
+                      {c.fields["Client Code"] ? ` (${c.fields["Client Code"]})` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-sm font-medium">Assigned accountant</label>
+                <select
+                  value={accountantId}
+                  onChange={(e) => setAccountantId(e.target.value)}
+                  className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                >
+                  <option value="">— Unassigned —</option>
+                  {(accountantsQ.data?.accountants ?? []).map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.fields.Name ?? a.id}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-sm font-medium">Service</label>
+                <select
+                  value={serviceId}
+                  onChange={(e) => setServiceId(e.target.value)}
+                  className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                >
+                  <option value="">— Select service —</option>
+                  {(servicesQ.data?.services ?? []).map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {[s.code, s.name, s.tier, s.category].filter(Boolean).join(" / ")}
+                    </option>
+                  ))}
+                </select>
               </div>
             </>
           )}
