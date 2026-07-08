@@ -47,7 +47,15 @@ export const Route = createFileRoute("/webhooks/lead-intake")({
           return Response.json({ error: "Server configuration error" }, { status: 500 });
         }
 
-        const provided = request.headers.get("x_lead_intake_secret");
+        const provided = request.headers.get("x-lead-intake-secret");
+        console.log("[lead-intake] auth debug", {
+          hasProvided: !!provided,
+          providedLength: provided?.length ?? 0,
+          secretLength: secret.length,
+          startsMatch: provided?.slice(0, 8) === secret.slice(0, 8),
+          endsMatch: provided?.slice(-8) === secret.slice(-8),
+        });
+        
         if (!provided || provided !== secret) {
           console.error("[lead-intake] rejected: missing or invalid shared secret");
           return Response.json({ error: "Unauthorized" }, { status: 401 });
