@@ -14,6 +14,35 @@ const localSupabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: { persistSession: false }
 });
 
+// Local, isolated client — does not touch the global Proxy-wrapped supabaseAdmin
+const supabase = createClient(
+  SUPABASE_URL,          // from wrangler.toml [vars]
+  SUPABASE_SERVICE_ROLE_KEY  // from wrangler secret
+);
+
+export async function onRequestPost(context) {
+  // 1. Verify a shared secret from Make before touching the DB
+  const sharedSecret = context.request.headers.get("x-mgt-webhook-secret");
+  if (sharedSecret !== context.env.MGT_WEBHOOK_SECRET) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
+  const payload = await context.request.json();
+  // 2. Validate payload shape before writing anything
+  if (!payload.case_serial_id || !payload.sender || !payload.text) {
+    return new Response("Bad request", { status: 400 });
+  }
+
+  const { error } = await supabase.from("case_timeline").insert({
+    case_serial_id: payload.case_serial_id,
+    sender: payload.sender,
+    text: payload.text,
+  });
+
+  if (error) return new Response(error.message, { status: 500 });
+  return new Response("OK", { status: 200 });
+}
+
 function readString(value: unknown, maxLength: number): string | undefined {
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
