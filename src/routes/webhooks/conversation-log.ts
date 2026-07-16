@@ -26,8 +26,8 @@ export const Route = createFileRoute("/webhooks/conversation-log")({
         const b = body as Record<string, unknown>;
 
         const email = readString(b.email, 200);
-        const direction = readString(b.direction, 20); // "Inbound" | "Outbound"
-        const caseSerialId = readString(b.case_serial_id, 100); 
+        const direction = readString(b.direction, 20); 
+        const caseSerialId = readString(b.case_serial_id, 100); // e.g. 'CS001-CLT0001'
         const textContent = readString(b.text_content, 100000); 
 
         if (!email || !EMAIL_PATTERN.test(email)) {
@@ -35,39 +35,49 @@ export const Route = createFileRoute("/webhooks/conversation-log")({
         }
 
         try {
-          // 1. Locate Client Row profile mappings
+          // 1. Core Lookup: Find the basic client record row by email matching
           const { data: matches, error: findError } = await supabaseAdmin
             .from("clients")
             .select("id, full_name, email")
             .ilike("email", email)
             .limit(1);
 
-          if (findError) {
-            throw new Error(`client lookup failed: ${findError.message}`);
-          }
-
+          if (findError) throw new Error(`Client lookup failed: ${findError.message}`);
           const client = matches?.[0];
+
           if (!client) {
-            return Response.json({ found: false });
+            return Response.json({ found: false, message: "No matching email profile found" });
           }
 
-          // 2. Refresh target tracking activity indexes
-          const { error: updateError } = await supabaseAdmin
+          // 2. Stamp active human operational metrics
+          await supabaseAdmin
             .from("clients")
             .update({ last_activity: new Date().toISOString() })
             .eq("id", client.id);
 
-          if (updateError) {
-            throw new Error(`last_activity stamp failed: ${updateError.message}`);
-          }
-
           // =========================================================
-          // 🚀 THE AI ENGINE ENTRYPOINT: POPULATE CASE TIMELINE
+          // 🧠 THE CORE AI BRAIN BRIDGE MAPPING LAYER
           // =========================================================
           if (textContent) {
             const isPartner = caseSerialId ? true : false;
-            const targetCaseId = client.id; 
+            
+            // CRITICAL FIX: Establish your true operational Case UUID tracking vector
+            let targetCaseId = client.id; 
 
+            // If Make passed an email token, query your directory to find its master tracking UUID
+            if (caseSerialId) {
+              const { data: directoryRow } = await supabaseAdmin
+                .from("cases_directory")
+                .select("id")
+                .eq("case_serial_id", caseSerialId)
+                .single();
+              
+              if (directoryRow) {
+                targetCaseId = directoryRow.id;
+              }
+            }
+
+            // Write the parsed email payload straight into the core timeline table
             const { error: timelineError } = await supabaseAdmin
               .from("case_timeline")
               .insert({
@@ -79,9 +89,9 @@ export const Route = createFileRoute("/webhooks/conversation-log")({
               });
 
             if (timelineError) {
-              console.error("[conversation-log] Supabase timeline insert failed:", timelineError);
+              console.error("[conversation-log] Supabase timeline sync failed:", timelineError);
             } else {
-              console.log(`[conversation-log] Successfully logged interaction payload for case ID: ${targetCaseId}`);
+              console.log(`[conversation-log] Successfully logged message for Case ID: ${targetCaseId}`);
             }
           }
           // =========================================================
@@ -93,7 +103,7 @@ export const Route = createFileRoute("/webhooks/conversation-log")({
             direction: direction ?? null,
           });
         } catch (error) {
-          console.error("[conversation-log] failed processing event", { error });
+          console.error("[conversation-log] runtime processing failed", { error });
           return Response.json(
             {
               error: "Failed to process conversation log",
