@@ -3,6 +3,14 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
+
+if (!supabaseUrl || !supabaseKey) {
+  // Prints the exact missing variable name in your Cloudflare dashboard console log stream
+  console.error("[conversation-log] Missing Supabase environment variable configurations");
+}
+
 function readString(value: unknown, maxLength: number): string | undefined {
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
