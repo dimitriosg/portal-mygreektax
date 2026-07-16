@@ -13,21 +13,7 @@ function readString(value: unknown, maxLength: number): string | undefined {
 export const Route = createFileRoute("/webhooks/conversation-log")({
   server: {
     handlers: {
-      POST: async ({ request, context }) => { // 🧠 Context binding passed here
-        // Extract the environment variable string parameter directly from the active runtime context
-        const secret = (context as any)?.env?.LEAD_INTAKE_SECRET || process.env.LEAD_INTAKE_SECRET;
-        
-        if (!secret) {
-          console.error("[conversation-log] LEAD_INTAKE_SECRET not resolved in active context layer");
-          return Response.json({ error: "Server configuration error" }, { status: 500 });
-        }
-
-        const provided = request.headers.get("x-lead-intake-secret");
-        if (!provided || provided !== secret) {
-          console.error("[conversation-log] rejected: missing or invalid shared secret");
-          return Response.json({ error: "Unauthorized" }, { status: 401 });
-        }
-
+      POST: async ({ request }) => {
         let body: unknown;
         try {
           body = await request.json();
@@ -41,15 +27,15 @@ export const Route = createFileRoute("/webhooks/conversation-log")({
 
         const email = readString(b.email, 200);
         const direction = readString(b.direction, 20); // "Inbound" | "Outbound"
-        const caseSerialId = readString(b.case_serial_id, 100); // 🧠 Added: Captures text tracking keys from Make
-        const textContent = readString(b.text_content, 100000); // 🧠 Added: Captures clean email body string text
+        const caseSerialId = readString(b.case_serial_id, 100); 
+        const textContent = readString(b.text_content, 100000); 
 
         if (!email || !EMAIL_PATTERN.test(email)) {
           return Response.json({ error: "Valid email is required" }, { status: 400 });
         }
 
         try {
-          // 1. Core Lookup Loop: Try to locate the main Client profile row first
+          // 1. Locate Client Row profile mappings
           const { data: matches, error: findError } = await supabaseAdmin
             .from("clients")
             .select("id, full_name, email")
@@ -65,7 +51,7 @@ export const Route = createFileRoute("/webhooks/conversation-log")({
             return Response.json({ found: false });
           }
 
-          // 2. Update existing last activity timestamps
+          // 2. Refresh target tracking activity indexes
           const { error: updateError } = await supabaseAdmin
             .from("clients")
             .update({ last_activity: new Date().toISOString() })
@@ -79,21 +65,24 @@ export const Route = createFileRoute("/webhooks/conversation-log")({
           // 🚀 THE AI ENGINE ENTRYPOINT: POPULATE CASE TIMELINE
           // =========================================================
           if (textContent) {
-            // Determine the structural identity categories dynamically
             const isPartner = caseSerialId ? true : false;
-            
-            // Map your human serial case index key down to your true underlying database UUID
-            // If the table 'cases_directory' isn't queried yet, fallback straight onto client.id
             const targetCaseId = client.id; 
 
-            await supabaseAdmin.from("case_timeline").insert({
-              case_id: targetCaseId,
-              case_serial_id: caseSerialId || null,
-              event_type: isPartner ? "partner_reply" : "lead_received",
-              sender: isPartner ? "partner" : "customer",
-              payload: { text: textContent }
-            });
-            console.log(`[conversation-log] Appended interaction to case timeline for ID: ${targetCaseId}`);
+            const { error: timelineError } = await supabaseAdmin
+              .from("case_timeline")
+              .insert({
+                case_id: targetCaseId,
+                case_serial_id: caseSerialId || null,
+                event_type: isPartner ? "partner_reply" : "lead_received",
+                sender: isPartner ? "partner" : "customer",
+                payload: { text: textContent }
+              });
+
+            if (timelineError) {
+              console.error("[conversation-log] Supabase timeline insert failed:", timelineError);
+            } else {
+              console.log(`[conversation-log] Successfully logged interaction payload for case ID: ${targetCaseId}`);
+            }
           }
           // =========================================================
 
@@ -104,7 +93,7 @@ export const Route = createFileRoute("/webhooks/conversation-log")({
             direction: direction ?? null,
           });
         } catch (error) {
-          console.error("[conversation-log] failed", { error });
+          console.error("[conversation-log] failed processing event", { error });
           return Response.json(
             {
               error: "Failed to process conversation log",
