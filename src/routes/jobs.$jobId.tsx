@@ -38,6 +38,8 @@ import { formatDate, formatDateTime } from "@/lib/utils";
 import { TrackingLinkPreviewNotice } from "@/components/tracking-link-preview-notice";
 import { track } from "@/lib/analytics";
 import { buildTrackingLink } from "@/lib/tracking-links";
+import { AiReviewDesk } from "@/components/AiReviewDesk"; // 🧠 Add this import line
+
 
 export const Route = createFileRoute("/jobs/$jobId")({ component: JobDetail });
 
@@ -415,6 +417,14 @@ function JobDetail() {
         </div>
       </div>
 
+      {/* ========================================================= */}
+      {/* 🚀 THE AI REVIEW DESK LAYER: HOOKED DIRECTLY INTO THE TIMELINE */}
+      {/* ========================================================= */}
+      <div className="w-full">
+        <AiReviewDesk jobId={jobId} />
+      </div>
+      {/* ========================================================= */}
+      
       <TrackingLinkPreviewNotice
         className="max-w-3xl"
         sampleToken={trackingQ.data?.token?.token ?? undefined}
@@ -424,6 +434,7 @@ function JobDetail() {
         <CardHeader>
           <CardTitle className="text-base">Details</CardTitle>
         </CardHeader>
+
         <CardContent className="grid grid-cols-2 gap-4 text-sm">
           <div>
             <div className="text-muted-foreground">Client</div>
