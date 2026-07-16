@@ -13,10 +13,12 @@ function readString(value: unknown, maxLength: number): string | undefined {
 export const Route = createFileRoute("/webhooks/conversation-log")({
   server: {
     handlers: {
-      POST: async ({ request }) => {
-        const secret = process.env.LEAD_INTAKE_SECRET;
+      POST: async ({ request, context }) => { // 🧠 Context binding passed here
+        // Extract the environment variable string parameter directly from the active runtime context
+        const secret = (context as any)?.env?.LEAD_INTAKE_SECRET || process.env.LEAD_INTAKE_SECRET;
+        
         if (!secret) {
-          console.error("[conversation-log] LEAD_INTAKE_SECRET not configured");
+          console.error("[conversation-log] LEAD_INTAKE_SECRET not resolved in active context layer");
           return Response.json({ error: "Server configuration error" }, { status: 500 });
         }
 
@@ -34,7 +36,7 @@ export const Route = createFileRoute("/webhooks/conversation-log")({
         }
         if (typeof body !== "object" || body === null) {
           return Response.json({ error: "Invalid JSON body" }, { status: 400 });
-0        }
+        }
         const b = body as Record<string, unknown>;
 
         const email = readString(b.email, 200);
