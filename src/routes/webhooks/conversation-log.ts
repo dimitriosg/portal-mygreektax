@@ -3,13 +3,8 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
-
-if (!supabaseUrl || !supabaseKey) {
-  // Prints the exact missing variable name in your Cloudflare dashboard console log stream
-  console.error("[conversation-log] Missing Supabase environment variable configurations");
-}
+// 🧠 DYNAMIC CONFIGURATION RESOLVERS: Hardcoding your public URL as a fail-safe fallback
+const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "https://supabase.co";
 
 function readString(value: unknown, maxLength: number): string | undefined {
   if (typeof value !== "string") return undefined;
@@ -35,7 +30,7 @@ export const Route = createFileRoute("/webhooks/conversation-log")({
 
         const email = readString(b.email, 200);
         const direction = readString(b.direction, 20); 
-        const caseSerialId = readString(b.case_serial_id, 100); // e.g. 'CS001-CLT0001'
+        const caseSerialId = readString(b.case_serial_id, 100); 
         const textContent = readString(b.text_content, 100000); 
 
         if (!email || !EMAIL_PATTERN.test(email)) {
@@ -43,36 +38,44 @@ export const Route = createFileRoute("/webhooks/conversation-log")({
         }
 
         try {
-          // 1. Core Lookup: Find the basic client record row by email matching
+          // Use your clean project URL variable string instead of volatile system objects
+          console.log("[conversation-log] Target Supabase Cluster endpoint:", SUPABASE_URL);
+
+          // 1. Locate Client Row profile mappings
           const { data: matches, error: findError } = await supabaseAdmin
             .from("clients")
             .select("id, full_name, email")
             .ilike("email", email)
             .limit(1);
 
-          if (findError) throw new Error(`Client lookup failed: ${findError.message}`);
-          const client = matches?.[0];
-
-          if (!client) {
-            return Response.json({ found: false, message: "No matching email profile found" });
+          if (findError) {
+            throw new Error(`client lookup failed: ${findError.message}`);
           }
 
-          // 2. Stamp active human operational metrics
-          await supabaseAdmin
+          const client = matches?.[0];
+          if (!client) {
+            return Response.json({ found: false });
+          }
+
+          // 2. Refresh target tracking activity indexes
+          const { error: updateError } = await supabaseAdmin
             .from("clients")
             .update({ last_activity: new Date().toISOString() })
             .eq("id", client.id);
 
+          if (updateError) {
+            throw new Error(`last_activity stamp failed: ${updateError.message}`);
+          }
+
           // =========================================================
-          // 🧠 THE CORE AI BRAIN BRIDGE MAPPING LAYER
+          // 🚀 THE AI ENGINE ENTRYPOINT: POPULATE CASE TIMELINE
           // =========================================================
           if (textContent) {
             const isPartner = caseSerialId ? true : false;
             
-            // CRITICAL FIX: Establish your true operational Case UUID tracking vector
+            // Map the identifier dynamically down to your target case profile
             let targetCaseId = client.id; 
 
-            // If Make passed an email token, query your directory to find its master tracking UUID
             if (caseSerialId) {
               const { data: directoryRow } = await supabaseAdmin
                 .from("cases_directory")
@@ -85,7 +88,6 @@ export const Route = createFileRoute("/webhooks/conversation-log")({
               }
             }
 
-            // Write the parsed email payload straight into the core timeline table
             const { error: timelineError } = await supabaseAdmin
               .from("case_timeline")
               .insert({
@@ -97,9 +99,9 @@ export const Route = createFileRoute("/webhooks/conversation-log")({
               });
 
             if (timelineError) {
-              console.error("[conversation-log] Supabase timeline sync failed:", timelineError);
+              console.error("[conversation-log] Supabase timeline insert failed:", timelineError);
             } else {
-              console.log(`[conversation-log] Successfully logged message for Case ID: ${targetCaseId}`);
+              console.log(`[conversation-log] Successfully logged interaction payload for case ID: ${targetCaseId}`);
             }
           }
           // =========================================================
@@ -111,7 +113,7 @@ export const Route = createFileRoute("/webhooks/conversation-log")({
             direction: direction ?? null,
           });
         } catch (error) {
-          console.error("[conversation-log] runtime processing failed", { error });
+          console.error("[conversation-log] failed processing event", { error });
           return Response.json(
             {
               error: "Failed to process conversation log",
