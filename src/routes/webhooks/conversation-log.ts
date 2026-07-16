@@ -1,46 +1,34 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { createClient } from "@supabase/supabase-js"; // Completely standalone import
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-// 1. Direct configuration definitions to completely bypass internal Proxy errors
-const SUPABASE_URL = "https://supabase.co";
+// Lazy, request-time client creation. Nothing touches the database or the
+// environment at module load, so a missing variable can never crash the
+// whole route module again. A misconfiguration returns a readable JSON
+// error to Make instead of an HTML error page.
+let cachedClient: SupabaseClient | undefined;
 
-// 2. PASTE YOUR REAL SUPABASE TOKEN HERE AS A SECURE RUNTIME FALLBACK
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_SERVICE_ROLE_KEY || "PASTE_YOUR_COPIED_SUPABASE_TOKEN_STRING_HERE";
+function getSupabase(): { client: SupabaseClient } | { configError: string } {
+  if (cachedClient) return { client: cachedClient };
 
-// Initialize a completely isolated, standalone database gateway client for this single route
-const localSupabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
-  auth: { persistSession: false }
-});
+  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-// Local, isolated client — does not touch the global Proxy-wrapped supabaseAdmin
-const supabase = createClient(
-  SUPABASE_URL,          // from wrangler.toml [vars]
-  SUPABASE_SERVICE_ROLE_KEY  // from wrangler secret
-);
-
-export async function onRequestPost(context) {
-  // 1. Verify a shared secret from Make before touching the DB
-  const sharedSecret = context.request.headers.get("x-mgt-webhook-secret");
-  if (sharedSecret !== context.env.MGT_WEBHOOK_SECRET) {
-    return new Response("Unauthorized", { status: 401 });
+  if (!url || !key) {
+    const missing = [
+      ...(!url ? ["SUPABASE_URL (or VITE_SUPABASE_URL)"] : []),
+      ...(!key ? ["SUPABASE_SERVICE_ROLE_KEY"] : []),
+    ];
+    return {
+      configError: `Missing environment variable(s): ${missing.join(", ")}. Set SUPABASE_URL in wrangler.jsonc vars and SUPABASE_SERVICE_ROLE_KEY as a Secret in the Cloudflare dashboard, then redeploy.`,
+    };
   }
 
-  const payload = await context.request.json();
-  // 2. Validate payload shape before writing anything
-  if (!payload.case_serial_id || !payload.sender || !payload.text) {
-    return new Response("Bad request", { status: 400 });
-  }
-
-  const { error } = await supabase.from("case_timeline").insert({
-    case_serial_id: payload.case_serial_id,
-    sender: payload.sender,
-    text: payload.text,
+  cachedClient = createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
   });
-
-  if (error) return new Response(error.message, { status: 500 });
-  return new Response("OK", { status: 200 });
+  return { client: cachedClient };
 }
 
 function readString(value: unknown, maxLength: number): string | undefined {
@@ -54,6 +42,17 @@ export const Route = createFileRoute("/webhooks/conversation-log")({
   server: {
     handlers: {
       POST: async ({ request }) => {
+        // Optional shared secret. Enforced only when MGT_WEBHOOK_SECRET is
+        // set on the Worker, so this file can be deployed first and the
+        // secret added to Cloudflare and Make later without breaking runs.
+        const expectedSecret = process.env.MGT_WEBHOOK_SECRET;
+        if (expectedSecret) {
+          const provided = request.headers.get("x-mgt-webhook-secret");
+          if (provided !== expectedSecret) {
+            return Response.json({ error: "Unauthorized" }, { status: 401 });
+          }
+        }
+
         let body: unknown;
         try {
           body = await request.json();
@@ -66,17 +65,27 @@ export const Route = createFileRoute("/webhooks/conversation-log")({
         const b = body as Record<string, unknown>;
 
         const email = readString(b.email, 200);
-        const direction = readString(b.direction, 20); 
-        const caseSerialId = readString(b.case_serial_id, 100); 
-        const textContent = readString(b.text_content, 100000); 
+        const direction = readString(b.direction, 20);
+        const caseSerialId = readString(b.case_serial_id, 100);
+        const textContent = readString(b.text_content, 100000);
 
         if (!email || !EMAIL_PATTERN.test(email)) {
           return Response.json({ error: "Valid email is required" }, { status: 400 });
         }
 
+        const supabaseResult = getSupabase();
+        if ("configError" in supabaseResult) {
+          console.error("[conversation-log] configuration error:", supabaseResult.configError);
+          return Response.json(
+            { error: "Server misconfigured", detail: supabaseResult.configError },
+            { status: 500 },
+          );
+        }
+        const supabase = supabaseResult.client;
+
         try {
-          // 1. Locate Client Row profile mappings using local isolated client
-          const { data: matches, error: findError } = await localSupabase
+          // 1. Locate the client row by email
+          const { data: matches, error: findError } = await supabase
             .from("clients")
             .select("id, full_name, email")
             .ilike("email", email)
@@ -88,11 +97,12 @@ export const Route = createFileRoute("/webhooks/conversation-log")({
 
           const client = matches?.[0];
           if (!client) {
+            // Unknown recipient: HTTP 200 so the Make scenario does not error
             return Response.json({ found: false });
           }
 
-          // 2. Refresh target tracking activity indexes
-          const { error: updateError } = await localSupabase
+          // 2. Stamp last activity on the client row
+          const { error: updateError } = await supabase
             .from("clients")
             .update({ last_activity: new Date().toISOString() })
             .eq("id", client.id);
@@ -101,42 +111,39 @@ export const Route = createFileRoute("/webhooks/conversation-log")({
             throw new Error(`last_activity stamp failed: ${updateError.message}`);
           }
 
-          // =========================================================
-          // 🚀 THE AI ENGINE ENTRYPOINT: POPULATE CASE TIMELINE
-          // =========================================================
+          // 3. Populate the case timeline (AI engine entrypoint)
           if (textContent) {
             const isPartner = caseSerialId ? true : false;
-            let targetCaseId = client.id; 
+            let targetCaseId = client.id;
 
             if (caseSerialId) {
-              const { data: directoryRow } = await localSupabase
+              const { data: directoryRow } = await supabase
                 .from("cases_directory")
                 .select("id")
                 .eq("case_serial_id", caseSerialId)
                 .single();
-              
+
               if (directoryRow) {
                 targetCaseId = directoryRow.id;
               }
             }
 
-            const { error: timelineError } = await localSupabase
+            const { error: timelineError } = await supabase
               .from("case_timeline")
               .insert({
                 case_id: targetCaseId,
                 case_serial_id: caseSerialId || null,
                 event_type: isPartner ? "partner_reply" : "lead_received",
                 sender: isPartner ? "partner" : "customer",
-                payload: { text: textContent }
+                payload: { text: textContent },
               });
 
             if (timelineError) {
               console.error("[conversation-log] Supabase timeline insert failed:", timelineError);
             } else {
-              console.log(`[conversation-log] Successfully logged interaction payload for case ID: ${targetCaseId}`);
+              console.log(`[conversation-log] logged interaction for case ID: ${targetCaseId}`);
             }
           }
-          // =========================================================
 
           return Response.json({
             found: true,
