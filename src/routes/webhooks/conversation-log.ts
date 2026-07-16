@@ -1,10 +1,18 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { createClient } from "@supabase/supabase-js"; // Completely standalone import
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-// 🧠 DYNAMIC CONFIGURATION RESOLVERS: Hardcoding your public URL as a fail-safe fallback
-const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "https://supabase.co";
+// 1. Direct configuration definitions to completely bypass internal Proxy errors
+const SUPABASE_URL = "https://supabase.co";
+
+// 2. PASTE YOUR REAL SUPABASE TOKEN HERE AS A SECURE RUNTIME FALLBACK
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_SERVICE_ROLE_KEY || "PASTE_YOUR_COPIED_SUPABASE_TOKEN_STRING_HERE";
+
+// Initialize a completely isolated, standalone database gateway client for this single route
+const localSupabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
+  auth: { persistSession: false }
+});
 
 function readString(value: unknown, maxLength: number): string | undefined {
   if (typeof value !== "string") return undefined;
@@ -38,11 +46,8 @@ export const Route = createFileRoute("/webhooks/conversation-log")({
         }
 
         try {
-          // Use your clean project URL variable string instead of volatile system objects
-          console.log("[conversation-log] Target Supabase Cluster endpoint:", SUPABASE_URL);
-
-          // 1. Locate Client Row profile mappings
-          const { data: matches, error: findError } = await supabaseAdmin
+          // 1. Locate Client Row profile mappings using local isolated client
+          const { data: matches, error: findError } = await localSupabase
             .from("clients")
             .select("id, full_name, email")
             .ilike("email", email)
@@ -58,7 +63,7 @@ export const Route = createFileRoute("/webhooks/conversation-log")({
           }
 
           // 2. Refresh target tracking activity indexes
-          const { error: updateError } = await supabaseAdmin
+          const { error: updateError } = await localSupabase
             .from("clients")
             .update({ last_activity: new Date().toISOString() })
             .eq("id", client.id);
@@ -72,12 +77,10 @@ export const Route = createFileRoute("/webhooks/conversation-log")({
           // =========================================================
           if (textContent) {
             const isPartner = caseSerialId ? true : false;
-            
-            // Map the identifier dynamically down to your target case profile
             let targetCaseId = client.id; 
 
             if (caseSerialId) {
-              const { data: directoryRow } = await supabaseAdmin
+              const { data: directoryRow } = await localSupabase
                 .from("cases_directory")
                 .select("id")
                 .eq("case_serial_id", caseSerialId)
@@ -88,7 +91,7 @@ export const Route = createFileRoute("/webhooks/conversation-log")({
               }
             }
 
-            const { error: timelineError } = await supabaseAdmin
+            const { error: timelineError } = await localSupabase
               .from("case_timeline")
               .insert({
                 case_id: targetCaseId,
