@@ -157,9 +157,24 @@ export const Route = createFileRoute("/webhooks/send-approved")({
           const refLine = caseSerialId ? `MGT-REF-ID: [${caseSerialId}]` : "";
           const subject = "Update on your MyGreekTax request";
 
+          /* BEFORE THE SUGGESTED CHANGE, CODE BELOW:
+          --------------------------------------------------------
           const makeResponse = await fetch(webhookUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
+          --------------------------------------------------------
+          */
+          
+          // Modified after Claude's suggestion for MAKE_OUTBOUND_WEBHOOK_KEY on Cloudflare
+          const makeHeaders: Record<string, string> = {
+            "Content-Type": "application/json",
+          };
+          
+          const makeKey = process.env.MAKE_OUTBOUND_WEBHOOK_KEY;
+          if (makeKey) makeHeaders["x-make-apikey"] = makeKey;
+          const makeResponse = await fetch(webhookUrl, {
+            method: "POST",
+            headers: makeHeaders, // <---- the change ended at this point.
             body: JSON.stringify({
               case_id: caseId,
               case_serial_id: caseSerialId,
