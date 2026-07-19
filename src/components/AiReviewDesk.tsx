@@ -97,7 +97,15 @@ export const AiReviewDesk: React.FC<AiReviewDeskProps> = ({ jobId }) => {
       // Stitch body + a spacer + signature into one document, then sanitize
       // the whole thing once.
       const combined = `${bodyHtml || bodyInitial}<br>${signatureHtml}`;
-      const cleanHtml = DOMPurify.sanitize(combined, SANITIZE_CONFIG);
+      let cleanHtml = DOMPurify.sanitize(combined, SANITIZE_CONFIG);
+
+      // Flatten <li><p>text</p></li> to <li>text</li>. TipTap wraps list-item
+      // content in a paragraph, which email clients render with big vertical
+      // gaps between bullets. Removing the inner <p> gives tight list spacing
+      // in the actual email (where our editor CSS does not apply).
+      cleanHtml = cleanHtml
+        .replace(/<li>\s*<p>/gi, "<li>")
+        .replace(/<\/p>\s*<\/li>/gi, "</li>");
 
       if (!cleanHtml.replace(/<[^>]*>/g, "").trim()) {
         setStatus({ kind: "error", detail: "The draft is empty." });
