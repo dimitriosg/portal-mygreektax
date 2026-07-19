@@ -110,9 +110,10 @@ export function RichTextEditor({ initialHtml, onChange }: RichTextEditorProps) {
       {/* Scoped list/link styling so the editor view matches the sent email
           without depending on @tailwindcss/typography. */}
       <style>{`
-        .mgt-editor ul { list-style: disc; margin: 0.5em 0; padding-left: 1.5em; }
-        .mgt-editor ol { list-style: decimal; margin: 0.5em 0; padding-left: 1.5em; }
-        .mgt-editor li { margin: 0.2em 0; }
+        .mgt-editor ul { list-style: disc; margin: 0.4em 0; padding-left: 1.5em; }
+        .mgt-editor ol { list-style: decimal; margin: 0.4em 0; padding-left: 1.5em; }
+        .mgt-editor li { margin: 0.1em 0; }
+        .mgt-editor li p { margin: 0; }
         .mgt-editor p { margin: 0.4em 0; }
         .mgt-editor a { color: #C9923A; text-decoration: underline; }
       `}</style>
