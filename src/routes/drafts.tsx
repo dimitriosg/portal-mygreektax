@@ -48,9 +48,6 @@ function CaseWorkspace() {
   const [clients, setClients] = useState<Record<string, ClientInfo>>({});
   const [drafts, setDrafts] = useState<Record<string, DraftInfo>>({});
   const [loading, setLoading] = useState(true);
-  const [generating, setGenerating] = useState<Record<string, boolean>>({});
-  const [errors, setErrors] = useState<Record<string, string>>({});
-
   const load = useCallback(async () => {
     const { data: caseData } = await supabase
       .from("brain_conversations")
@@ -118,45 +115,6 @@ function CaseWorkspace() {
     };
   }, [load]);
 
-  const generate = async (row: CaseRow) => {
-    setErrors((e) => ({ ...e, [row.id]: "" }));
-    setGenerating((g) => ({ ...g, [row.id]: true }));
-
-    try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      const res = await fetch("/webhooks/generate-draft", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
-        },
-        body: JSON.stringify({ conversation_id: row.id }),
-      });
-
-      const payload = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        const detail =
-          typeof payload?.detail === "string"
-            ? payload.detail
-            : payload?.error ?? `HTTP ${res.status}`;
-        setErrors((e) => ({ ...e, [row.id]: `Generation failed: ${detail}` }));
-      } else {
-        await load();
-      }
-    } catch (err) {
-      setErrors((e) => ({
-        ...e,
-        [row.id]: `Could not reach the server: ${err instanceof Error ? err.message : String(err)}`,
-      }));
-    } finally {
-      setGenerating((g) => ({ ...g, [row.id]: false }));
-    }
-  };
-
   const nameFor = (row: CaseRow): string => {
     const c = row.client_id ? clients[row.client_id] : undefined;
     return c?.full_name || c?.email || row.customer_email || "Unknown sender";
@@ -172,8 +130,6 @@ function CaseWorkspace() {
 
   const renderCard = (row: CaseRow) => {
     const draft = drafts[row.id];
-    const isGenerating = generating[row.id];
-    const err = errors[row.id];
     const hasDraft = !!draft?.proposed_draft;
 
     return (
@@ -206,38 +162,13 @@ function CaseWorkspace() {
             </div>
 
             <div className="flex items-center gap-2 shrink-0">
-              {hasDraft ? (
-                <Link to="/review/$caseId" params={{ caseId: row.id }}>
-                  <Button className="bg-[#0B192C] hover:bg-slate-800 text-white">Review draft</Button>
-                </Link>
-              ) : (
-                <Button
-                  onClick={() => generate(row)}
-                  disabled={isGenerating}
-                  className="bg-[#0B192C] hover:bg-slate-800 text-white"
-                >
-                  {isGenerating ? "Generating..." : "Generate draft"}
+              <Link to="/review/$caseId" params={{ caseId: row.id }}>
+                <Button className="bg-[#0B192C] hover:bg-slate-800 text-white">
+                  {hasDraft ? "Review draft" : "Open case"}
                 </Button>
-              )}
-              {hasDraft && (
-                <Button
-                  variant="outline"
-                  onClick={() => generate(row)}
-                  disabled={isGenerating}
-                  className="h-9 px-3 text-xs"
-                  title="Regenerate: runs the Brain again and replaces the current draft"
-                >
-                  {isGenerating ? "..." : "Regenerate"}
-                </Button>
-              )}
+              </Link>
             </div>
           </div>
-
-          {err && (
-            <p className="text-sm text-red-600 border border-red-200 bg-red-50 rounded px-3 py-2">
-              {err}
-            </p>
-          )}
         </CardContent>
       </Card>
     );
