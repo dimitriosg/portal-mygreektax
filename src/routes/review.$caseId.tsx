@@ -62,6 +62,7 @@ function ReviewCase() {
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState<string>("");
   const [hasDraft, setHasDraft] = useState(false);
+  const [showAllMessages, setShowAllMessages] = useState(false);
 
   const load = useCallback(async () => {
     const { data: convData } = await supabase
@@ -196,7 +197,23 @@ function ReviewCase() {
           {!loading && events.length === 0 && (
             <p className="text-sm text-slate-400">No messages logged for this case yet.</p>
           )}
-          {events.map((row) => (
+
+          {/* Collapsed by default: show only the most recent message, with a
+              toggle to reveal the full thread. Keeps the draft high on the
+              page instead of pushed down by a long history. */}
+          {!loading && events.length > 1 && (
+            <button
+              type="button"
+              onClick={() => setShowAllMessages((v) => !v)}
+              className="text-xs font-medium text-slate-500 hover:text-slate-800 underline"
+            >
+              {showAllMessages
+                ? "Collapse conversation"
+                : `Show all ${events.length} messages`}
+            </button>
+          )}
+
+          {(showAllMessages ? events : events.slice(-1)).map((row) => (
             <div key={row.id} className="border-l-2 border-slate-200 pl-3">
               <div className="flex items-center gap-2">
                 <span className="text-xs font-medium text-slate-700">
@@ -215,6 +232,12 @@ function ReviewCase() {
               </p>
             </div>
           ))}
+
+          {!loading && events.length > 1 && !showAllMessages && (
+            <p className="text-xs text-slate-400 italic">
+              Showing the latest message only. {events.length - 1} earlier hidden.
+            </p>
+          )}
         </CardContent>
       </Card>
 
