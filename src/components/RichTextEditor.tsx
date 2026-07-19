@@ -62,8 +62,13 @@ export function RichTextEditor({ initialHtml, onChange }: RichTextEditorProps) {
     content: initialHtml,
     editorProps: {
       attributes: {
+        // Note: no `prose` classes here. Those need @tailwindcss/typography,
+        // which this project does not install, so lists would render without
+        // markers/indentation. The `mgt-editor` class (styles injected below)
+        // gives list bullets, numbers, and indentation directly, so the
+        // editor view matches the sent email.
         class:
-          "min-h-[280px] w-full rounded-md border border-slate-200 bg-white p-3 text-sm text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 prose prose-sm max-w-none",
+          "mgt-editor min-h-[200px] w-full rounded-md border border-slate-200 bg-white p-3 text-sm text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500",
       },
     },
     onUpdate: ({ editor }) => {
@@ -102,6 +107,15 @@ export function RichTextEditor({ initialHtml, onChange }: RichTextEditorProps) {
 
   return (
     <div className="flex flex-col gap-2">
+      {/* Scoped list/link styling so the editor view matches the sent email
+          without depending on @tailwindcss/typography. */}
+      <style>{`
+        .mgt-editor ul { list-style: disc; margin: 0.5em 0; padding-left: 1.5em; }
+        .mgt-editor ol { list-style: decimal; margin: 0.5em 0; padding-left: 1.5em; }
+        .mgt-editor li { margin: 0.2em 0; }
+        .mgt-editor p { margin: 0.4em 0; }
+        .mgt-editor a { color: #C9923A; text-decoration: underline; }
+      `}</style>
       <div className="flex flex-wrap items-center gap-1 border border-slate-200 rounded-md p-1 bg-slate-50">
         <Button
           type="button"
