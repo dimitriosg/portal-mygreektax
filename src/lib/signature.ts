@@ -8,8 +8,12 @@
 // This HTML must stay in sync with what the email should look like. It is the
 // SINGLE source of truth for the signature; Make no longer appends one.
 
-export const SIGNATURE_HTML = `<p>Με εκτίμηση,</p>
-<p><strong>MyGreekTax Team</strong><br>
+export const SIGNATURE_HTML = 
+`<p style="margin: 0; line-height: 1.2;">
+  Με εκτίμηση,<br>
+  <strong>MyGreekTax Team</strong><br>
+  <!-- You can continue adding lines here directly below -->
+</p>
 <span style="color: #6b7280;">Greek tax &amp; admin, in English</span><br>
 <span style="color: #6b7280;"><a href="mailto:hello@mygreektax.eu" style="color: #6b7280;">hello@mygreektax.eu</a> &middot; <a href="https://mygreektax.eu" style="color: #6b7280;">mygreektax.eu</a></span></p>
 <p><a href="https://g.page/r/CemUQExx34X1EAE/review" style="color: #C9923A; font-weight: bold; text-decoration: none;">&gt;&gt; Review Us on Google &lt;&lt;</a></p>
