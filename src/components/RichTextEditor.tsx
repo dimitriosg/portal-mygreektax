@@ -1,6 +1,5 @@
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import Underline from "@tiptap/extension-underline";
 import Link from "@tiptap/extension-link";
 import { TextStyle } from "@tiptap/extension-text-style";
 import Color from "@tiptap/extension-color";
@@ -15,6 +14,24 @@ import {
   Link as LinkIcon,
   Unlink,
 } from "lucide-react";
+
+// Link that preserves its inline style attribute through the editor round
+// trip. TipTap's default Link drops inline style, which strips the amber
+// colour off the signature's Google-review link (it falls back to browser
+// blue in the sent email). Carrying `style` keeps colour intact.
+const StyledLink = Link.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      style: {
+        default: null,
+        parseHTML: (el: HTMLElement) => el.getAttribute("style"),
+        renderHTML: (attrs: Record<string, unknown>) =>
+          attrs.style ? { style: attrs.style as string } : {},
+      },
+    };
+  },
+});
 
 // Rich text editor used by the review desk. TipTap v3, React 19 compatible.
 // It emits HTML via onChange. It is initialised once from `initialHtml`;
@@ -46,11 +63,14 @@ export function RichTextEditor({ initialHtml, onChange }: RichTextEditorProps) {
         codeBlock: false,
         horizontalRule: false,
         blockquote: false,
+        // StarterKit v3 bundles Link; disable it so our StyledLink (which
+        // preserves inline colour) is the only link extension. Underline is
+        // included by StarterKit and used by the toolbar below.
+        link: false,
       }),
-      Underline,
       TextStyle,
       Color,
-      Link.configure({
+      StyledLink.configure({
         openOnClick: false,
         autolink: true,
         HTMLAttributes: {
