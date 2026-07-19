@@ -430,6 +430,16 @@ function AppShell() {
                     </span>
                   </Link>
                 )}
+                /////
+                // <-- ADDING 'DRAFT CASES'
+                {isAdmin && (
+                  <Link to="/drafts" activeProps={{ className: "font-semibold" }}>
+                    Cases
+                  </Link>
+                )}
+                // <-- FINISH adding.
+
+                /////
                 {isRealAdmin && impersonatingId && (
                   <button
                     onClick={stopImpersonation}
