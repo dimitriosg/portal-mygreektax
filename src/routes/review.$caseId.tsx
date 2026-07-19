@@ -252,12 +252,26 @@ function ReviewCase() {
             disabled={generating}
             className="bg-[#0B192C] hover:bg-slate-800 text-white"
           >
-            {generating ? "Generating draft..." : "Generate draft"}
+            {generating ? (
+              <span className="inline-flex items-center gap-2">
+                <span className="inline-block h-3 w-3 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+                Generating draft...
+              </span>
+            ) : (
+              "Generate draft"
+            )}
           </Button>
           <p className="text-xs text-slate-400">
             Runs the Brain once for this case. Costs a single AI call. Nothing is sent until you
             review and approve.
           </p>
+          {generating && (
+            <div className="flex items-center gap-2 text-sm text-slate-600 border border-slate-200 bg-slate-50 rounded px-3 py-2">
+              <span className="inline-block h-3 w-3 rounded-full border-2 border-slate-300 border-t-slate-600 animate-spin" />
+              The Brain is reading the conversation and drafting a reply. This usually takes a few
+              seconds.
+            </div>
+          )}
           {genError && (
             <p className="text-sm text-red-600 border border-red-200 bg-red-50 rounded px-3 py-2">
               {genError}
