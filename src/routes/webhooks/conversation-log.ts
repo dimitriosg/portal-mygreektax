@@ -97,102 +97,122 @@ export const Route = createFileRoute("/webhooks/conversation-log")({
         const supabase = supabaseResult.client;
 
         try {
-          // 1. Locate the client row by email
-          const { data: matches, error: findError } = await supabase
-            .from("clients")
-            .select("id, full_name, email")
-            .ilike("email", email)
-            .limit(1);
+          const isOutbound = (direction ?? "").toLowerCase() === "outbound";
+          const isInternal = (direction ?? "").toLowerCase() === "internal";
 
-          if (findError) {
-            throw new Error(`client lookup failed: ${findError.message}`);
+          // 1. Resolve the conversation this event belongs to. The serial is the
+          //    authority (it comes straight from the case), so try it first via
+          //    brain_conversations. Fall back to the customer email if no serial
+          //    was supplied. cases_directory is not used: it does not carry these
+          //    rows. Everything writes to brain_events, the live spine the portal
+          //    and the Brain both read.
+          let conversationId: string | undefined;
+
+          if (caseSerialId) {
+            const { data: convRows, error: convError } = await supabase
+              .from("brain_conversations")
+              .select("id")
+              .eq("case_serial_id", caseSerialId)
+              .limit(1);
+            if (convError) {
+              throw new Error(`conversation lookup by serial failed: ${convError.message}`);
+            }
+            conversationId = convRows?.[0]?.id;
           }
 
-          const client = matches?.[0];
-          if (!client) {
-            // Unknown recipient: HTTP 200 so the Make scenario does not error
+          if (!conversationId) {
+            const { data: convRows, error: convError } = await supabase
+              .from("brain_conversations")
+              .select("id")
+              .ilike("customer_email", email)
+              .order("created_at", { ascending: false })
+              .limit(1);
+            if (convError) {
+              throw new Error(`conversation lookup by email failed: ${convError.message}`);
+            }
+            conversationId = convRows?.[0]?.id;
+          }
+
+          if (!conversationId) {
+            // Nothing to attach to: 200 so the Make scenario does not error.
             return Response.json({ found: false });
           }
 
-          // 2. Dedupe. If this Gmail message was already logged (a re-sync of an
-          //    overlapping window), skip everything, including the activity bump.
+          // 2. Dedupe. A provider message id (Gmail/Mailgun) keeps re-syncs of an
+          //    overlapping window from double-logging. The unique key on
+          //    brain_events.external_event_id is the real guard; this is a cheap
+          //    pre-check so a duplicate returns cleanly instead of throwing.
+          const externalEventId = sourceMessageId
+            ? `mg:${sourceMessageId}`
+            : `${isOutbound ? "outbound" : isInternal ? "internal" : "inbound"}:${email}:${Date.now()}`;
+
           if (sourceMessageId) {
             const { data: dupes, error: dupeError } = await supabase
-              .from("case_timeline")
+              .from("brain_events")
               .select("id")
-              .eq("source_message_id", sourceMessageId)
+              .eq("external_event_id", externalEventId)
               .limit(1);
-
             if (dupeError) {
               throw new Error(`dedupe lookup failed: ${dupeError.message}`);
             }
             if (dupes && dupes.length > 0) {
-              return Response.json({ found: true, clientId: client.id, duplicate: true });
+              return Response.json({ found: true, conversationId, duplicate: true });
             }
           }
 
-          // 3. Stamp last activity on the client row
-          const { error: updateError } = await supabase
-            .from("clients")
-            .update({ last_activity: new Date().toISOString() })
-            .eq("id", client.id);
-
-          if (updateError) {
-            throw new Error(`last_activity stamp failed: ${updateError.message}`);
-          }
-
-          // 4. Populate the case timeline (AI engine entrypoint)
+          // 3. Write the event into brain_events with constraint-valid values.
+          //    actor is one of customer/partner/dimitris/system; direction is
+          //    inbound/outbound/internal; event_type is from the fixed enum.
           if (textContent) {
-            const isPartner = caseSerialId ? true : false;
-            const isOutbound = (direction ?? "").toLowerCase() === "outbound";
-            let targetCaseId = client.id;
-
-            if (caseSerialId) {
-              const { data: directoryRow } = await supabase
-                .from("cases_directory")
-                .select("id")
-                .eq("case_serial_id", caseSerialId)
-                .single();
-
-              if (directoryRow) {
-                targetCaseId = directoryRow.id;
-              }
-            }
-
-            const payload: Record<string, unknown> = { text: textContent };
-            if (subject) payload.subject = subject;
-
             const row: Record<string, unknown> = {
-              case_id: targetCaseId,
-              case_serial_id: caseSerialId || null,
+              conversation_id: conversationId,
+              external_event_id: externalEventId,
               event_type: isOutbound
-                ? "outbound_message"
-                : isPartner
-                  ? "partner_reply"
-                  : "lead_received",
-              sender: isOutbound ? "internal" : isPartner ? "partner" : "customer",
-              payload,
+                ? "customer_email_sent"
+                : isInternal
+                  ? "internal_note"
+                  : "customer_email_received",
+              actor: isOutbound || isInternal ? "dimitris" : "customer",
+              direction: isOutbound ? "outbound" : isInternal ? "internal" : "inbound",
+              from_email: isOutbound || isInternal ? "hello@mygreektax.eu" : email,
+              to_emails: isOutbound ? [email] : [],
+              subject: subject ?? null,
+              body_text: textContent,
             };
-            // Backfilled Gmail messages must land at their real send time, not now(),
+            // Backfilled messages must land at their real send time, not now(),
             // or the case history reads out of order.
-            if (sentAt) row.created_at = sentAt;
-            if (sourceMessageId) row.source_message_id = sourceMessageId;
+            if (sentAt) row.occurred_at = sentAt;
 
-            const { error: timelineError } = await supabase
-              .from("case_timeline")
+            const { error: eventError } = await supabase
+              .from("brain_events")
               .insert(row);
 
-            if (timelineError) {
-              console.error("[conversation-log] Supabase timeline insert failed:", timelineError);
-            } else {
-              console.log(`[conversation-log] logged interaction for case ID: ${targetCaseId}`);
+            if (eventError) {
+              console.error("[conversation-log] brain_events insert failed:", eventError);
+              throw new Error(`event insert failed: ${eventError.message}`);
             }
+            console.log(`[conversation-log] logged ${direction ?? "event"} for conversation ${conversationId}`);
+          }
+
+          // 4. Best-effort activity stamp on the client row. Never fail the whole
+          //    request over this: the event is already logged, which is the point.
+          const { data: clientRows } = await supabase
+            .from("clients")
+            .select("id")
+            .ilike("email", email)
+            .limit(1);
+          const clientId = clientRows?.[0]?.id;
+          if (clientId) {
+            await supabase
+              .from("clients")
+              .update({ last_activity: new Date().toISOString() })
+              .eq("id", clientId);
           }
 
           return Response.json({
             found: true,
-            clientId: client.id,
-            clientName: client.full_name,
+            conversationId,
+            clientId: clientId ?? null,
             direction: direction ?? null,
           });
         } catch (error) {
