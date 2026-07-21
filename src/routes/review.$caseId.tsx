@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { AiReviewDesk } from "@/components/AiReviewDesk";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { CaseReplyBox } from "@/components/CaseReplyBox";
 
 // Case review page (new spine). The route param $caseId is a
 // brain_conversations.id. This page shows the full conversation from
@@ -41,6 +42,7 @@ const ACTOR_LABELS: Record<string, string> = {
   ai_agent: "Brain",
   internal: "You",
   system: "System",
+  dimitris: "You",
 };
 
 function formatWhen(iso: string | null): string {
@@ -242,6 +244,16 @@ function ReviewCase() {
           )}
         </CardContent>
       </Card>
+
+      {/* Case Reply Box */}
+      <CaseReplyBox
+        conversationId={caseId}
+        clientEmail={email}
+        clientName={client?.full_name ?? undefined}
+        caseSerialId={conversation?.case_serial_id ?? undefined}
+        replyToSubject={events.length ? events[events.length - 1].subject ?? undefined : undefined}
+        onSent={load}
+      />
 
       {/* Generate control: only shown when no draft exists yet. Once a draft
           is present, AiReviewDesk below takes over with edit + send. */}
