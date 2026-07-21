@@ -144,7 +144,11 @@ export const Route = createFileRoute("/webhooks/mailgun-events")({
         const event = readString(get(ed, "event"), 40)?.toLowerCase();
         const recipient = readString(get(ed, "recipient"), 200);
         const messageId = readString(get(ed, "message", "headers", "message-id"), 400);
-        const storageUrl = readString(get(ed, "storage", "url"), 2000);
+        // Mailgun sends storage.url as an ARRAY of URLs, not a single string.
+        const storageRaw = get(ed, "storage", "url");
+        const storageUrl = Array.isArray(storageRaw)
+          ? readString(storageRaw[0], 2000)
+          : readString(storageRaw, 2000);
         const headerSubject = readString(get(ed, "message", "headers", "subject"), 500);
         const occurredAt = mailgunTsToIso(get(ed, "timestamp"));
         const severity = readString(get(ed, "severity"), 40);
