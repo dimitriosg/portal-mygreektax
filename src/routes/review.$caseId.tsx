@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { AiReviewDesk } from "@/components/AiReviewDesk";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { CaseReplyBox } from "@/components/CaseReplyBox";
+import { CaseReplyBox } from "@/components/case-reply-box";
 
 // Case review page (new spine). The route param $caseId is a
 // brain_conversations.id. This page shows the full conversation from
