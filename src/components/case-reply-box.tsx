@@ -1,35 +1,35 @@
 import { useState } from "react";
-// Adjust this import to your actual Supabase browser client export.
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
 
 type CaseReplyBoxProps = {
+  /** brain_conversations.id (the caseId in the route). Required. */
+  conversationId: string;
   /** Customer email (the recipient). */
   clientEmail: string;
   /** Customer display name, optional. */
   clientName?: string;
-  /** Case serial, e.g. "MGT-CS001-CLT0028". Used for threading + logging. */
+  /** Case serial, e.g. "MGT-CS001-CLT0028". Used for the reply's ref line. */
   caseSerialId?: string;
   /** Subject of the message being replied to, optional (prefills "Re: ..."). */
   replyToSubject?: string;
-  /** Called after a successful send, so the parent can refresh the timeline. */
+  /** Called after a successful send, so the parent can refresh. */
   onSent?: () => void;
 };
 
 export function CaseReplyBox({
+  conversationId,
   clientEmail,
   clientName,
   caseSerialId,
   replyToSubject,
   onSent,
 }: CaseReplyBoxProps) {
-  const initialSubject = replyToSubject
-    ? replyToSubject.replace(/^(re:\s*)+/i, "").length
-      ? `Re: ${replyToSubject.replace(/^(re:\s*)+/i, "")}`
-      : replyToSubject
+  const base = (replyToSubject || "").replace(/^(re:\s*)+/i, "").trim();
+  const initialSubject = base
+    ? `Re: ${base}`
     : caseSerialId
       ? `Re: ${caseSerialId}`
       : "";
@@ -57,13 +57,14 @@ export function CaseReplyBox({
         return;
       }
 
-      const res = await fetch("/api/case-reply", {
+      const res = await fetch("/webhooks/case-reply", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({
+          conversationId,
           toEmail: clientEmail,
           clientName,
           caseSerialId,
@@ -71,9 +72,9 @@ export function CaseReplyBox({
           body: message,
         }),
       });
-      const data = (await res.json()) as { ok?: boolean; error?: string };
+      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
       if (!res.ok || !data.ok) {
-        setError(data.error || "Send failed.");
+        setError(data.error || `Send failed (HTTP ${res.status}).`);
         setSending(false);
         return;
       }
@@ -90,55 +91,37 @@ export function CaseReplyBox({
   }
 
   return (
-    <div className="rounded-lg border border-border bg-card p-4 space-y-3">
-      <div className="space-y-1">
-        <Label className="text-xs text-muted-foreground">To</Label>
-        <div className="text-sm text-foreground">
-          {clientName ? `${clientName} · ` : ""}
-          {clientEmail}
-        </div>
+    <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
+      <div className="text-sm text-slate-700">
+        Reply to <span className="font-medium">{clientName ? `${clientName} · ` : ""}{clientEmail}</span>
       </div>
 
-      <div className="space-y-1">
-        <Label htmlFor="reply-subject" className="text-xs text-muted-foreground">
-          Subject
-        </Label>
-        <Input
-          id="reply-subject"
-          value={subject}
-          onChange={(e) => setSubject(e.target.value)}
-          placeholder="Subject"
-        />
+      <Input
+        value={subject}
+        onChange={(e) => setSubject(e.target.value)}
+        placeholder="Subject"
+      />
+
+      <Textarea
+        value={message}
+        onChange={(e) => setMessage(e.target.value)}
+        placeholder="Write your reply..."
+        rows={8}
+      />
+
+      <div className="rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-500">
+        Signature added automatically: Με εκτίμηση, Δημήτρης, MyGreekTax
       </div>
 
-      <div className="space-y-1">
-        <Label htmlFor="reply-body" className="text-xs text-muted-foreground">
-          Message
-        </Label>
-        <Textarea
-          id="reply-body"
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          placeholder="Write your reply..."
-          rows={8}
-        />
-      </div>
+      {error && <p className="text-sm text-red-600">{error}</p>}
+      {sentOk && <p className="text-sm text-emerald-600">Sent and logged to this case.</p>}
 
-      <div className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
-        Signature added automatically:
-        <br />
-        Με εκτίμηση,
-        <br />
-        Δημήτρης
-        <br />
-        MyGreekTax
-      </div>
-
-      {error && <p className="text-sm text-destructive">{error}</p>}
-      {sentOk && <p className="text-sm text-green-600">Sent and logged to this case.</p>}
-
-      <div className="flex items-center justify-end gap-2">
-        <Button onClick={handleSend} disabled={sending}>
+      <div className="flex items-center justify-end">
+        <Button
+          onClick={handleSend}
+          disabled={sending}
+          className="bg-[#0B192C] hover:bg-slate-800 text-white"
+        >
           {sending ? "Sending..." : "Send reply"}
         </Button>
       </div>
