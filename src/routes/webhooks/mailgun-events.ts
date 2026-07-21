@@ -144,11 +144,18 @@ export const Route = createFileRoute("/webhooks/mailgun-events")({
         const event = readString(get(ed, "event"), 40)?.toLowerCase();
         const recipient = readString(get(ed, "recipient"), 200);
         const messageId = readString(get(ed, "message", "headers", "message-id"), 400);
-        // Mailgun sends storage.url as an ARRAY of URLs, not a single string.
+        // Retrieve the stored message via the stable EU API host using storage.key.
+        // The regional host in storage.url (storage-europe-west1.api.mailgun.net)
+        // returns 530 / "Message not found" when fetched directly; api.eu.mailgun.net
+        // with the storage key is the reliable retrieval endpoint for EU domains.
+        const storageKey = readString(get(ed, "storage", "key"), 300);
+        const domainName = readString(get(ed, "domain", "name"), 200) || "mygreektax.eu";
         const storageRaw = get(ed, "storage", "url");
-        const storageUrl = Array.isArray(storageRaw)
-          ? readString(storageRaw[0], 2000)
-          : readString(storageRaw, 2000);
+        const storageUrl = storageKey
+          ? `https://api.eu.mailgun.net/v3/domains/${domainName}/messages/${storageKey}`
+          : Array.isArray(storageRaw)
+            ? readString(storageRaw[0], 2000)
+            : readString(storageRaw, 2000);
         const headerSubject = readString(get(ed, "message", "headers", "subject"), 500);
         const occurredAt = mailgunTsToIso(get(ed, "timestamp"));
         const severity = readString(get(ed, "severity"), 40);
