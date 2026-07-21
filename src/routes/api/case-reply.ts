@@ -5,16 +5,15 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 // Case reply box, server side.
 //
 // Sends a customer reply through Mailgun's EU API (from hello@mygreektax.eu) and
-// logs it to case_timeline as an outbound_message, in one call. No Make involved.
+// logs it into brain_events so it appears in the case conversation on the review
+// page. One call, no Make.
 //
 // Auth: the browser sends the caller's Supabase access token as a Bearer header.
-// The route verifies it and checks the caller has the 'admin' role before sending,
-// so this endpoint can't be used to send mail anonymously.
+// The route verifies it and requires the 'admin' role before sending.
 //
-// Env (already present, except MAILGUN_DOMAIN which defaults):
+// Env (already present):
 //   SUPABASE_URL (or VITE_SUPABASE_URL), SUPABASE_SERVICE_ROLE_KEY
-//   MAILGUN_API_KEY                 (the same key used by mailgun-events)
-//   MAILGUN_DOMAIN                  (optional; defaults to mygreektax.eu)
+//   MAILGUN_API_KEY, MAILGUN_DOMAIN (optional, defaults to mygreektax.eu)
 // -----------------------------------------------------------------------------
 
 let cachedClient: SupabaseClient | undefined;
@@ -36,13 +35,10 @@ function readString(v: unknown, max: number): string | undefined {
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-// Escape HTML, then turn newlines into <br> so the plain-text body renders.
 function bodyToHtml(text: string): string {
-  const esc = text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+  const esc = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   return esc.replace(/\r?\n/g, "<br>");
 }
 
@@ -51,7 +47,7 @@ const SIGNATURE_HTML =
   '<div style="font-family: Arial, Helvetica, sans-serif; font-size: 14px; color: #1E2A3A; line-height: 1.6; margin-top: 16px;">' +
   "Με εκτίμηση,<br>Δημήτρης<br>MyGreekTax</div>";
 
-export const Route = createFileRoute("/api/case-reply")({
+export const Route = createFileRoute("/webhooks/case-reply")({
   server: {
     handlers: {
       POST: async ({ request }) => {
@@ -72,33 +68,33 @@ export const Route = createFileRoute("/api/case-reply")({
         if (authErr || !userData?.user) {
           return Response.json({ error: "Invalid session" }, { status: 401 });
         }
-        const userId = userData.user.id;
-
-        // Require admin role (relax this if your role model differs).
         const { data: roleRow } = await supabase
           .from("user_roles")
           .select("role")
-          .eq("user_id", userId)
+          .eq("user_id", userData.user.id)
           .eq("role", "admin")
           .limit(1);
         if (!roleRow || roleRow.length === 0) {
-          return Response.json({ error: "Not authorized" }, { status: 403 });
+          return Response.json({ error: "Not authorized (admin role required)" }, { status: 403 });
         }
 
         // 2. Read and validate input.
-        let body: unknown;
+        let raw: unknown;
         try {
-          body = await request.json();
+          raw = await request.json();
         } catch {
           return Response.json({ error: "Invalid JSON" }, { status: 400 });
         }
-        const b = (body ?? {}) as Record<string, unknown>;
+        const b = (raw ?? {}) as Record<string, unknown>;
+        const conversationId = readString(b.conversationId, 100);
         const toEmail = readString(b.toEmail, 200);
-        const clientName = readString(b.clientName, 200) || "";
         const subject = readString(b.subject, 500) || "(no subject)";
         const messageText = readString(b.body, 100000);
-        const caseSerialId = readString(b.caseSerialId, 100); // e.g. MGT-CS001-CLT0028
+        const caseSerialId = readString(b.caseSerialId, 100);
 
+        if (!conversationId || !UUID_RE.test(conversationId)) {
+          return Response.json({ error: "Valid conversationId required" }, { status: 400 });
+        }
         if (!toEmail || !EMAIL_RE.test(toEmail)) {
           return Response.json({ error: "Valid recipient email required" }, { status: 400 });
         }
@@ -108,35 +104,26 @@ export const Route = createFileRoute("/api/case-reply")({
 
         const domain = process.env.MAILGUN_DOMAIN || "mygreektax.eu";
         const mailgunKey = process.env.MAILGUN_API_KEY;
-        if (!mailgunKey) {
-          return Response.json({ error: "MAILGUN_API_KEY not set" }, { status: 500 });
-        }
+        if (!mailgunKey) return Response.json({ error: "MAILGUN_API_KEY not set" }, { status: 500 });
 
-        // Ref line carries the case token so replies from the customer thread back.
-        // MGT-CS001-CLT0028 -> "MGT-REF-ID: [CS001-CLT0028]"
+        // Ref line so the customer's reply threads back to this case.
         const refCore = caseSerialId ? caseSerialId.replace(/^MGT-/i, "") : "";
         const refLineHtml = refCore
           ? '<div style="font-family: Arial, Helvetica, sans-serif; font-size: 12px; color: #9ca3af; margin-top: 16px;">MGT-REF-ID: [' +
-            refCore +
-            "]</div>"
+            refCore + "]</div>"
           : "";
-
         const html =
           '<div style="font-family: Arial, Helvetica, sans-serif; font-size: 14px; color: #1E2A3A; line-height: 1.6;">' +
-          bodyToHtml(messageText) +
-          "</div>" +
-          SIGNATURE_HTML +
-          refLineHtml;
+          bodyToHtml(messageText) + "</div>" + SIGNATURE_HTML + refLineHtml;
 
         try {
           // 3. Send via Mailgun (EU).
           const form = new URLSearchParams();
           form.set("from", "MyGreekTax <hello@mygreektax.eu>");
-          form.set("to", clientName ? `${clientName} <${toEmail}>` : toEmail);
+          form.set("to", toEmail);
           form.set("bcc", "hello@mygreektax.eu");
           form.set("subject", subject);
           form.set("html", html);
-          // Tag as portal-origin so the (dormant) capture route would skip it.
           form.set("h:X-Mailgun-Variables", JSON.stringify({ src: "portal" }));
 
           const mgRes = await fetch(`https://api.eu.mailgun.net/v3/${domain}/messages`, {
@@ -155,44 +142,31 @@ export const Route = createFileRoute("/api/case-reply")({
           let mgId: string | undefined;
           try {
             mgId = (JSON.parse(mgText) as { id?: string }).id;
-          } catch {
-            /* ignore */
+          } catch { /* ignore */ }
+
+          // 4. Log into brain_events so it shows in the case conversation.
+          const externalEventId = mgId || `portal-reply-${crypto.randomUUID()}`;
+          const { error: insErr } = await supabase.from("brain_events").insert({
+            conversation_id: conversationId,
+            external_event_id: externalEventId,
+            event_type: "customer_email_sent",
+            actor: "dimitris",
+            direction: "outbound",
+            provider: "mailgun",
+            provider_message_id: mgId || null,
+            from_email: "hello@mygreektax.eu",
+            to_emails: [toEmail],
+            subject,
+            body_text: messageText,
+            metadata: { via: "portal_reply_box" },
+          });
+          if (insErr) {
+            // Email already went out; surface the logging error but don't fail hard.
+            console.error("[case-reply] brain_events insert failed:", insErr.message);
+            return Response.json({ ok: true, messageId: mgId ?? null, logged: false, logError: insErr.message });
           }
 
-          // 4. Log to case_timeline (match client by recipient, like conversation-log).
-          const { data: matches } = await supabase
-            .from("clients")
-            .select("id, full_name")
-            .ilike("email", toEmail)
-            .limit(1);
-          const client = matches?.[0];
-
-          if (client) {
-            let targetCaseId = client.id as string;
-            if (caseSerialId) {
-              const { data: dir } = await supabase
-                .from("cases_directory")
-                .select("id")
-                .eq("case_serial_id", caseSerialId)
-                .single();
-              if (dir) targetCaseId = dir.id as string;
-            }
-            const row: Record<string, unknown> = {
-              case_id: targetCaseId,
-              case_serial_id: caseSerialId || null,
-              event_type: "outbound_message",
-              sender: "internal",
-              payload: { text: messageText, subject },
-            };
-            if (mgId) row.source_message_id = mgId;
-            const { error: insErr } = await supabase.from("case_timeline").insert(row);
-            if (insErr) console.error("[case-reply] timeline insert failed:", insErr.message);
-
-            return Response.json({ ok: true, messageId: mgId ?? null, caseId: targetCaseId });
-          }
-
-          // Sent, but recipient isn't a known client, so nothing to attach.
-          return Response.json({ ok: true, messageId: mgId ?? null, caseId: null, logged: false });
+          return Response.json({ ok: true, messageId: mgId ?? null, logged: true });
         } catch (error) {
           console.error("[case-reply] error", { error });
           return Response.json(
