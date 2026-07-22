@@ -9,6 +9,7 @@ import { CaseReplyBox } from "@/components/case-reply-box";
 import { updateLead } from "@/lib/leads.functions";
 import { CLIENT_STAGES } from "@/lib/leads-shared";
 import { stageBadgeClass } from "@/lib/stage-colors";
+import { CaseSummary } from "@/components/case-summary";
 
 // Case review page (new spine). The route param $caseId is a
 // brain_conversations.id. This page shows the full conversation from
@@ -524,6 +525,8 @@ function ReviewCase() {
           )}
         </CardContent>
       </Card>
+
+      <CaseSummary caseId={caseId} caseSerialId={conversation?.case_serial_id ?? null} />
 
       {/* Case Reply Box */}
       <CaseReplyBox
