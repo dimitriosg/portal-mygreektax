@@ -3,6 +3,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { stageBadgeClass } from "@/lib/stage-colors";
 
 // Case workspace. Lists cases from brain_conversations with an on-demand
 // Generate flow (on the case page). Supports archive (restorable, auto-purged
@@ -279,7 +280,11 @@ function CaseWorkspace() {
                     {row.case_serial_id}
                   </span>
                 )}
-                <span className="text-xs text-slate-400">{stageFor(row)}</span>
+                <span
+                  className={`text-xs font-medium rounded px-1.5 py-0.5 border ${stageBadgeClass(stageFor(row))}`}
+                >
+                  {stageFor(row)}
+                </span>
                 {archived && (
                   <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
                     Archived · {daysLeft(row.archived_at)}d left
