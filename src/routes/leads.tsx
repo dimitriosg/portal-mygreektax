@@ -39,6 +39,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { CLIENT_STAGES, LEAD_URGENCY_OPTIONS } from "@/lib/leads-shared";
+import { stageBadgeClass, stageBorderClass } from "@/lib/stage-colors";
 import { JOB_STATUSES } from "@/lib/airtable-shared";
 import { toast } from "sonner";
 import { formatDate } from "@/lib/utils";
@@ -54,21 +55,12 @@ export const Route = createFileRoute("/leads")({ component: LeadsPage });
 
 const COLLAPSED_STORAGE_KEY = "mgt-leads-collapsed-stages";
 
-// Color coding per stage — used for column headers, the stage select, and badges
-// so a stage is recognizable at a glance across both views. Stage vocabulary is
-// unified across the whole client lifecycle (Task 4): a "lead" is just a Client
-// record with Stage = "Potential".
-const STAGE_STYLES: Record<string, string> = {
-  Potential: "border-sky-300 bg-sky-100 text-sky-900",
-  Quoted: "border-amber-300 bg-amber-100 text-amber-900",
-  Active: "border-teal-300 bg-teal-100 text-teal-900",
-  Parked: "border-orange-300 bg-orange-100 text-orange-900",
-  Complete: "border-green-300 bg-green-100 text-green-900",
-  Lost: "border-destructive/30 bg-destructive/10 text-destructive",
-};
-
+// Color coding per stage — used for column headers, the stage select, and
+// badges so a stage is recognizable at a glance. Delegates to the shared
+// stageBadgeClass helper so /leads, /drafts, and the case page all show a stage
+// in the same colour.
 function stageStyle(stage?: string | null) {
-  return (stage && STAGE_STYLES[stage]) || "bg-muted text-muted-foreground border-border";
+  return stageBadgeClass(stage);
 }
 
 type Lead = AirtableRecord<ClientFields>;
@@ -734,7 +726,7 @@ function LeadCard({
     <Card
       ref={setNodeRef}
       style={style}
-      className={`cursor-pointer border-l-4 transition-shadow hover:shadow-md ${stageStyle(stage).split(" ")[0]} ${overdue ? "ring-1 ring-destructive" : ""}`}
+      className={`cursor-pointer border-l-4 transition-shadow hover:shadow-md ${stageBorderClass(stage)} ${overdue ? "ring-1 ring-destructive" : ""}`}
       onClick={() => onOpen(lead)}
     >
       <CardContent className="space-y-2 py-3">
