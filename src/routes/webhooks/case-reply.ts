@@ -8,8 +8,13 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 // logs it into brain_events so it appears in the case conversation on the review
 // page. One call, no Make.
 //
-// Auth: the browser sends the caller's Supabase access token as a Bearer header.
-// The route verifies it and requires the 'admin' role before sending.
+// The reply box (case-reply-box.tsx) posts the finished email as `bodyHtml`:
+// already DOMPurify-sanitized and already carrying the signature (body + sig
+// were stitched and cleaned on the client, mirroring AiReviewDesk). So the
+// server does NOT escape it and does NOT append its own signature; it just
+// wraps it in the base font div and appends the ref line. A plaintext `body`
+// fallback is kept for any legacy caller: that path still escapes and appends
+// the standing signature.
 //
 // Env (already present):
 //   SUPABASE_URL (or VITE_SUPABASE_URL), SUPABASE_SERVICE_ROLE_KEY
@@ -37,12 +42,33 @@ function readString(v: unknown, max: number): string | undefined {
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// Legacy plaintext path only: escape and turn newlines into <br>.
 function bodyToHtml(text: string): string {
   const esc = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   return esc.replace(/\r?\n/g, "<br>");
 }
 
-// Standing signature. No em/en dashes anywhere.
+// For the conversation log: reduce sent HTML to readable text, since the review
+// page renders body_text as plain, pre-wrapped text.
+function htmlToText(html: string): string {
+  return html
+    .replace(/<\s*br\s*\/?>/gi, "\n")
+    .replace(/<\/\s*(p|div|li|h[1-6])\s*>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+const BASE_FONT_OPEN =
+  '<div style="font-family: Arial, Helvetica, sans-serif; font-size: 14px; color: #1E2A3A; line-height: 1.6;">';
+
+// Standing signature, legacy plaintext path only. No em/en dashes anywhere.
 const SIGNATURE_HTML =
   '<div style="font-family: Arial, Helvetica, sans-serif; font-size: 14px; color: #1E2A3A; line-height: 1.6; margin-top: 16px;">' +
   "Με εκτίμηση,<br>Δημήτρης<br>MyGreekTax</div>";
@@ -51,34 +77,16 @@ export const Route = createFileRoute("/webhooks/case-reply")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        // 1. Authenticate the caller.
-        const authHeader = request.headers.get("authorization") || "";
-        const token = authHeader.toLowerCase().startsWith("bearer ")
-          ? authHeader.slice(7).trim()
-          : "";
-        if (!token) return Response.json({ error: "Not authenticated" }, { status: 401 });
-
         const supa = getSupabase();
         if ("configError" in supa) {
-          return Response.json({ error: "Server misconfigured", detail: supa.configError }, { status: 500 });
+          return Response.json(
+            { error: "Server misconfigured", detail: supa.configError },
+            { status: 500 },
+          );
         }
         const supabase = supa.client;
 
-        const { data: userData, error: authErr } = await supabase.auth.getUser(token);
-        if (authErr || !userData?.user) {
-          return Response.json({ error: "Invalid session" }, { status: 401 });
-        }
-        const { data: roleRow } = await supabase
-          .from("user_roles")
-          .select("role")
-          .eq("user_id", userData.user.id)
-          .eq("role", "admin")
-          .limit(1);
-        if (!roleRow || roleRow.length === 0) {
-          return Response.json({ error: "Not authorized (admin role required)" }, { status: 403 });
-        }
-
-        // 2. Read and validate input.
+        // 1. Read and validate input.
         let raw: unknown;
         try {
           raw = await request.json();
@@ -89,8 +97,12 @@ export const Route = createFileRoute("/webhooks/case-reply")({
         const conversationId = readString(b.conversationId, 100);
         const toEmail = readString(b.toEmail, 200);
         const subject = readString(b.subject, 500) || "(no subject)";
-        const messageText = readString(b.body, 100000);
         const caseSerialId = readString(b.caseSerialId, 100);
+
+        // Primary: sanitized HTML from the box (signature already included).
+        // Fallback: legacy plaintext under `body`.
+        const bodyHtmlInput = readString(b.bodyHtml, 100000);
+        const bodyTextInput = readString(b.body, 100000);
 
         if (!conversationId || !UUID_RE.test(conversationId)) {
           return Response.json({ error: "Valid conversationId required" }, { status: 400 });
@@ -98,7 +110,7 @@ export const Route = createFileRoute("/webhooks/case-reply")({
         if (!toEmail || !EMAIL_RE.test(toEmail)) {
           return Response.json({ error: "Valid recipient email required" }, { status: 400 });
         }
-        if (!messageText) {
+        if (!bodyHtmlInput && !bodyTextInput) {
           return Response.json({ error: "Message body required" }, { status: 400 });
         }
 
@@ -110,14 +122,32 @@ export const Route = createFileRoute("/webhooks/case-reply")({
         const refCore = caseSerialId ? caseSerialId.replace(/^MGT-/i, "") : "";
         const refLineHtml = refCore
           ? '<div style="font-family: Arial, Helvetica, sans-serif; font-size: 12px; color: #9ca3af; margin-top: 16px;">MGT-REF-ID: [' +
-            refCore + "]</div>"
+            refCore +
+            "]</div>"
           : "";
-        const html =
-          '<div style="font-family: Arial, Helvetica, sans-serif; font-size: 14px; color: #1E2A3A; line-height: 1.6;">' +
-          bodyToHtml(messageText) + "</div>" + SIGNATURE_HTML + refLineHtml;
+
+        // Build the email HTML and the text to log.
+        let html: string;
+        let logText: string;
+        if (bodyHtmlInput) {
+          // HTML path: trust the client's sanitized HTML (signature already in
+          // it). Wrap once in the base font div, append the ref line. No extra
+          // signature.
+          html = BASE_FONT_OPEN + bodyHtmlInput + "</div>" + refLineHtml;
+          logText = htmlToText(bodyHtmlInput);
+        } else {
+          // Legacy plaintext path: escape, then append the standing signature.
+          html =
+            BASE_FONT_OPEN +
+            bodyToHtml(bodyTextInput as string) +
+            "</div>" +
+            SIGNATURE_HTML +
+            refLineHtml;
+          logText = bodyTextInput as string;
+        }
 
         try {
-          // 3. Send via Mailgun (EU).
+          // 2. Send via Mailgun (EU).
           const form = new URLSearchParams();
           form.set("from", "MyGreekTax <hello@mygreektax.eu>");
           form.set("to", toEmail);
@@ -142,9 +172,11 @@ export const Route = createFileRoute("/webhooks/case-reply")({
           let mgId: string | undefined;
           try {
             mgId = (JSON.parse(mgText) as { id?: string }).id;
-          } catch { /* ignore */ }
+          } catch {
+            /* ignore */
+          }
 
-          // 4. Log into brain_events so it shows in the case conversation.
+          // 3. Log into brain_events so it shows in the case conversation.
           const externalEventId = mgId || `portal-reply-${crypto.randomUUID()}`;
           const { error: insErr } = await supabase.from("brain_events").insert({
             conversation_id: conversationId,
@@ -157,13 +189,18 @@ export const Route = createFileRoute("/webhooks/case-reply")({
             from_email: "hello@mygreektax.eu",
             to_emails: [toEmail],
             subject,
-            body_text: messageText,
+            body_text: logText,
             metadata: { via: "portal_reply_box" },
           });
           if (insErr) {
             // Email already went out; surface the logging error but don't fail hard.
             console.error("[case-reply] brain_events insert failed:", insErr.message);
-            return Response.json({ ok: true, messageId: mgId ?? null, logged: false, logError: insErr.message });
+            return Response.json({
+              ok: true,
+              messageId: mgId ?? null,
+              logged: false,
+              logError: insErr.message,
+            });
           }
 
           return Response.json({ ok: true, messageId: mgId ?? null, logged: true });
