@@ -29,6 +29,7 @@ interface ClientInfo {
   full_name: string | null;
   email: string | null;
   client_code: string | null;
+  stage: string | null;
 }
 
 interface DraftInfo {
@@ -88,11 +89,16 @@ function CaseWorkspace() {
     if (clientIds.length > 0) {
       const { data: clientRows } = await supabase
         .from("clients")
-        .select("id, full_name, email, client_code")
+        .select("id, full_name, email, client_code, stage")
         .in("id", clientIds);
       const cmap: Record<string, ClientInfo> = {};
       (clientRows ?? []).forEach((c: any) => {
-        cmap[c.id] = { full_name: c.full_name, email: c.email, client_code: c.client_code };
+        cmap[c.id] = {
+          full_name: c.full_name,
+          email: c.email,
+          client_code: c.client_code,
+          stage: c.stage,
+        };
       });
       setClients(cmap);
     }
@@ -228,13 +234,20 @@ function CaseWorkspace() {
     const c = row.client_id ? clients[row.client_id] : undefined;
     return c?.email || row.customer_email || "";
   };
+  // The pipeline stage lives on the linked lead (clients.stage), which /leads
+  // and the case page both edit. Fall back to the case's own stage only if a
+  // case has no linked client (legacy rows).
+  const stageFor = (row: CaseRow): string => {
+    const c = row.client_id ? clients[row.client_id] : undefined;
+    return c?.stage || row.stage || "Potential";
+  };
 
   const activeCases = cases.filter((c) => !c.archived_at);
   const archivedCases = cases.filter((c) => !!c.archived_at);
   const shown = view === "active" ? activeCases : archivedCases;
 
-  const openCases = shown.filter((c) => !OPEN_STAGES_EXCLUDED.includes(c.stage ?? "Potential"));
-  const closedCases = shown.filter((c) => OPEN_STAGES_EXCLUDED.includes(c.stage ?? ""));
+  const openCases = shown.filter((c) => !OPEN_STAGES_EXCLUDED.includes(stageFor(c)));
+  const closedCases = shown.filter((c) => OPEN_STAGES_EXCLUDED.includes(stageFor(c)));
 
   const daysLeft = (archivedAt: string | null): number | null => {
     if (!archivedAt) return null;
@@ -266,7 +279,7 @@ function CaseWorkspace() {
                     {row.case_serial_id}
                   </span>
                 )}
-                {row.stage && <span className="text-xs text-slate-400">{row.stage}</span>}
+                <span className="text-xs text-slate-400">{stageFor(row)}</span>
                 {archived && (
                   <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
                     Archived · {daysLeft(row.archived_at)}d left
