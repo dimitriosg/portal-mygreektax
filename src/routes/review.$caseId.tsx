@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { CaseReplyBox } from "@/components/case-reply-box";
 import { updateLead } from "@/lib/leads.functions";
 import { CLIENT_STAGES } from "@/lib/leads-shared";
+import { stageBadgeClass } from "@/lib/stage-colors";
 
 // Case review page (new spine). The route param $caseId is a
 // brain_conversations.id. This page shows the full conversation from
@@ -381,7 +382,7 @@ function ReviewCase() {
                   setStageDraft(v);
                   saveLead({ stage: v });
                 }}
-                className={fieldClass}
+                className={`rounded-md border px-2 py-1.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-slate-400 ${stageBadgeClass(stageDraft)}`}
               >
                 {!stageDraft && <option value="">Select stage</option>}
                 {CLIENT_STAGES.map((s) => (
