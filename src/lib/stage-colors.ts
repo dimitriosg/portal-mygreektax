@@ -17,3 +17,18 @@ const STAGE_BADGE_FALLBACK = "bg-slate-100 text-slate-600 border-slate-200";
 export function stageBadgeClass(stage: string | null | undefined): string {
   return (stage && STAGE_BADGE_CLASSES[stage]) || STAGE_BADGE_FALLBACK;
 }
+
+// Just the border-colour class per stage, for accents like a card's coloured
+// left border. Slightly stronger (300) than the badge border so it reads.
+const STAGE_BORDER_CLASSES: Record<string, string> = {
+  Potential: "border-blue-300",
+  Quoted: "border-amber-300",
+  Active: "border-emerald-300",
+  Parked: "border-slate-300",
+  Complete: "border-violet-300",
+  Lost: "border-red-300",
+};
+
+export function stageBorderClass(stage: string | null | undefined): string {
+  return (stage && STAGE_BORDER_CLASSES[stage]) || "border-slate-300";
+}
