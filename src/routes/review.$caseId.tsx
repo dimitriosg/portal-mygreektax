@@ -1,15 +1,23 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { AiReviewDesk } from "@/components/AiReviewDesk";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { CaseReplyBox } from "@/components/case-reply-box";
+import { updateLead } from "@/lib/leads.functions";
+import { CLIENT_STAGES } from "@/lib/leads-shared";
 
 // Case review page (new spine). The route param $caseId is a
 // brain_conversations.id. This page shows the full conversation from
 // brain_events, lets Jim read it, then Generate a draft on demand, then
 // review/edit/send it via AiReviewDesk. Read first, decide, then generate.
+//
+// The header also exposes the linked lead's Stage / Next action / Next action
+// date. These are the same public.clients columns the /leads page edits, saved
+// through the same updateLead server function, so both screens are one source
+// of truth and the change is audit-logged either way.
 
 interface ConversationInfo {
   id: string;
@@ -23,6 +31,9 @@ interface ClientInfo {
   full_name: string | null;
   email: string | null;
   client_code: string | null;
+  stage: string | null;
+  next_action: string | null;
+  next_action_date: string | null;
 }
 
 interface EventRow {
@@ -83,6 +94,15 @@ function ReviewCase() {
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string>("");
 
+  // Editable lead fields (draft state, seeded once from the client row).
+  const [stageDraft, setStageDraft] = useState<string>("");
+  const [nextActionDraft, setNextActionDraft] = useState<string>("");
+  const [nextActionDateDraft, setNextActionDateDraft] = useState<string>("");
+  const [leadSaveMsg, setLeadSaveMsg] = useState<string>("");
+  const seededRef = useRef<string | null>(null);
+
+  const updateLeadFn = useServerFn(updateLead);
+
   // Sync progress tracking (refs so the poll interval reads fresh values).
   const syncRef = useRef<{ start: number; lastActivity: number; baseline: number } | null>(null);
   const eventCountRef = useRef(0);
@@ -101,7 +121,7 @@ function ReviewCase() {
     if (conv?.client_id) {
       const { data: clientData } = await supabase
         .from("clients")
-        .select("full_name, email, client_code")
+        .select("full_name, email, client_code, stage, next_action, next_action_date")
         .eq("id", conv.client_id)
         .maybeSingle();
       setClient((clientData as ClientInfo | null) ?? null);
@@ -150,6 +170,19 @@ function ReviewCase() {
       supabase.removeChannel(channel);
     };
   }, [caseId, load]);
+
+  // Seed the editable lead fields once per client, when the row first loads.
+  // Not re-seeded on later load() calls (e.g. during a Gmail sync), so an
+  // in-progress edit is never clobbered by background refreshes.
+  useEffect(() => {
+    const cid = conversation?.client_id ?? null;
+    if (cid && client && seededRef.current !== cid) {
+      seededRef.current = cid;
+      setStageDraft(client.stage ?? "");
+      setNextActionDraft(client.next_action ?? "");
+      setNextActionDateDraft(client.next_action_date ?? "");
+    }
+  }, [conversation?.client_id, client]);
 
   // Track the event count and, during a sync, note when it grows (activity).
   useEffect(() => {
@@ -237,6 +270,36 @@ function ReviewCase() {
 
   const email = client?.email || conversation?.customer_email || "";
 
+  // Save one or more lead fields through the same server function /leads uses.
+  const saveLead = async (patch: {
+    stage?: string;
+    nextAction?: string;
+    nextActionDate?: string | null;
+  }) => {
+    const leadId = conversation?.client_id;
+    if (!leadId) return;
+    setLeadSaveMsg("Saving...");
+    try {
+      await updateLeadFn({ data: { leadId, ...patch } });
+      setClient((c) =>
+        c
+          ? {
+              ...c,
+              ...(patch.stage !== undefined ? { stage: patch.stage } : {}),
+              ...(patch.nextAction !== undefined ? { next_action: patch.nextAction } : {}),
+              ...(patch.nextActionDate !== undefined
+                ? { next_action_date: patch.nextActionDate }
+                : {}),
+            }
+          : c,
+      );
+      setLeadSaveMsg("Saved");
+      setTimeout(() => setLeadSaveMsg((m) => (m === "Saved" ? "" : m)), 1500);
+    } catch (err) {
+      setLeadSaveMsg(`Save failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
   const handleSync = async () => {
     if (!email) {
       setSyncMsg("No customer email on this case, so there is nothing to search Gmail for.");
@@ -285,6 +348,10 @@ function ReviewCase() {
   const visibleEvents =
     convView === "all" ? events : convView === "latest" ? events.slice(-1) : [];
 
+  const fieldClass =
+    "rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400";
+  const labelClass = "text-[11px] font-medium text-slate-500 uppercase tracking-wide";
+
   return (
     <div className="max-w-5xl mx-auto p-6 space-y-6">
       <div>
@@ -298,11 +365,68 @@ function ReviewCase() {
               {conversation.case_serial_id}
             </span>
           )}
-          {conversation?.stage && (
-            <span className="text-xs text-slate-400">{conversation.stage}</span>
-          )}
         </div>
         {email && <p className="text-sm text-slate-500">{email}</p>}
+
+        {/* Linked lead fields. Same public.clients row as /leads, saved through
+            updateLead, so edits sync both ways and are audit-logged. */}
+        {conversation?.client_id && (
+          <div className="mt-3 flex flex-wrap items-end gap-3">
+            <div className="flex flex-col gap-1">
+              <label className={labelClass}>Stage</label>
+              <select
+                value={stageDraft}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setStageDraft(v);
+                  saveLead({ stage: v });
+                }}
+                className={fieldClass}
+              >
+                {!stageDraft && <option value="">Select stage</option>}
+                {CLIENT_STAGES.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex flex-col gap-1 flex-1 min-w-[200px]">
+              <label className={labelClass}>Next action</label>
+              <input
+                type="text"
+                value={nextActionDraft}
+                placeholder="Next action..."
+                onChange={(e) => setNextActionDraft(e.target.value)}
+                onBlur={() => {
+                  if ((client?.next_action ?? "") !== nextActionDraft) {
+                    saveLead({ nextAction: nextActionDraft });
+                  }
+                }}
+                className={`${fieldClass} w-full`}
+              />
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className={labelClass}>Date</label>
+              <input
+                type="date"
+                value={nextActionDateDraft}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setNextActionDateDraft(v);
+                  saveLead({ nextActionDate: v || null });
+                }}
+                className={fieldClass}
+              />
+            </div>
+
+            {leadSaveMsg && (
+              <span className="text-xs text-slate-400 pb-2">{leadSaveMsg}</span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* The conversation: read this before deciding to generate. */}
