@@ -30,12 +30,56 @@ function formatWhen(iso: string | null): string {
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+// <---
+function renderMarkdown(text: string) {
+  return text.split("\n").map((raw, i) => {
+    const line = raw.trim();
+    if (!line) return null;
+
+    const heading = /^#{1,6}\s+(.*)$/.exec(line);
+    const bullet = /^[-*]\s+(.*)$/.exec(line);
+    const content = heading ? heading[1] : bullet ? bullet[1] : line;
+
+    const parts = content.split(/(\*\*[^*]+\*\*)/g).map((p, j) =>
+      p.length > 4 && p.startsWith("**") && p.endsWith("**") ? (
+        <strong key={j} className="font-semibold text-slate-900">
+          {p.slice(2, -2)}
+        </strong>
+      ) : (
+        p
+      ),
+    );
+
+    if (heading) {
+      return (
+        <p key={i} className="text-sm font-semibold text-slate-900 mt-3 first:mt-0">
+          {parts}
+        </p>
+      );
+    }
+    if (bullet) {
+      return (
+        <p key={i} className="text-sm text-slate-700 pl-4 leading-relaxed">
+          • {parts}
+        </p>
+      );
+    }
+    return (
+      <p key={i} className="text-sm text-slate-700 leading-relaxed">
+        {parts}
+      </p>
+    );
+  });
+}
+// <---
+
 
 export function CaseSummary({ caseId }: CaseSummaryProps) {
   const [row, setRow] = useState<SummaryRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string>("");
+  const [expanded, setExpanded] = useState(false); // <--- NEWLY ADDED
   const cancelled = useRef(false);
 
   useEffect(() => {
@@ -109,6 +153,7 @@ export function CaseSummary({ caseId }: CaseSummaryProps) {
 
         if (isNew) {
           setRow(fresh);
+          setExpanded(true);
           return;
         }
       }
@@ -123,7 +168,7 @@ export function CaseSummary({ caseId }: CaseSummaryProps) {
     } finally {
       if (!cancelled.current) setRunning(false);
     }
-  };
+  }; // <--- END OF summarize()
 
   const hasSummary = !!row?.summary;
 
@@ -136,6 +181,27 @@ export function CaseSummary({ caseId }: CaseSummaryProps) {
             {hasSummary && row?.generated_at && (
               <span className="text-xs text-slate-400">Updated {formatWhen(row.generated_at)}</span>
             )}
+
+            {hasSummary && (
+              <>
+                <Button
+                  variant={!expanded ? "default" : "outline"}
+                  onClick={() => setExpanded(false)}
+                  className={`h-7 px-2.5 text-xs ${!expanded ? "bg-[#0B192C] text-white" : ""}`}
+                >
+                  Collapse
+                </Button>
+                <Button
+                  variant={expanded ? "default" : "outline"}
+                  onClick={() => setExpanded(true)}
+                  className={`h-7 px-2.5 text-xs ${expanded ? "bg-[#0B192C] text-white" : ""}`}
+                >
+                  Show
+                </Button>
+                <span className="mx-0.5 h-4 w-px bg-slate-200" />
+              </>
+            )}
+            
             <Button
               variant="outline"
               onClick={summarize}
@@ -171,9 +237,11 @@ export function CaseSummary({ caseId }: CaseSummaryProps) {
             Working on it. This usually takes about a minute.
           </p>
         )}
+        
+        {hasSummary && expanded && <div className="space-y-2">{renderMarkdown(row!.summary!)}</div>}
 
-        {hasSummary && (
-          <p className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{row?.summary}</p>
+        {hasSummary && !expanded && (
+          <p className="text-xs text-slate-400 italic">Summary collapsed.</p>
         )}
 
         {error && (
