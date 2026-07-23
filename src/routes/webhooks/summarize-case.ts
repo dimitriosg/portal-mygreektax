@@ -1,3 +1,4 @@
+import { waitUntil } from "cloudflare:workers";
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
@@ -93,24 +94,26 @@ export const Route = createFileRoute("/webhooks/summarize-case")({
         // so the Lambda runs to completion even if we drop the connection.
         // The catch is required: an unhandled rejection would take down the
         // isolate.
-        fetch(orchestrateUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-brain-secret": brainSecret,
-          },
-          body: JSON.stringify({
-            record: {
-              case_id: conversation.id,
-              case_serial_id: conversation.case_serial_id,
-              sender: "portal_summarize",
-              mode: "summarize",
-              event_type: "summary_requested",
+        waitUntil(
+          fetch(orchestrateUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-brain-secret": brainSecret,
             },
+            body: JSON.stringify({
+              record: {
+                case_id: conversation.id,
+                case_serial_id: conversation.case_serial_id,
+                sender: "portal_summarize",
+                mode: "summarize",
+                event_type: "summary_requested",
+              },
+            }),
+          }).catch((error) => {
+            console.error("[summarize-case] background call to Brain failed", { error });
           }),
-        }).catch((error) => {
-          console.error("[summarize-case] background call to Brain failed", { error });
-        });
+        );
 
         return Response.json(
           {
