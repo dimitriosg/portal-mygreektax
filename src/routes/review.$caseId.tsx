@@ -94,7 +94,7 @@ function ReviewCase() {
   const [genError, setGenError] = useState<string>("");
   const [hasDraft, setHasDraft] = useState(false);
   const [draftStamp, setDraftStamp] = useState<string>("none");
-  const [convView, setConvView] = useState<ConvView>("latest");
+  const [convView, setConvView] = useState<ConvView>("collapsed");
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string>("");
 
