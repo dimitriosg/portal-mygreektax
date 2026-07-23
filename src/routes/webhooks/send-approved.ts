@@ -2,14 +2,17 @@ import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 // POST /webhooks/send-approved
+//
 // Called by the AiReviewDesk button. Marks the draft approved, resolves the
-// recipient server side, logs the outbound message onto the case timeline,
-// then forwards the payload to the Make outbound webhook whose URL lives in
-// the MAKE_OUTBOUND_WEBHOOK_URL secret. The Make URL and all database access
-// stay on the server; the browser only ever talks to this same origin route.
+// recipient server side, sends via Mailgun's EU API directly (same path as
+// case-reply.ts, no Make hop), then logs the outbound message.
+//
+// The Make relay was removed: it ACKed the webhook instantly and sent the mail
+// afterwards, so a Mailgun failure inside Make surfaced as a success here. One
+// path and one set of credentials now.
+//
+// Env: SUPABASE_*, MAILGUN_API_KEY, MAILGUN_DOMAIN (defaults to mygreektax.eu)
 
-// Used when the caller sends no subject (blank field on the desk). Must match
-// the placeholder in AiReviewDesk.tsx (DEFAULT_SUBJECT). Change both together.
 const DEFAULT_SUBJECT = "Update on your MyGreekTax request";
 
 function readString(value: unknown, maxLength: number): string | undefined {
@@ -19,21 +22,38 @@ function readString(value: unknown, maxLength: number): string | undefined {
   return trimmed.slice(0, maxLength);
 }
 
+const BASE_FONT_OPEN =
+  '<div style="font-family: Arial, Helvetica, sans-serif; font-size: 14px; color: #1E2A3A; line-height: 1.6;">';
+
+// The desk posts final_text as sanitized HTML with the signature already in it,
+// so we never append a signature here.
+function htmlToText(html: string): string {
+  return html
+    .replace(/<\s*br\s*\/?>/gi, "\n")
+    .replace(/<\/\s*(p|div|li|h[1-6])\s*>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 export const Route = createFileRoute("/webhooks/send-approved")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const webhookUrl = process.env.MAKE_OUTBOUND_WEBHOOK_URL;
-        if (!webhookUrl) {
+        const mailgunKey = process.env.MAILGUN_API_KEY;
+        if (!mailgunKey) {
           return Response.json(
-            {
-              error: "Server misconfigured",
-              detail:
-                "MAKE_OUTBOUND_WEBHOOK_URL is not set. Add it as a Secret in Cloudflare, then redeploy.",
-            },
+            { error: "Server misconfigured", detail: "MAILGUN_API_KEY is not set." },
             { status: 500 },
           );
         }
+        const domain = process.env.MAILGUN_DOMAIN || "mygreektax.eu";
 
         let body: unknown;
         try {
@@ -48,7 +68,6 @@ export const Route = createFileRoute("/webhooks/send-approved")({
 
         const caseId = readString(b.case_id, 100);
         const finalText = readString(b.final_text, 100000);
-        // Optional. Blank/absent -> the default subject is used.
         const subject = readString(b.subject, 500) || DEFAULT_SUBJECT;
 
         if (!caseId || !finalText) {
@@ -68,18 +87,10 @@ export const Route = createFileRoute("/webhooks/send-approved")({
 
           if (draftError) throw draftError;
           if (!draftRow) {
-            return Response.json(
-              { error: "No draft found for this case" },
-              { status: 404 },
-            );
+            return Response.json({ error: "No draft found for this case" }, { status: 404 });
           }
 
-          // 2. Resolve the recipient. case_id here is a brain_conversations
-          // id (new spine). We read the case row for its client_id,
-          // customer_email, and case_serial_id, then prefer the linked
-          // clients row for the name/email, falling back to the email stored
-          // directly on the conversation. Legacy fallbacks (a bare client id,
-          // or a cases_directory id) are kept last so old drafts still send.
+          // 2. Resolve the recipient. Unchanged from the Make version.
           let clientRow: { id: string; full_name: string | null; email: string | null } | null = null;
           let caseSerialId: string | null = null;
           let isNewSpine = false;
@@ -104,7 +115,6 @@ export const Route = createFileRoute("/webhooks/send-approved")({
               if (linkedClient) clientRow = linkedClient;
             }
 
-            // Fall back to the email captured on the conversation itself.
             if ((!clientRow || !clientRow.email) && typeof convRow.customer_email === "string") {
               clientRow = {
                 id: (convRow.client_id as string) ?? caseId,
@@ -114,7 +124,6 @@ export const Route = createFileRoute("/webhooks/send-approved")({
             }
           }
 
-          // Legacy fallbacks for any pre-existing case_drafts not on the new spine.
           if (!clientRow || !clientRow.email) {
             const { data: directClient } = await supabaseAdmin
               .from("clients")
@@ -154,15 +163,58 @@ export const Route = createFileRoute("/webhooks/send-approved")({
             return Response.json(
               {
                 error: "Recipient not found",
-                detail:
-                  "Could not resolve a client email for this case id. Check the cases_directory schema.",
+                detail: "Could not resolve a client email for this case id.",
                 case_id: caseId,
               },
               { status: 422 },
             );
           }
 
-          // 3. Mark approved and store the human edited final text.
+          // 3. Build the email. final_text is already sanitized HTML carrying
+          // the signature, so wrap once and append the ref line only.
+          const refCore = caseSerialId ? caseSerialId.replace(/^MGT-/i, "") : "";
+          const refLineHtml = refCore
+            ? '<div style="font-family: Arial, Helvetica, sans-serif; font-size: 12px; color: #9ca3af; margin-top: 16px;">MGT-REF-ID: [' +
+              refCore +
+              "]</div>"
+            : "";
+
+          const html = BASE_FONT_OPEN + finalText + "</div>" + refLineHtml;
+          const logText = htmlToText(finalText);
+
+          // 4. Send via Mailgun (EU), BCC to hello@ so there is always a copy.
+          const form = new URLSearchParams();
+          form.set("from", "MyGreekTax <hello@mygreektax.eu>");
+          form.set("to", clientRow.email);
+          form.set("bcc", "hello@mygreektax.eu");
+          form.set("subject", subject);
+          form.set("html", html);
+          form.set("h:X-Mailgun-Variables", JSON.stringify({ src: "portal_desk" }));
+
+          const mgRes = await fetch(`https://api.eu.mailgun.net/v3/${domain}/messages`, {
+            method: "POST",
+            headers: {
+              Authorization: "Basic " + btoa("api:" + mailgunKey),
+              "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body: form.toString(),
+          });
+          const mgText = await mgRes.text();
+
+          if (!mgRes.ok) {
+            console.error("[send-approved] mailgun send failed:", mgRes.status, mgText);
+            return Response.json({ error: "Send failed", detail: mgText }, { status: 502 });
+          }
+
+          let mgId: string | undefined;
+          try {
+            mgId = (JSON.parse(mgText) as { id?: string }).id;
+          } catch {
+            /* ignore */
+          }
+
+          // 5. Only now mark the draft approved. The send succeeded, so this
+          // can no longer claim success for a mail that never left.
           const { error: updateError } = await supabaseAdmin
             .from("case_drafts")
             .update({
@@ -172,102 +224,50 @@ export const Route = createFileRoute("/webhooks/send-approved")({
             })
             .eq("case_id", caseId);
 
-          if (updateError) throw updateError;
+          if (updateError) {
+            console.error("[send-approved] approval update failed (mail already sent):", updateError);
+          }
 
-          // 4. Log the outbound message. For new-spine cases this goes to
-          // brain_events (so the case page conversation shows the sent
-          // reply); actor "internal" keeps it off the Brain's triggering
-          // path. Legacy cases still log to case_timeline.
+          // 6. Log it onto the case.
           if (isNewSpine) {
-            const { error: eventError } = await supabaseAdmin
-              .from("brain_events")
-              .insert({
-                conversation_id: caseId,
-                external_event_id: `sent:${caseId}:${Date.now()}`,
-                event_type: "customer_email_sent",
-                actor: "internal",
-                direction: "outbound",
-                provider: "make",
-                to_emails: [clientRow.email],
-                subject,
-                body_text: finalText,
-              });
+            const { error: eventError } = await supabaseAdmin.from("brain_events").insert({
+              conversation_id: caseId,
+              external_event_id: mgId || `sent:${caseId}:${Date.now()}`,
+              event_type: "customer_email_sent",
+              actor: "internal",
+              direction: "outbound",
+              provider: "mailgun",
+              provider_message_id: mgId || null,
+              from_email: "hello@mygreektax.eu",
+              to_emails: [clientRow.email],
+              subject,
+              body_text: logText,
+              metadata: { via: "portal_desk" },
+            });
 
             if (eventError) {
-              console.error(
-                "[send-approved] brain_events log failed (send continues):",
-                eventError,
-              );
+              console.error("[send-approved] brain_events log failed (mail already sent):", eventError);
             }
           } else {
-            const { error: timelineError } = await supabaseAdmin
-              .from("case_timeline")
-              .insert({
-                case_id: caseId,
-                case_serial_id: caseSerialId,
-                event_type: "outbound_sent",
-                sender: "internal",
-                payload: { text: finalText },
-              });
+            const { error: timelineError } = await supabaseAdmin.from("case_timeline").insert({
+              case_id: caseId,
+              case_serial_id: caseSerialId,
+              event_type: "outbound_sent",
+              sender: "internal",
+              payload: { text: logText },
+            });
 
             if (timelineError) {
-              console.error(
-                "[send-approved] timeline log failed (send continues):",
-                timelineError,
-              );
+              console.error("[send-approved] timeline log failed (mail already sent):", timelineError);
             }
           }
 
-          // 5. Forward to Make. The scenario only formats and sends email;
-          // it needs no database access and no keys.
-          const refLine = caseSerialId ? `MGT-REF-ID: [${caseSerialId}]` : "";
-
-          /* BEFORE THE SUGGESTED CHANGE, CODE BELOW:
-          --------------------------------------------------------
-          const makeResponse = await fetch(webhookUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-          --------------------------------------------------------
-          */
-
-          // Modified after Claude's suggestion for MAKE_OUTBOUND_WEBHOOK_KEY on Cloudflare
-          const makeHeaders: Record<string, string> = {
-            "Content-Type": "application/json",
-          };
-
-          const makeKey = process.env.MAKE_OUTBOUND_WEBHOOK_KEY;
-          if (makeKey) makeHeaders["x-make-apikey"] = makeKey;
-          const makeResponse = await fetch(webhookUrl, {
-            method: "POST",
-            headers: makeHeaders, // <---- the change ended at this point.
-            body: JSON.stringify({
-              case_id: caseId,
-              case_serial_id: caseSerialId,
-              to_email: clientRow.email,
-              client_name: clientRow.full_name ?? "",
-              subject,
-              body_text: finalText,
-              ref_line: refLine,
-            }),
-          });
-
-          if (!makeResponse.ok) {
-            return Response.json(
-              {
-                error: "Make webhook rejected the send",
-                detail: `Make responded ${makeResponse.status}`,
-              },
-              { status: 502 },
-            );
-          }
-
-          console.log(
-            `[send-approved] draft approved and forwarded for case ${caseId} to ${clientRow.email}`,
-          );
+          console.log(`[send-approved] sent for case ${caseId} to ${clientRow.email}`);
           return Response.json({
             ok: true,
             sent_to: clientRow.email,
             client_name: clientRow.full_name ?? "",
+            messageId: mgId ?? null,
           });
         } catch (error) {
           console.error("[send-approved] failed", { error });
