@@ -65,6 +65,8 @@ const SYNC_MAX_MS = 240000;
 const GEN_POLL_MS = 3000;
 const GEN_TIMEOUT_MS = 180000;
 
+const [convView, setConvView] = useState<ConvView>("collapsed");
+
 const ACTOR_LABELS: Record<string, string> = {
   customer: "Client",
   partner: "Partner",
