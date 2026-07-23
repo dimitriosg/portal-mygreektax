@@ -3,14 +3,12 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 // POST /webhooks/summarize-case
 //
-// On-demand case summary. Mirrors generate-draft: admin session required, then
-// it calls the same Brain endpoint with mode "summarize". The Brain reads the
-// full thread plus the approved knowledge base, writes the summary to
-// case_summaries, and returns it. One AI call per click, same cost control as
-// Generate draft.
+// Async. The Brain summary takes longer than API Gateway's 30s response cap,
+// so we fire the request and return 202 immediately. The Lambda keeps running
+// and writes the result to case_summaries. The client polls that table.
 //
-// Env (already present, same as generate-draft):
-//   BRAIN_ORCHESTRATE_URL, BRAIN_WEBHOOK_SECRET
+// We return the current generated_at as a baseline so the client can tell when
+// a genuinely new summary has landed.
 
 type Body = {
   case_serial_id?: unknown;
@@ -36,7 +34,6 @@ export const Route = createFileRoute("/webhooks/summarize-case")({
           return Response.json({ error: "Server configuration error" }, { status: 500 });
         }
 
-        // Admin-only: verify the caller's Supabase session.
         const authHeader = request.headers.get("authorization") ?? "";
         const token = authHeader.toLowerCase().startsWith("bearer ")
           ? authHeader.slice(7).trim()
@@ -64,7 +61,6 @@ export const Route = createFileRoute("/webhooks/summarize-case")({
           );
         }
 
-        // Resolve the conversation so we hand the Brain a stable case_id.
         const lookup = supabaseAdmin
           .from("brain_conversations")
           .select("id, case_serial_id")
@@ -82,71 +78,50 @@ export const Route = createFileRoute("/webhooks/summarize-case")({
           return Response.json({ error: "Case not found" }, { status: 404 });
         }
 
-        try {
-          const brainResponse = await fetch(orchestrateUrl, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "x-brain-secret": brainSecret,
+        // Baseline: what the client already has. Anything newer than this is a
+        // fresh result.
+        const { data: existing } = await supabaseAdmin
+          .from("case_summaries")
+          .select("generated_at")
+          .eq("case_id", conversation.id)
+          .maybeSingle();
+
+        const previousGeneratedAt =
+          (existing as { generated_at: string | null } | null)?.generated_at ?? null;
+
+        // Fire and do NOT await. API Gateway invokes the Lambda synchronously,
+        // so the Lambda runs to completion even if we drop the connection.
+        // The catch is required: an unhandled rejection would take down the
+        // isolate.
+        fetch(orchestrateUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-brain-secret": brainSecret,
+          },
+          body: JSON.stringify({
+            record: {
+              case_id: conversation.id,
+              case_serial_id: conversation.case_serial_id,
+              sender: "portal_summarize",
+              mode: "summarize",
+              event_type: "summary_requested",
             },
-            body: JSON.stringify({
-              record: {
-                case_id: conversation.id,
-                case_serial_id: conversation.case_serial_id,
-                sender: "portal_summarize",
-                mode: "summarize",
-                event_type: "summary_requested",
-              },
-            }),
-          });
+          }),
+        }).catch((error) => {
+          console.error("[summarize-case] background call to Brain failed", { error });
+        });
 
-          const rawText = await brainResponse.text();
-          let parsed: unknown = null;
-          try {
-            parsed = rawText ? JSON.parse(rawText) : null;
-          } catch {
-            parsed = rawText;
-          }
-
-          if (!brainResponse.ok) {
-            console.error("[summarize-case] Brain returned non-2xx", {
-              status: brainResponse.status,
-              body: parsed,
-            });
-            return Response.json(
-              {
-                error: "Summary generation failed",
-                status: brainResponse.status,
-                detail:
-                  typeof parsed === "object" && parsed !== null && "error" in parsed
-                    ? (parsed as Record<string, unknown>).error
-                    : rawText.slice(0, 500),
-              },
-              { status: 502 },
-            );
-          }
-
-          const summary =
-            typeof parsed === "object" && parsed !== null && "summary" in parsed
-              ? (parsed as Record<string, unknown>).summary
-              : null;
-
-          return Response.json({
+        return Response.json(
+          {
             ok: true,
+            accepted: true,
             conversationId: conversation.id,
             caseSerialId: conversation.case_serial_id,
-            summary,
-          });
-        } catch (error) {
-          console.error("[summarize-case] call to Brain failed", { error });
-          return Response.json(
-            {
-              error: "Could not reach the Brain",
-              detail: error instanceof Error ? error.message : String(error),
-            },
-            { status: 502 },
-          );
-        }
+            previousGeneratedAt,
+          },
+          { status: 202 },
+        );
       },
     },
   },
