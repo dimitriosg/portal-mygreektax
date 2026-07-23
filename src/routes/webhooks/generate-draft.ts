@@ -1,4 +1,3 @@
-import { waitUntil } from "cloudflare:workers";
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
@@ -127,25 +126,23 @@ export const Route = createFileRoute("/webhooks/generate-draft")({
         // Async: API Gateway caps the response at 30s but the Brain takes
         // longer. Fire it, keep the isolate alive with waitUntil, return 202.
         // The Lambda writes to case_drafts and the client polls that.
-        waitUntil(
-          fetch(orchestrateUrl, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "x-brain-secret": brainSecret,
+        fetch(orchestrateUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-brain-secret": brainSecret,
+          },
+          body: JSON.stringify({
+            record: {
+              case_id: conversation.id,
+              case_serial_id: conversation.case_serial_id,
+              sender: "portal_generate",
+              event_type: "generate_requested",
             },
-            body: JSON.stringify({
-              record: {
-                case_id: conversation.id,
-                case_serial_id: conversation.case_serial_id,
-                sender: "portal_generate",
-                event_type: "generate_requested",
-              },
-            }),
-          }).catch((error) => {
-            console.error("[generate-draft] background call to Brain failed", { error });
           }),
-        );
+        }).catch((error) => {
+          console.error("[generate-draft] background call to Brain failed", { error });
+        }),
 
         return Response.json(
           {
