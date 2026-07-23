@@ -627,8 +627,7 @@ function ReviewCase() {
           {generating && (
             <div className="flex items-center gap-2 text-sm text-slate-600 border border-slate-200 bg-slate-50 rounded px-3 py-2">
               <span className="inline-block h-3 w-3 rounded-full border-2 border-slate-300 border-t-slate-600 animate-spin" />
-              The Brain is reading the conversation and drafting a reply. This usually takes a few
-              seconds.
+              The Brain is reading the conversation and drafting a reply. This usually takes about a minute.
             </div>
           )}
           {genError && (
