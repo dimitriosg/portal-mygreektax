@@ -110,7 +110,7 @@ export const Route = createFileRoute("/webhooks/summarize-case")({
           }),
         }).catch((error) => {
           console.error("[summarize-case] background call to Brain failed", { error });
-        });
+        }); // <--- fixed recently.
 
         return Response.json(
           {
