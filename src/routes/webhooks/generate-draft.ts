@@ -1,3 +1,4 @@
+import { waitUntil } from "cloudflare:workers";
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
@@ -113,7 +114,53 @@ export const Route = createFileRoute("/webhooks/generate-draft")({
         // We send sender "portal_generate" so it is clearly an on-demand,
         // human-initiated draft in the timeline, and it is not on the Lambda's
         // non-triggering-sender list, so it will draft.
-        try {
+        // Baseline so the client can tell when a genuinely new draft lands.
+        const { data: existingDraft } = await supabaseAdmin
+          .from("case_drafts")
+          .select("last_updated")
+          .eq("case_id", conversation.id)
+          .maybeSingle();
+
+        const previousUpdatedAt =
+          (existingDraft as { last_updated: string | null } | null)?.last_updated ?? null;
+
+        // Async: API Gateway caps the response at 30s but the Brain takes
+        // longer. Fire it, keep the isolate alive with waitUntil, return 202.
+        // The Lambda writes to case_drafts and the client polls that.
+        waitUntil(
+          fetch(orchestrateUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-brain-secret": brainSecret,
+            },
+            body: JSON.stringify({
+              record: {
+                case_id: conversation.id,
+                case_serial_id: conversation.case_serial_id,
+                sender: "portal_generate",
+                event_type: "generate_requested",
+              },
+            }),
+          }).catch((error) => {
+            console.error("[generate-draft] background call to Brain failed", { error });
+          }),
+        );
+
+        return Response.json(
+          {
+            ok: true,
+            accepted: true,
+            caseSerialId: conversation.case_serial_id,
+            conversationId: conversation.id,
+            previousUpdatedAt,
+          },
+          { status: 202 },
+        );
+        
+        // <--- FROM HERE
+        /*
+        try { 
           const brainResponse = await fetch(orchestrateUrl, {
             method: "POST",
             headers: {
@@ -162,7 +209,7 @@ export const Route = createFileRoute("/webhooks/generate-draft")({
             conversationId: conversation.id,
             brain: parsed,
           });
-        } catch (error) {
+        } catch (error) { 
           console.error("[generate-draft] call to Brain failed", { error });
           return Response.json(
             {
@@ -171,7 +218,9 @@ export const Route = createFileRoute("/webhooks/generate-draft")({
             },
             { status: 502 },
           );
-        }
+        } 
+        */
+        // <--- TILL HERE
       },
     },
   },
