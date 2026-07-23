@@ -102,6 +102,49 @@ function Markdown({ text }: { text: string }) {
   return <div className="space-y-2">{blocks}</div>;
 }
 
+// <---
+function renderMarkdown(text: string) {
+  return text.split("\n").map((raw, i) => {
+    const line = raw.trim();
+    if (!line) return null;
+
+    const heading = /^#{1,6}\s+(.*)$/.exec(line);
+    const bullet = /^[-*]\s+(.*)$/.exec(line);
+    const content = heading ? heading[1] : bullet ? bullet[1] : line;
+
+    const parts = content.split(/(\*\*[^*]+\*\*)/g).map((p, j) =>
+      p.startsWith("**") && p.endsWith("**") && p.length > 4 ? (
+        <strong key={j} className="font-semibold text-slate-900">
+          {p.slice(2, -2)}
+        </strong>
+      ) : (
+        p
+      ),
+    );
+
+    if (heading) {
+      return (
+        <p key={i} className="text-sm font-semibold text-slate-900 mt-3 first:mt-0">
+          {parts}
+        </p>
+      );
+    }
+    if (bullet) {
+      return (
+        <p key={i} className="text-sm text-slate-700 pl-4 leading-relaxed">
+          • {parts}
+        </p>
+      );
+    }
+    return (
+      <p key={i} className="text-sm text-slate-700 leading-relaxed">
+        {parts}
+      </p>
+    );
+  });
+}
+
+// <---
 export function CaseSummary({ caseId }: CaseSummaryProps) {
   const [row, setRow] = useState<SummaryRow | null>(null);
   const [loading, setLoading] = useState(true);
@@ -203,6 +246,27 @@ export function CaseSummary({ caseId }: CaseSummaryProps) {
       <CardContent className="py-4 space-y-3">
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-sm font-medium text-slate-500 uppercase tracking-wide">Summary</h2>
+          
+          {hasSummary && (
+              <>
+                <Button
+                  variant={!expanded ? "default" : "outline"}
+                  onClick={() => setExpanded(false)}
+                  className={`h-7 px-2.5 text-xs ${!expanded ? "bg-[#0B192C] text-white" : ""}`}
+                >
+                  Collapse
+                </Button>
+                <Button
+                  variant={expanded ? "default" : "outline"}
+                  onClick={() => setExpanded(true)}
+                  className={`h-7 px-2.5 text-xs ${expanded ? "bg-[#0B192C] text-white" : ""}`}
+                >
+                  Show
+                </Button>
+                <span className="mx-0.5 h-4 w-px bg-slate-200" />
+              </>
+            )}
+          
           <div className="flex items-center gap-2">
             {hasSummary && row?.generated_at && (
               <span className="text-xs text-slate-400">Updated {formatWhen(row.generated_at)}</span>
@@ -262,7 +326,15 @@ export function CaseSummary({ caseId }: CaseSummaryProps) {
           <p className="text-sm text-slate-400">Working on it. This usually takes about a minute.</p>
         )}
 
+        /*
         {hasSummary && expanded && <Markdown text={row!.summary!} />}
+
+        {hasSummary && !expanded && (
+          <p className="text-xs text-slate-400 italic">Summary collapsed.</p>
+        )}
+        */
+
+        {hasSummary && expanded && <div className="space-y-2">{renderMarkdown(row!.summary!)}</div>}
 
         {hasSummary && !expanded && (
           <p className="text-xs text-slate-400 italic">Summary collapsed.</p>
