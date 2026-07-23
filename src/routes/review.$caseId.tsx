@@ -62,6 +62,8 @@ const SYNC_POLL_MS = 2500;
 const SYNC_QUIET_MS = 12000;
 const SYNC_NO_ACTIVITY_MS = 45000;
 const SYNC_MAX_MS = 240000;
+const GEN_POLL_MS = 3000;
+const GEN_TIMEOUT_MS = 180000;
 
 const ACTOR_LABELS: Record<string, string> = {
   customer: "Client",
@@ -248,6 +250,66 @@ function ReviewCase() {
       });
 
       const payload = await res.json().catch(() => ({}));
+      if (!res.ok || !payload?.ok) {
+        const detail =
+          typeof payload?.detail === "string" ? payload.detail : payload?.error ?? `HTTP ${res.status}`;
+        setGenError(`Generation failed: ${detail}`);
+        return;
+      }
+
+      // Async now: the Brain writes to case_drafts in the background, so poll
+      // until last_updated moves past the baseline the server handed back.
+      const baseline: string | null = payload.previousUpdatedAt ?? null;
+      const startedAt = Date.now();
+
+      while (Date.now() - startedAt < GEN_TIMEOUT_MS) {
+        await new Promise((r) => setTimeout(r, GEN_POLL_MS));
+
+        const { data: fresh } = await supabase
+          .from("case_drafts")
+          .select("proposed_draft, last_updated")
+          .eq("case_id", caseId)
+          .maybeSingle();
+
+        const stamp = (fresh as any)?.last_updated as string | undefined;
+        if (stamp && stamp !== baseline) {
+          await load();
+          return;
+        }
+      }
+
+      setGenError(
+        "The draft is taking longer than expected. It may still finish, so try reloading the page in a minute.",
+      );
+    } catch (err) {
+      setGenError(
+        `Could not reach the server: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  // <-- FROM HERE
+  /*
+  const generate = async () => {
+    setGenError("");
+    setGenerating(true);
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      const res = await fetch("/webhooks/generate-draft", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({ conversation_id: caseId }),
+      });
+
+      const payload = await res.json().catch(() => ({}));
       if (!res.ok) {
         const detail =
           typeof payload?.detail === "string" ? payload.detail : payload?.error ?? `HTTP ${res.status}`;
@@ -263,6 +325,8 @@ function ReviewCase() {
       setGenerating(false);
     }
   };
+  */
+  // <-- UNTIL HERE
 
   const title =
     client?.full_name ||
