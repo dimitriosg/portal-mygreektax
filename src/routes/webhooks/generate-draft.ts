@@ -142,7 +142,7 @@ export const Route = createFileRoute("/webhooks/generate-draft")({
           }),
         }).catch((error) => {
           console.error("[generate-draft] background call to Brain failed", { error });
-        }),
+        });
 
         return Response.json(
           {
