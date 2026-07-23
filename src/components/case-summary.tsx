@@ -22,7 +22,7 @@ type SummaryRow = {
 };
 
 const POLL_INTERVAL_MS = 3000;
-const POLL_TIMEOUT_MS = 180000; // 3 minutes
+const POLL_TIMEOUT_MS = 180000; // 3 minutes 
 
 function formatWhen(iso: string | null): string {
   if (!iso) return "";
