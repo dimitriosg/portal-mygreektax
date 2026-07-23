@@ -1,12 +1,11 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
-// Case summary panel. Shows the cached internal summary for a case (from
-// case_summaries) and lets Jim regenerate it on demand. Summarizing runs the
-// Brain once (mode "summarize"): it reads the full thread plus the approved
-// knowledge base, so it costs a single AI call, same control as Generate draft.
+// Case summary panel. Summarizing is asynchronous: the server accepts the job
+// (202) and the Brain writes the result to case_summaries in the background.
+// We poll that table until generated_at moves past the baseline we were given.
 
 type CaseSummaryProps = {
   caseId: string; // brain_conversations.id
@@ -19,10 +18,17 @@ type SummaryRow = {
   generated_at: string | null;
 };
 
+const POLL_INTERVAL_MS = 3000;
+const POLL_TIMEOUT_MS = 180000; // 3 minutes
+
 function formatWhen(iso: string | null): string {
   if (!iso) return "";
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? "" : d.toLocaleString();
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export function CaseSummary({ caseId }: CaseSummaryProps) {
@@ -30,16 +36,30 @@ export function CaseSummary({ caseId }: CaseSummaryProps) {
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string>("");
+  const cancelled = useRef(false);
 
-  const load = useCallback(async () => {
+  useEffect(() => {
+    cancelled.current = false;
+    return () => {
+      cancelled.current = true;
+    };
+  }, []);
+
+  const fetchRow = useCallback(async (): Promise<SummaryRow | null> => {
     const { data } = await supabase
       .from("case_summaries")
       .select("summary, event_count, generated_at")
       .eq("case_id", caseId)
       .maybeSingle();
-    setRow((data as SummaryRow | null) ?? null);
-    setLoading(false);
+    return (data as SummaryRow | null) ?? null;
   }, [caseId]);
+
+  const load = useCallback(async () => {
+    const data = await fetchRow();
+    if (cancelled.current) return;
+    setRow(data);
+    setLoading(false);
+  }, [fetchRow]);
 
   useEffect(() => {
     load();
@@ -52,6 +72,7 @@ export function CaseSummary({ caseId }: CaseSummaryProps) {
       const {
         data: { session },
       } = await supabase.auth.getSession();
+
       const res = await fetch("/webhooks/summarize-case", {
         method: "POST",
         headers: {
@@ -60,25 +81,47 @@ export function CaseSummary({ caseId }: CaseSummaryProps) {
         },
         body: JSON.stringify({ conversation_id: caseId }),
       });
+
       const payload = await res.json().catch(() => ({}));
+
       if (!res.ok || !payload?.ok) {
         const detail =
-          typeof payload?.detail === "string" ? payload.detail : payload?.error ?? `HTTP ${res.status}`;
-        setError(`Could not summarize: ${detail}`);
+          typeof payload?.detail === "string"
+            ? payload.detail
+            : payload?.error ?? `HTTP ${res.status}`;
+        setError(`Could not start the summary: ${detail}`);
         return;
       }
-      if (typeof payload.summary === "string") {
-        setRow({
-          summary: payload.summary,
-          event_count: null,
-          generated_at: new Date().toISOString(),
-        });
+
+      const baseline: string | null = payload.previousGeneratedAt ?? null;
+      const startedAt = Date.now();
+
+      // Poll until a row appears with a newer generated_at than the baseline.
+      while (Date.now() - startedAt < POLL_TIMEOUT_MS) {
+        await sleep(POLL_INTERVAL_MS);
+        if (cancelled.current) return;
+
+        const fresh = await fetchRow();
+        if (cancelled.current) return;
+
+        const isNew =
+          !!fresh?.generated_at && (!baseline || fresh.generated_at !== baseline);
+
+        if (isNew) {
+          setRow(fresh);
+          return;
+        }
       }
-      await load();
+
+      setError(
+        "The summary is taking longer than expected. It may still finish, so try reloading the page in a minute.",
+      );
     } catch (err) {
-      setError(`Could not reach the server: ${err instanceof Error ? err.message : String(err)}`);
+      setError(
+        `Could not reach the server: ${err instanceof Error ? err.message : String(err)}`,
+      );
     } finally {
-      setRunning(false);
+      if (!cancelled.current) setRunning(false);
     }
   };
 
@@ -120,6 +163,12 @@ export function CaseSummary({ caseId }: CaseSummaryProps) {
           <p className="text-sm text-slate-400">
             No summary yet. Summarize runs the Brain once over the whole thread and the knowledge
             base.
+          </p>
+        )}
+
+        {running && (
+          <p className="text-sm text-slate-400">
+            Working on it. This usually takes about a minute.
           </p>
         )}
 
