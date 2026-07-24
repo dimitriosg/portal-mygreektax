@@ -52,12 +52,18 @@ export const Route = createFileRoute("/webhooks/ops-snapshot")({
 
         try {
           // The generated Database types do not know about this function yet.
-          // Regenerate types and drop the cast on the next types refresh.
-          const rpc = supabaseAdmin.rpc as unknown as (
-            fn: string,
-          ) => Promise<{ data: unknown; error: { message: string } | null }>;
+          // Cast the client, not the method: pulling .rpc off the lazy proxy
+          // detaches it from its receiver and supabase-js then fails on
+          // this.rest. Regenerate types and drop the cast on the next refresh.
+          type RpcCaller = {
+            rpc: (
+              fn: string,
+            ) => Promise<{ data: unknown; error: { message: string } | null }>;
+          };
 
-          const { data, error } = await rpc("mgt_ops_snapshot");
+          const { data, error } = await (
+            supabaseAdmin as unknown as RpcCaller
+          ).rpc("mgt_ops_snapshot");
 
           if (error) {
             console.error("[ops-snapshot] rpc failed:", error.message);
