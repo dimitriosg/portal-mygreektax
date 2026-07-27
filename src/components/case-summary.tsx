@@ -6,6 +6,13 @@ import { Button } from "@/components/ui/button";
 // Case summary panel. Summarizing is asynchronous: the server accepts the job
 // (202) and the Brain writes the result to case_summaries in the background.
 // We poll that table until generated_at moves past the baseline we were given.
+//
+// case_summaries holds one markdown blob per case, so the split between the
+// customer profile and the case itself is done here by reading headings. If the
+// summary contains a "customer profile" heading, everything under it up to the
+// next heading renders as the profile block and the rest renders as the case
+// summary. If it does not, the whole thing renders as one block, which is what
+// happens today until the Brain is taught to emit the sections.
 
 type CaseSummaryProps = {
   caseId: string; // brain_conversations.id
@@ -30,7 +37,31 @@ function formatWhen(iso: string | null): string {
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
-// <---
+
+// Split the markdown into a profile section and everything else. Matches a
+// heading whose text starts with "customer profile" or "client profile",
+// case-insensitively. Returns profile === null when no such heading exists.
+function splitSummary(text: string): { profile: string | null; rest: string } {
+  const lines = text.split("\n");
+  const isHeading = (l: string) => /^#{1,6}\s+/.test(l.trim());
+  const startIdx = lines.findIndex(
+    (l) => isHeading(l) && /^#{1,6}\s+(customer|client)\s+profile\b/i.test(l.trim()),
+  );
+  if (startIdx === -1) return { profile: null, rest: text };
+
+  let endIdx = lines.length;
+  for (let i = startIdx + 1; i < lines.length; i++) {
+    if (isHeading(lines[i])) {
+      endIdx = i;
+      break;
+    }
+  }
+
+  const profile = lines.slice(startIdx + 1, endIdx).join("\n").trim();
+  const rest = [...lines.slice(0, startIdx), ...lines.slice(endIdx)].join("\n").trim();
+  return { profile: profile || null, rest };
+}
+
 function renderMarkdown(text: string) {
   return text.split("\n").map((raw, i) => {
     const line = raw.trim();
@@ -71,15 +102,13 @@ function renderMarkdown(text: string) {
     );
   });
 }
-// <---
-
 
 export function CaseSummary({ caseId }: CaseSummaryProps) {
   const [row, setRow] = useState<SummaryRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string>("");
-  const [expanded, setExpanded] = useState(false); // <--- NEWLY ADDED
+  const [expanded, setExpanded] = useState(false);
   const cancelled = useRef(false);
 
   useEffect(() => {
@@ -140,7 +169,6 @@ export function CaseSummary({ caseId }: CaseSummaryProps) {
       const baseline: string | null = payload.previousGeneratedAt ?? null;
       const startedAt = Date.now();
 
-      // Poll until a row appears with a newer generated_at than the baseline.
       while (Date.now() - startedAt < POLL_TIMEOUT_MS) {
         await sleep(POLL_INTERVAL_MS);
         if (cancelled.current) return;
@@ -148,8 +176,7 @@ export function CaseSummary({ caseId }: CaseSummaryProps) {
         const fresh = await fetchRow();
         if (cancelled.current) return;
 
-        const isNew =
-          !!fresh?.generated_at && (!baseline || fresh.generated_at !== baseline);
+        const isNew = !!fresh?.generated_at && (!baseline || fresh.generated_at !== baseline);
 
         if (isNew) {
           setRow(fresh);
@@ -162,22 +189,21 @@ export function CaseSummary({ caseId }: CaseSummaryProps) {
         "The summary is taking longer than expected. It may still finish, so try reloading the page in a minute.",
       );
     } catch (err) {
-      setError(
-        `Could not reach the server: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      setError(`Could not reach the server: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       if (!cancelled.current) setRunning(false);
     }
-  }; // <--- END OF summarize()
+  };
 
   const hasSummary = !!row?.summary;
+  const split = hasSummary ? splitSummary(row!.summary!) : { profile: null, rest: "" };
 
   return (
-    <Card className="border-slate-200">
+    <Card className="border-slate-200 h-full">
       <CardContent className="py-4 space-y-3">
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
           <h2 className="text-sm font-medium text-slate-500 uppercase tracking-wide">Summary</h2>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             {hasSummary && row?.generated_at && (
               <span className="text-xs text-slate-400">Updated {formatWhen(row.generated_at)}</span>
             )}
@@ -201,7 +227,7 @@ export function CaseSummary({ caseId }: CaseSummaryProps) {
                 <span className="mx-0.5 h-4 w-px bg-slate-200" />
               </>
             )}
-            
+
             <Button
               variant="outline"
               onClick={summarize}
@@ -233,12 +259,31 @@ export function CaseSummary({ caseId }: CaseSummaryProps) {
         )}
 
         {running && (
-          <p className="text-sm text-slate-400">
-            Working on it. This usually takes about a minute.
-          </p>
+          <p className="text-sm text-slate-400">Working on it. This usually takes about a minute.</p>
         )}
-        
-        {hasSummary && expanded && <div className="space-y-2">{renderMarkdown(row!.summary!)}</div>}
+
+        {hasSummary && expanded && (
+          <div className="space-y-4">
+            {split.profile && (
+              <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wide mb-1">
+                  Customer profile
+                </p>
+                <div className="space-y-1">{renderMarkdown(split.profile)}</div>
+              </div>
+            )}
+            {split.rest && (
+              <div className="space-y-2">
+                {split.profile && (
+                  <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">
+                    Case summary
+                  </p>
+                )}
+                {renderMarkdown(split.rest)}
+              </div>
+            )}
+          </div>
+        )}
 
         {hasSummary && !expanded && (
           <p className="text-xs text-slate-400 italic">Summary collapsed.</p>
