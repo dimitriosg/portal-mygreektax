@@ -82,6 +82,11 @@ export const Route = createFileRoute("/webhooks/conversation-log")({
         const sentAt = parseSentAt(b.sent_at);
         const sourceMessageId = readString(b.source_message_id, 200);
 
+        // Which side of the case this message belongs to. Absent means customer,
+        // so the existing client sync keeps working untouched.
+        const party = (readString(b.party, 20) ?? "customer").toLowerCase();
+        const isPartner = party === "partner";
+
         if (!email || !EMAIL_PATTERN.test(email)) {
           return Response.json({ error: "Valid email is required" }, { status: 400 });
         }
@@ -102,10 +107,14 @@ export const Route = createFileRoute("/webhooks/conversation-log")({
 
           // 1. Resolve the conversation this event belongs to. The serial is the
           //    authority (it comes straight from the case), so try it first via
-          //    brain_conversations. Fall back to the customer email if no serial
-          //    was supplied. cases_directory is not used: it does not carry these
-          //    rows. Everything writes to brain_events, the live spine the portal
-          //    and the Brain both read.
+          //    brain_conversations. Everything writes to brain_events, the live
+          //    spine the portal and the Brain both read.
+          //
+          //    For partner mail the serial is the ONLY acceptable route. The
+          //    email fallback matches an address against customer_email, which
+          //    for a partner address is meaningless at best and wrong at worst.
+          //    A partner message with no resolvable serial is reported back as
+          //    unassigned rather than guessed at.
           let conversationId: string | undefined;
 
           if (caseSerialId) {
@@ -120,7 +129,7 @@ export const Route = createFileRoute("/webhooks/conversation-log")({
             conversationId = convRows?.[0]?.id;
           }
 
-          if (!conversationId) {
+          if (!conversationId && !isPartner) {
             const { data: convRows, error: convError } = await supabase
               .from("brain_conversations")
               .select("id")
@@ -135,7 +144,11 @@ export const Route = createFileRoute("/webhooks/conversation-log")({
 
           if (!conversationId) {
             // Nothing to attach to: 200 so the Make scenario does not error.
-            return Response.json({ found: false });
+            return Response.json({
+              found: false,
+              party,
+              reason: isPartner ? "unassigned: no case code on this partner message" : undefined,
+            });
           }
 
           // 2. Dedupe. A provider message id (Gmail/Mailgun) keeps re-syncs of an
@@ -163,56 +176,80 @@ export const Route = createFileRoute("/webhooks/conversation-log")({
           // 3. Write the event into brain_events with constraint-valid values.
           //    actor is one of customer/partner/dimitris/system; direction is
           //    inbound/outbound/internal; event_type is from the fixed enum.
+          //
+          //    Partner mail gets partner_email_received / partner_email_sent and
+          //    actor "partner" on the inbound side. The case page reads those
+          //    two markers to decide which pane a message belongs in, so getting
+          //    this wrong puts partner correspondence in front of the client.
           if (textContent) {
-            const row: Record<string, unknown> = {
-              conversation_id: conversationId,
-              external_event_id: externalEventId,
-              event_type: isOutbound
-                ? "customer_email_sent"
-                : isInternal
-                  ? "internal_note"
-                  : "customer_email_received",
-              actor: isOutbound || isInternal ? "dimitris" : "customer",
-              direction: isOutbound ? "outbound" : isInternal ? "internal" : "inbound",
-              from_email: isOutbound || isInternal ? "hello@mygreektax.eu" : email,
-              to_emails: isOutbound ? [email] : [],
-              subject: subject ?? null,
-              body_text: textContent,
-            };
+            const row: Record<string, unknown> = isPartner
+              ? {
+                  conversation_id: conversationId,
+                  external_event_id: externalEventId,
+                  event_type: isOutbound ? "partner_email_sent" : "partner_email_received",
+                  actor: isOutbound ? "dimitris" : "partner",
+                  direction: isOutbound ? "outbound" : "inbound",
+                  from_email: isOutbound ? "hello@mygreektax.eu" : email,
+                  to_emails: isOutbound ? [email] : [],
+                  subject: subject ?? null,
+                  body_text: textContent,
+                }
+              : {
+                  conversation_id: conversationId,
+                  external_event_id: externalEventId,
+                  event_type: isOutbound
+                    ? "customer_email_sent"
+                    : isInternal
+                      ? "internal_note"
+                      : "customer_email_received",
+                  actor: isOutbound || isInternal ? "dimitris" : "customer",
+                  direction: isOutbound ? "outbound" : isInternal ? "internal" : "inbound",
+                  from_email: isOutbound || isInternal ? "hello@mygreektax.eu" : email,
+                  to_emails: isOutbound ? [email] : [],
+                  subject: subject ?? null,
+                  body_text: textContent,
+                };
+
             // Backfilled messages must land at their real send time, not now(),
             // or the case history reads out of order.
             if (sentAt) row.occurred_at = sentAt;
 
-            const { error: eventError } = await supabase
-              .from("brain_events")
-              .insert(row);
+            const { error: eventError } = await supabase.from("brain_events").insert(row);
 
             if (eventError) {
               console.error("[conversation-log] brain_events insert failed:", eventError);
               throw new Error(`event insert failed: ${eventError.message}`);
             }
-            console.log(`[conversation-log] logged ${direction ?? "event"} for conversation ${conversationId}`);
+            console.log(
+              `[conversation-log] logged ${party} ${direction ?? "event"} for conversation ${conversationId}`,
+            );
           }
 
           // 4. Best-effort activity stamp on the client row. Never fail the whole
           //    request over this: the event is already logged, which is the point.
-          const { data: clientRows } = await supabase
-            .from("clients")
-            .select("id")
-            .ilike("email", email)
-            .limit(1);
-          const clientId = clientRows?.[0]?.id;
-          if (clientId) {
-            await supabase
+          //    Skipped for partner mail: the address belongs to the accountant,
+          //    not a client, and stamping on it would be meaningless.
+          let clientId: string | null = null;
+          if (!isPartner) {
+            const { data: clientRows } = await supabase
               .from("clients")
-              .update({ last_activity: new Date().toISOString() })
-              .eq("id", clientId);
+              .select("id")
+              .ilike("email", email)
+              .limit(1);
+            clientId = clientRows?.[0]?.id ?? null;
+            if (clientId) {
+              await supabase
+                .from("clients")
+                .update({ last_activity: new Date().toISOString() })
+                .eq("id", clientId);
+            }
           }
 
           return Response.json({
             found: true,
             conversationId,
-            clientId: clientId ?? null,
+            clientId,
+            party,
             direction: direction ?? null,
           });
         } catch (error) {
