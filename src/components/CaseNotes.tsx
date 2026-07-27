@@ -46,6 +46,7 @@ export function CaseNotes({ conversationId, onIncludedCountChange }: Props) {
   const [pinNew, setPinNew] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
 
   const load = useCallback(async () => {
@@ -115,6 +116,7 @@ export function CaseNotes({ conversationId, onIncludedCountChange }: Props) {
   const remove = async (id: string) => {
     setError("");
     const { error: err } = await supabase.from("case_notes").delete().eq("id", id);
+    setConfirmId(null);
     if (err) setError(`Could not delete the note: ${err.message}`);
     else await load();
   };
@@ -176,43 +178,63 @@ export function CaseNotes({ conversationId, onIncludedCountChange }: Props) {
                 <span className="text-xs text-slate-400">{formatWhen(n.created_at)}</span>
               )}
               <span className="ml-auto flex items-center gap-1">
-                <button
-                  onClick={() => patch(n.id, { include_in_ai: !n.include_in_ai })}
-                  title={
-                    n.include_in_ai
-                      ? "Included when a draft is generated"
-                      : "Excluded when a draft is generated"
-                  }
-                  className={`text-xs px-1.5 py-0.5 rounded hover:bg-slate-100 ${
-                    n.include_in_ai ? "text-emerald-700" : "text-slate-400"
-                  }`}
-                >
-                  {n.include_in_ai ? "In" : "Out"}
-                </button>
-                <button
-                  onClick={() => patch(n.id, { pinned: !n.pinned })}
-                  title={n.pinned ? "Unpin" : "Pin"}
-                  className="text-xs px-1.5 py-0.5 rounded text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                >
-                  Pin
-                </button>
-                <button
-                  onClick={() => {
-                    setEditingId(n.id);
-                    setEditText(n.body);
-                  }}
-                  title="Edit"
-                  className="text-xs px-1.5 py-0.5 rounded text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                >
-                  Edit
-                </button>
-                <button
-                  onClick={() => remove(n.id)}
-                  title="Delete"
-                  className="text-xs px-1.5 py-0.5 rounded text-slate-400 hover:bg-red-50 hover:text-red-600"
-                >
-                  Delete
-                </button>
+                {confirmId === n.id ? (
+                  <>
+                    <span className="text-xs text-slate-600">Delete note?</span>
+                    <button
+                      onClick={() => remove(n.id)}
+                      className="text-xs px-1.5 py-0.5 rounded text-red-600 hover:bg-red-50 font-medium"
+                    >
+                      Yes
+                    </button>
+                    <button
+                      onClick={() => setConfirmId(null)}
+                      className="text-xs px-1.5 py-0.5 rounded text-slate-500 hover:bg-slate-100"
+                    >
+                      No
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => patch(n.id, { include_in_ai: !n.include_in_ai })}
+                      title={
+                        n.include_in_ai
+                          ? "Included when a draft is generated"
+                          : "Excluded when a draft is generated"
+                      }
+                      className={`text-xs px-1.5 py-0.5 rounded hover:bg-slate-100 ${
+                        n.include_in_ai ? "text-emerald-700" : "text-slate-400"
+                      }`}
+                    >
+                      {n.include_in_ai ? "In" : "Out"}
+                    </button>
+                    <button
+                      onClick={() => patch(n.id, { pinned: !n.pinned })}
+                      title={n.pinned ? "Unpin" : "Pin"}
+                      className="text-xs px-1.5 py-0.5 rounded text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                    >
+                      Pin
+                    </button>
+                    <button
+                      onClick={() => {
+                        setEditingId(n.id);
+                        setEditText(n.body);
+                      }}
+                      title="Edit"
+                      className="text-xs px-1.5 py-0.5 rounded text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => setConfirmId(n.id)}
+                      title="Delete"
+                      className="text-xs px-1.5 py-0.5 rounded text-slate-400 hover:bg-red-50 hover:text-red-600"
+                    >
+                      Delete
+                    </button>
+                  </>
+                )}
               </span>
             </div>
 
