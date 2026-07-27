@@ -13,6 +13,11 @@ import { Button } from "@/components/ui/button";
 // case_notes is admin only at the RLS level, so a partner session sees nothing
 // here. Errors are surfaced rather than swallowed: a permission failure must
 // read as an error, not as an empty list.
+//
+// Delete is two step. Pressing Delete swaps that row's controls for a
+// "Delete note?" prompt. Pressing Yes clears the prompt immediately and shows a
+// non-interactive "Deleting..." state until the request settles, so a second
+// click cannot fire a second delete.
 
 interface Note {
   id: string;
@@ -26,7 +31,7 @@ interface Note {
 interface Props {
   conversationId: string;
   /** Called whenever the set of AI-included notes changes, so the parent can
-   *  keep the "using N notes" line next to Generate draft accurate. */
+   *  keep the "will be included" line next to Generate draft accurate. */
   onIncludedCountChange?: (count: number) => void;
 }
 
@@ -47,6 +52,8 @@ export function CaseNotes({ conversationId, onIncludedCountChange }: Props) {
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const { data, error: err } = await supabase
@@ -113,10 +120,18 @@ export function CaseNotes({ conversationId, onIncludedCountChange }: Props) {
   };
 
   const remove = async (id: string) => {
+    // Guard against a second click landing while the first is in flight.
+    if (deletingId) return;
     setError("");
-    const { error: err } = await supabase.from("case_notes").delete().eq("id", id);
-    if (err) setError(`Could not delete the note: ${err.message}`);
-    else await load();
+    setConfirmId(null);
+    setDeletingId(id);
+    try {
+      const { error: err } = await supabase.from("case_notes").delete().eq("id", id);
+      if (err) setError(`Could not delete the note: ${err.message}`);
+      else await load();
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   const saveEdit = async () => {
@@ -167,90 +182,120 @@ export function CaseNotes({ conversationId, onIncludedCountChange }: Props) {
       )}
 
       <div className="divide-y divide-slate-200">
-        {notes.map((n) => (
-          <div key={n.id} className="pt-3 pb-1 first:pt-0">
-            <div className="flex items-center gap-2">
-              {n.pinned ? (
-                <span className="text-xs text-sky-700">Pinned</span>
-              ) : (
-                <span className="text-xs text-slate-400">{formatWhen(n.created_at)}</span>
-              )}
-              <span className="ml-auto flex items-center gap-1">
-                <button
-                  onClick={() => patch(n.id, { include_in_ai: !n.include_in_ai })}
-                  title={
-                    n.include_in_ai
-                      ? "Included when a draft is generated"
-                      : "Excluded when a draft is generated"
-                  }
-                  className={`text-xs px-1.5 py-0.5 rounded hover:bg-slate-100 ${
-                    n.include_in_ai ? "text-emerald-700" : "text-slate-400"
-                  }`}
-                >
-                  {n.include_in_ai ? "In" : "Out"}
-                </button>
-                <button
-                  onClick={() => patch(n.id, { pinned: !n.pinned })}
-                  title={n.pinned ? "Unpin" : "Pin"}
-                  className="text-xs px-1.5 py-0.5 rounded text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                >
-                  Pin
-                </button>
-                <button
-                  onClick={() => {
-                    setEditingId(n.id);
-                    setEditText(n.body);
-                  }}
-                  title="Edit"
-                  className="text-xs px-1.5 py-0.5 rounded text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                >
-                  Edit
-                </button>
-                <button
-                  onClick={() => remove(n.id)}
-                  title="Delete"
-                  className="text-xs px-1.5 py-0.5 rounded text-slate-400 hover:bg-red-50 hover:text-red-600"
-                >
-                  Delete
-                </button>
-              </span>
-            </div>
+        {notes.map((n) => {
+          const isDeleting = deletingId === n.id;
+          const isConfirming = confirmId === n.id && !isDeleting;
 
-            {editingId === n.id ? (
-              <div className="mt-1 space-y-2">
-                <textarea
-                  value={editText}
-                  onChange={(e) => setEditText(e.target.value)}
-                  rows={3}
-                  className="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
-                />
-                <div className="flex gap-2">
-                  <Button onClick={saveEdit} className="h-7 px-3 text-xs">
-                    Save
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setEditingId(null);
-                      setEditText("");
-                    }}
-                    className="h-7 px-3 text-xs"
-                  >
-                    Cancel
-                  </Button>
-                </div>
+          return (
+            <div key={n.id} className="pt-3 pb-1 first:pt-0">
+              <div className="flex items-center gap-2">
+                {n.pinned ? (
+                  <span className="text-xs text-sky-700">Pinned</span>
+                ) : (
+                  <span className="text-xs text-slate-400">{formatWhen(n.created_at)}</span>
+                )}
+
+                <span className="ml-auto flex items-center gap-1">
+                  {isDeleting && <span className="text-xs text-slate-400">Deleting...</span>}
+
+                  {isConfirming && (
+                    <>
+                      <span className="text-xs text-slate-600">Delete note?</span>
+                      <button
+                        onClick={() => remove(n.id)}
+                        className="text-xs px-1.5 py-0.5 rounded font-medium text-red-600 hover:bg-red-50"
+                      >
+                        Yes
+                      </button>
+                      <button
+                        onClick={() => setConfirmId(null)}
+                        className="text-xs px-1.5 py-0.5 rounded text-slate-500 hover:bg-slate-100"
+                      >
+                        No
+                      </button>
+                    </>
+                  )}
+
+                  {!isDeleting && !isConfirming && (
+                    <>
+                      <button
+                        onClick={() => patch(n.id, { include_in_ai: !n.include_in_ai })}
+                        title={
+                          n.include_in_ai
+                            ? "Included when a draft is generated"
+                            : "Excluded when a draft is generated"
+                        }
+                        className={`text-xs px-1.5 py-0.5 rounded hover:bg-slate-100 ${
+                          n.include_in_ai ? "text-emerald-700" : "text-slate-400"
+                        }`}
+                      >
+                        {n.include_in_ai ? "In" : "Out"}
+                      </button>
+                      <button
+                        onClick={() => patch(n.id, { pinned: !n.pinned })}
+                        title={n.pinned ? "Unpin" : "Pin"}
+                        className="text-xs px-1.5 py-0.5 rounded text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                      >
+                        Pin
+                      </button>
+                      <button
+                        onClick={() => {
+                          setEditingId(n.id);
+                          setEditText(n.body);
+                        }}
+                        title="Edit"
+                        className="text-xs px-1.5 py-0.5 rounded text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => setConfirmId(n.id)}
+                        title="Delete"
+                        className="text-xs px-1.5 py-0.5 rounded text-slate-400 hover:bg-red-50 hover:text-red-600"
+                      >
+                        Delete
+                      </button>
+                    </>
+                  )}
+                </span>
               </div>
-            ) : (
-              <p
-                className={`text-sm mt-0.5 whitespace-pre-wrap ${
-                  n.include_in_ai ? "text-slate-700" : "text-slate-400 line-through"
-                }`}
-              >
-                {n.body}
-              </p>
-            )}
-          </div>
-        ))}
+
+              {editingId === n.id ? (
+                <div className="mt-1 space-y-2">
+                  <textarea
+                    value={editText}
+                    onChange={(e) => setEditText(e.target.value)}
+                    rows={3}
+                    className="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
+                  />
+                  <div className="flex gap-2">
+                    <Button onClick={saveEdit} className="h-7 px-3 text-xs">
+                      Save
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setEditingId(null);
+                        setEditText("");
+                      }}
+                      className="h-7 px-3 text-xs"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <p
+                  className={`text-sm mt-0.5 whitespace-pre-wrap ${
+                    n.include_in_ai ? "text-slate-700" : "text-slate-400 line-through"
+                  } ${isDeleting ? "opacity-50" : ""}`}
+                >
+                  {n.body}
+                </p>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
