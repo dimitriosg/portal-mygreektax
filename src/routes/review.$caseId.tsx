@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
@@ -10,6 +10,9 @@ import { updateLead } from "@/lib/leads.functions";
 import { CLIENT_STAGES } from "@/lib/leads-shared";
 import { stageBadgeClass } from "@/lib/stage-colors";
 import { CaseSummary } from "@/components/case-summary";
+import { CaseNotes } from "@/components/CaseNotes";
+import { CasePartnerThread } from "@/components/case-partner-thread";
+import { DraftHistory } from "@/components/DraftHistory";
 
 // Case review page (new spine). The route param $caseId is a
 // brain_conversations.id. This page shows the full conversation from
@@ -20,6 +23,14 @@ import { CaseSummary } from "@/components/case-summary";
 // date. These are the same public.clients columns the /leads page edits, saved
 // through the same updateLead server function, so both screens are one source
 // of truth and the change is audit-logged either way.
+//
+// Layout: client conversation and partner thread sit side by side at half
+// width each, so either can be scrolled without losing the other. Notes and
+// summary share the next row at one third and two thirds. The reply runs full
+// width below, since it is the thing that actually gets edited.
+//
+// Partner correspondence is quarantined to its own pane and never rendered in
+// the client conversation, so there is no way to confuse the two at a glance.
 
 interface ConversationInfo {
   id: string;
@@ -80,6 +91,13 @@ function formatWhen(iso: string | null): string {
   return Number.isNaN(d.getTime()) ? "" : d.toLocaleString();
 }
 
+// A partner message is one whose actor is the partner, or whose event type is
+// explicitly a partner email. Everything else belongs to the client pane.
+function isPartnerEvent(e: EventRow): boolean {
+  if (e.actor === "partner") return true;
+  return e.event_type === "partner_email_received" || e.event_type === "partner_email_sent";
+}
+
 export const Route = createFileRoute("/review/$caseId")({
   component: ReviewCase,
 });
@@ -97,6 +115,11 @@ function ReviewCase() {
   const [convView, setConvView] = useState<ConvView>("collapsed");
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string>("");
+
+  // Context counters, shown next to Generate so the cost of a run is visible
+  // before it is spent.
+  const [includedNotes, setIncludedNotes] = useState(0);
+  const [includedPartner, setIncludedPartner] = useState(0);
 
   // Editable lead fields (draft state, seeded once from the client row).
   const [stageDraft, setStageDraft] = useState<string>("");
@@ -165,7 +188,12 @@ function ReviewCase() {
       )
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "brain_events", filter: `conversation_id=eq.${caseId}` },
+        {
+          event: "*",
+          schema: "public",
+          table: "brain_events",
+          filter: `conversation_id=eq.${caseId}`,
+        },
         () => load(),
       )
       .subscribe();
@@ -252,7 +280,9 @@ function ReviewCase() {
       const payload = await res.json().catch(() => ({}));
       if (!res.ok || !payload?.ok) {
         const detail =
-          typeof payload?.detail === "string" ? payload.detail : payload?.error ?? `HTTP ${res.status}`;
+          typeof payload?.detail === "string"
+            ? payload.detail
+            : payload?.error ?? `HTTP ${res.status}`;
         setGenError(`Generation failed: ${detail}`);
         return;
       }
@@ -289,44 +319,6 @@ function ReviewCase() {
       setGenerating(false);
     }
   };
-
-  // <-- FROM HERE
-  /*
-  const generate = async () => {
-    setGenError("");
-    setGenerating(true);
-    try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      const res = await fetch("/webhooks/generate-draft", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
-        },
-        body: JSON.stringify({ conversation_id: caseId }),
-      });
-
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        const detail =
-          typeof payload?.detail === "string" ? payload.detail : payload?.error ?? `HTTP ${res.status}`;
-        setGenError(`Generation failed: ${detail}`);
-      } else {
-        await load();
-      }
-    } catch (err) {
-      setGenError(
-        `Could not reach the server: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    } finally {
-      setGenerating(false);
-    }
-  };
-  */
-  // <-- UNTIL HERE
 
   const title =
     client?.full_name ||
@@ -393,7 +385,9 @@ function ReviewCase() {
       const payload = await res.json().catch(() => ({}));
       if (!res.ok || !payload?.ok) {
         const detail =
-          typeof payload?.detail === "string" ? payload.detail : payload?.error ?? `HTTP ${res.status}`;
+          typeof payload?.detail === "string"
+            ? payload.detail
+            : payload?.error ?? `HTTP ${res.status}`;
         setSyncing(false);
         syncRef.current = null;
         setSyncMsg(`Sync could not start: ${detail}`);
@@ -410,16 +404,22 @@ function ReviewCase() {
     }
   };
 
-  // Which events to render for the current view.
+  // Split the thread. Partner messages never appear in the client pane.
+  const clientEvents = useMemo(() => events.filter((e) => !isPartnerEvent(e)), [events]);
+  const partnerEvents = useMemo(() => events.filter(isPartnerEvent), [events]);
+
+  // Which client events to render for the current view.
   const visibleEvents =
-    convView === "all" ? events : convView === "latest" ? events.slice(-1) : [];
+    convView === "all" ? clientEvents : convView === "latest" ? clientEvents.slice(-1) : [];
 
   const fieldClass =
     "rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400";
   const labelClass = "text-[11px] font-medium text-slate-500 uppercase tracking-wide";
 
+  const contextLine = `${includedNotes} note${includedNotes === 1 ? "" : "s"} and ${includedPartner} partner message${includedPartner === 1 ? "" : "s"} will be included`;
+
   return (
-    <div className="max-w-5xl mx-auto p-6 space-y-6">
+    <div className="max-w-7xl mx-auto p-6 space-y-5">
       <div>
         <Link to="/drafts" className="text-sm text-slate-500 hover:text-slate-800">
           Back to cases
@@ -488,117 +488,152 @@ function ReviewCase() {
               />
             </div>
 
-            {leadSaveMsg && (
-              <span className="text-xs text-slate-400 pb-2">{leadSaveMsg}</span>
-            )}
+            {leadSaveMsg && <span className="text-xs text-slate-400 pb-2">{leadSaveMsg}</span>}
           </div>
         )}
       </div>
 
-      {/* The conversation: read this before deciding to generate. */}
-      <Card className="border-slate-200">
-        <CardContent className="py-4 space-y-4">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="text-sm font-medium text-slate-500 uppercase tracking-wide">
-              Conversation
-            </h2>
-            <div className="flex items-center gap-1.5">
-              <Button
-                variant="outline"
-                onClick={handleSync}
-                disabled={syncing || !email}
-                className="h-7 px-2.5 text-xs"
-                title="Search Gmail for this customer and import the whole thread into this case"
-              >
-                {syncing ? (
-                  <span className="inline-flex items-center gap-1.5">
-                    <span className="inline-block h-3 w-3 rounded-full border-2 border-slate-300 border-t-slate-600 animate-spin" />
-                    Syncing...
-                  </span>
-                ) : (
-                  "Sync from Gmail"
+      {/* Row 1: client conversation and partner thread, half each. */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
+        <Card className="border-slate-200">
+          <CardContent className="py-4 space-y-4">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <h2 className="text-sm font-medium text-slate-500 uppercase tracking-wide">
+                Client conversation
+              </h2>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <Button
+                  variant="outline"
+                  onClick={handleSync}
+                  disabled={syncing || !email}
+                  className="h-7 px-2.5 text-xs"
+                  title="Search Gmail for this customer and import the whole thread into this case"
+                >
+                  {syncing ? (
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="inline-block h-3 w-3 rounded-full border-2 border-slate-300 border-t-slate-600 animate-spin" />
+                      Syncing...
+                    </span>
+                  ) : (
+                    "Sync from Gmail"
+                  )}
+                </Button>
+                {!loading && clientEvents.length > 0 && (
+                  <>
+                    <span className="mx-0.5 h-4 w-px bg-slate-200" />
+                    <Button
+                      variant={convView === "collapsed" ? "default" : "outline"}
+                      onClick={() => setConvView("collapsed")}
+                      className={`h-7 px-2.5 text-xs ${convView === "collapsed" ? "bg-[#0B192C] text-white" : ""}`}
+                    >
+                      Collapse
+                    </Button>
+                    <Button
+                      variant={convView === "latest" ? "default" : "outline"}
+                      onClick={() => setConvView("latest")}
+                      className={`h-7 px-2.5 text-xs ${convView === "latest" ? "bg-[#0B192C] text-white" : ""}`}
+                    >
+                      Latest
+                    </Button>
+                    <Button
+                      variant={convView === "all" ? "default" : "outline"}
+                      onClick={() => setConvView("all")}
+                      className={`h-7 px-2.5 text-xs ${convView === "all" ? "bg-[#0B192C] text-white" : ""}`}
+                    >
+                      All ({clientEvents.length})
+                    </Button>
+                  </>
                 )}
-              </Button>
-              {!loading && events.length > 0 && (
-                <>
-                  <span className="mx-0.5 h-4 w-px bg-slate-200" />
-                  <Button
-                    variant={convView === "collapsed" ? "default" : "outline"}
-                    onClick={() => setConvView("collapsed")}
-                    className={`h-7 px-2.5 text-xs ${convView === "collapsed" ? "bg-[#0B192C] text-white" : ""}`}
-                  >
-                    Collapse
-                  </Button>
-                  <Button
-                    variant={convView === "latest" ? "default" : "outline"}
-                    onClick={() => setConvView("latest")}
-                    className={`h-7 px-2.5 text-xs ${convView === "latest" ? "bg-[#0B192C] text-white" : ""}`}
-                  >
-                    Latest
-                  </Button>
-                  <Button
-                    variant={convView === "all" ? "default" : "outline"}
-                    onClick={() => setConvView("all")}
-                    className={`h-7 px-2.5 text-xs ${convView === "all" ? "bg-[#0B192C] text-white" : ""}`}
-                  >
-                    All ({events.length})
-                  </Button>
-                </>
-              )}
-            </div>
-          </div>
-
-          {syncMsg && <p className="text-xs text-slate-500">{syncMsg}</p>}
-
-          {loading && <p className="text-sm text-slate-400">Loading conversation...</p>}
-          {!loading && events.length === 0 && (
-            <p className="text-sm text-slate-400">
-              No messages logged for this case yet. Use Sync from Gmail to pull the history.
-            </p>
-          )}
-
-          {visibleEvents.map((row) => (
-            <div key={row.id} className="border-l-2 border-slate-200 pl-3">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-medium text-slate-700">
-                  {ACTOR_LABELS[row.actor ?? ""] ?? row.actor ?? "Unknown"}
-                </span>
-                {row.direction && (
-                  <span className="text-xs text-slate-400">({row.direction})</span>
-                )}
-                <span className="text-xs text-slate-400">{formatWhen(row.occurred_at)}</span>
               </div>
-              {row.subject && (
-                <p className="text-xs text-slate-500 mt-1">Subject: {row.subject}</p>
-              )}
-              <p className="text-sm text-slate-600 whitespace-pre-wrap mt-1">
-                {row.body_text ?? ""}
-              </p>
             </div>
-          ))}
 
-          {!loading && convView === "latest" && events.length > 1 && (
-            <p className="text-xs text-slate-400 italic">
-              Showing the latest message only. {events.length - 1} earlier hidden.
-            </p>
-          )}
-          {!loading && convView === "collapsed" && events.length > 0 && (
-            <p className="text-xs text-slate-400 italic">
-              Conversation collapsed. {events.length} message{events.length === 1 ? "" : "s"} hidden.
-            </p>
-          )}
-        </CardContent>
-      </Card>
+            {syncMsg && <p className="text-xs text-slate-500">{syncMsg}</p>}
 
-      <CaseSummary caseId={caseId} caseSerialId={conversation?.case_serial_id ?? null} />
+            {loading && <p className="text-sm text-slate-400">Loading conversation...</p>}
+            {!loading && clientEvents.length === 0 && (
+              <p className="text-sm text-slate-400">
+                No messages logged for this case yet. Use Sync from Gmail to pull the history.
+              </p>
+            )}
 
-      {/* Case Reply Box */}
+            <div className={convView === "all" ? "h-[320px] overflow-y-auto pr-1 space-y-4" : "space-y-4"}>
+              {visibleEvents.map((row) => (
+                <div key={row.id} className="border-l-2 border-slate-200 pl-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium text-slate-700">
+                      {ACTOR_LABELS[row.actor ?? ""] ?? row.actor ?? "Unknown"}
+                    </span>
+                    {row.direction && (
+                      <span className="text-xs text-slate-400">({row.direction})</span>
+                    )}
+                    <span className="text-xs text-slate-400">{formatWhen(row.occurred_at)}</span>
+                  </div>
+                  {row.subject && (
+                    <p className="text-xs text-slate-500 mt-1">Subject: {row.subject}</p>
+                  )}
+                  <p className="text-sm text-slate-600 whitespace-pre-wrap mt-1">
+                    {row.body_text ?? ""}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            {!loading && convView === "latest" && clientEvents.length > 1 && (
+              <p className="text-xs text-slate-400 italic">
+                Showing the latest message only. {clientEvents.length - 1} earlier hidden.
+              </p>
+            )}
+            {!loading && convView === "collapsed" && clientEvents.length > 0 && (
+              <p className="text-xs text-slate-400 italic">
+                Conversation collapsed. {clientEvents.length} message
+                {clientEvents.length === 1 ? "" : "s"} hidden.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="border-slate-200">
+          <CardContent className="py-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-medium text-slate-500 uppercase tracking-wide">
+                Partner thread
+              </h2>
+              <span className="text-[10px] uppercase tracking-wide bg-amber-50 text-amber-800 rounded px-1.5 py-0.5">
+                Internal
+              </span>
+            </div>
+            <CasePartnerThread
+              events={partnerEvents}
+              loading={loading}
+              onIncludedCountChange={setIncludedPartner}
+            />
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Row 2: notes at one third, summary at two thirds. */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
+        <Card className="border-slate-200 lg:col-span-1">
+          <CardContent className="py-4 space-y-3">
+            <h2 className="text-sm font-medium text-slate-500 uppercase tracking-wide">My notes</h2>
+            <CaseNotes conversationId={caseId} onIncludedCountChange={setIncludedNotes} />
+          </CardContent>
+        </Card>
+
+        <div className="lg:col-span-2">
+          <CaseSummary caseId={caseId} caseSerialId={conversation?.case_serial_id ?? null} />
+        </div>
+      </div>
+
+      {/* Row 3: the reply, full width. */}
       <CaseReplyBox
         conversationId={caseId}
         clientEmail={email}
         clientName={client?.full_name ?? undefined}
         caseSerialId={conversation?.case_serial_id ?? undefined}
-        replyToSubject={events.length ? events[events.length - 1].subject ?? undefined : undefined}
+        replyToSubject={
+          clientEvents.length ? clientEvents[clientEvents.length - 1].subject ?? undefined : undefined
+        }
         onSent={load}
       />
 
@@ -606,20 +641,24 @@ function ReviewCase() {
           is present, AiReviewDesk below takes over with edit + send. */}
       {!loading && !hasDraft && (
         <div className="flex flex-col items-start gap-2">
-          <Button
-            onClick={generate}
-            disabled={generating}
-            className="bg-[#0B192C] hover:bg-slate-800 text-white"
-          >
-            {generating ? (
-              <span className="inline-flex items-center gap-2">
-                <span className="inline-block h-3 w-3 rounded-full border-2 border-white/40 border-t-white animate-spin" />
-                Generating draft...
-              </span>
-            ) : (
-              "Generate draft"
-            )}
-          </Button>
+          <div className="flex items-center gap-3 flex-wrap">
+            <Button
+              onClick={generate}
+              disabled={generating}
+              className="bg-[#0B192C] hover:bg-slate-800 text-white"
+            >
+              {generating ? (
+                <span className="inline-flex items-center gap-2">
+                  <span className="inline-block h-3 w-3 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+                  Generating draft...
+                </span>
+              ) : (
+                "Generate draft"
+              )}
+            </Button>
+            <DraftHistory conversationId={caseId} refreshKey={draftStamp} />
+            <span className="text-xs text-slate-500">{contextLine}</span>
+          </div>
           <p className="text-xs text-slate-400">
             Runs the Brain once for this case. Costs a single AI call. Nothing is sent until you
             review and approve.
@@ -627,7 +666,8 @@ function ReviewCase() {
           {generating && (
             <div className="flex items-center gap-2 text-sm text-slate-600 border border-slate-200 bg-slate-50 rounded px-3 py-2">
               <span className="inline-block h-3 w-3 rounded-full border-2 border-slate-300 border-t-slate-600 animate-spin" />
-              The Brain is reading the conversation and drafting a reply. This usually takes about a minute.
+              The Brain is reading the conversation and drafting a reply. This usually takes about a
+              minute.
             </div>
           )}
           {genError && (
@@ -642,7 +682,7 @@ function ReviewCase() {
           offers a regenerate path. */}
       {hasDraft && (
         <div className="space-y-3">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <Button
               variant="outline"
               onClick={generate}
@@ -652,6 +692,8 @@ function ReviewCase() {
             >
               {generating ? "Regenerating..." : "Regenerate draft"}
             </Button>
+            <DraftHistory conversationId={caseId} refreshKey={draftStamp} />
+            <span className="text-xs text-slate-500">{contextLine}</span>
             {genError && <span className="text-sm text-red-600">{genError}</span>}
           </div>
           <AiReviewDesk key={draftStamp} jobId={caseId} />
