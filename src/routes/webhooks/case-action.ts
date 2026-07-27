@@ -72,7 +72,7 @@ export const Route = createFileRoute("/webhooks/case-action")({
             // Server-side guard on the irreversible action.
             if (confirm !== "DELETE") {
               return Response.json(
-                { error: "Delete not confirmed. Send confirm: \"DELETE\"." },
+                { error: 'Delete not confirmed. Send confirm: "DELETE".' },
                 { status: 400 },
               );
             }

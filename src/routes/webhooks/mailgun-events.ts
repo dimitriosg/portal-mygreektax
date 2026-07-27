@@ -100,7 +100,8 @@ async function verifyMailgunSignature(
     // constant-time-ish compare
     if (expected.length !== signature.length) return false;
     let diff = 0;
-    for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ signature.charCodeAt(i);
+    for (let i = 0; i < expected.length; i++)
+      diff |= expected.charCodeAt(i) ^ signature.charCodeAt(i);
     return diff === 0;
   } catch {
     return false;
@@ -167,7 +168,10 @@ export const Route = createFileRoute("/webhooks/mailgun-events")({
         const supa = getSupabase();
         if ("configError" in supa) {
           console.error("[mailgun-events] config error:", supa.configError);
-          return Response.json({ error: "Server misconfigured", detail: supa.configError }, { status: 500 });
+          return Response.json(
+            { error: "Server misconfigured", detail: supa.configError },
+            { status: 500 },
+          );
         }
         const supabase = supa.client;
 
@@ -182,7 +186,8 @@ export const Route = createFileRoute("/webhooks/mailgun-events")({
               .from("email_send_log")
               .update({ status: "delivered" })
               .eq("message_id", messageId);
-            if (error) console.error("[mailgun-events] email_send_log delivered update:", error.message);
+            if (error)
+              console.error("[mailgun-events] email_send_log delivered update:", error.message);
             result.delivery = "delivered";
           } else if (messageId && event && FAILURE_EVENTS.has(event)) {
             const { error } = await supabase
@@ -192,7 +197,8 @@ export const Route = createFileRoute("/webhooks/mailgun-events")({
                 error_message: [severity, reason].filter(Boolean).join(" / ") || null,
               })
               .eq("message_id", messageId);
-            if (error) console.error("[mailgun-events] email_send_log failed update:", error.message);
+            if (error)
+              console.error("[mailgun-events] email_send_log failed update:", error.message);
             result.delivery = "failed";
           }
 
@@ -205,7 +211,9 @@ export const Route = createFileRoute("/webhooks/mailgun-events")({
           if (shouldCapture) {
             const mailgunKey = process.env.MAILGUN_API_KEY;
             if (!mailgunKey) {
-              console.error("[mailgun-events] MAILGUN_API_KEY not set; cannot fetch stored message");
+              console.error(
+                "[mailgun-events] MAILGUN_API_KEY not set; cannot fetch stored message",
+              );
               result.captured = false;
               result.captureError = "MAILGUN_API_KEY missing";
               return Response.json(result);

@@ -151,6 +151,12 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         rel: "stylesheet",
         href: "https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,600;1,400;1,500&display=swap",
       },
+      {
+        // Case desk design system: Fraunces for the case title, Manrope for
+        // the body. Scoped to the `.mgt-case` surface in styles.css.
+        rel: "stylesheet",
+        href: "https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500&family=Manrope:wght@400;500;600&display=swap",
+      },
     ],
     scripts: [
       // Static Plausible tag so the verifier can detect it in raw HTML.

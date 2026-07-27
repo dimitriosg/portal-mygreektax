@@ -19,9 +19,7 @@ interface AiReviewDeskProps {
 }
 
 type SendStatus =
-  | { kind: "idle" }
-  | { kind: "sent"; detail: string }
-  | { kind: "error"; detail: string };
+  { kind: "idle" } | { kind: "sent"; detail: string } | { kind: "error"; detail: string };
 
 // Shown as the Subject placeholder and used when the field is left blank. Must
 // match the fallback in send-approved.ts (DEFAULT_SUBJECT). If you change one,
@@ -77,9 +75,11 @@ export const AiReviewDesk: React.FC<AiReviewDeskProps> = ({ jobId }) => {
       if (cancelled) return;
 
       if (data && !error) {
+        /* eslint-disable @typescript-eslint/no-explicit-any */
         setBodyInitial(toEditorHtml((data as any).proposed_draft || ""));
         setNotes((data as any).internal_notes || "");
         setIsApproved(Boolean((data as any).is_approved));
+        /* eslint-enable @typescript-eslint/no-explicit-any */
       } else {
         setBodyInitial("");
         setNotes("");
@@ -111,9 +111,7 @@ export const AiReviewDesk: React.FC<AiReviewDeskProps> = ({ jobId }) => {
       // content in a paragraph, which email clients render with big vertical
       // gaps between bullets. Removing the inner <p> gives tight list spacing
       // in the actual email (where our editor CSS does not apply).
-      cleanHtml = cleanHtml
-        .replace(/<li>\s*<p>/gi, "<li>")
-        .replace(/<\/p>\s*<\/li>/gi, "</li>");
+      cleanHtml = cleanHtml.replace(/<li>\s*<p>/gi, "<li>").replace(/<\/p>\s*<\/li>/gi, "</li>");
 
       if (!cleanHtml.replace(/<[^>]*>/g, "").trim()) {
         setStatus({ kind: "error", detail: "The draft is empty." });
@@ -150,6 +148,7 @@ export const AiReviewDesk: React.FC<AiReviewDeskProps> = ({ jobId }) => {
 
       setIsApproved(true);
       setStatus({ kind: "sent", detail: `Sent to ${result.sent_to || "the client"}.` });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       setStatus({ kind: "error", detail: err?.message || "Network error while sending." });
     } finally {

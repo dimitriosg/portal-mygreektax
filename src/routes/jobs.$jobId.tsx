@@ -40,7 +40,6 @@ import { track } from "@/lib/analytics";
 import { buildTrackingLink } from "@/lib/tracking-links";
 import { AiReviewDesk } from "@/components/AiReviewDesk"; // 🧠 Add this import line
 
-
 export const Route = createFileRoute("/jobs/$jobId")({ component: JobDetail });
 
 function JobDetail() {
@@ -424,7 +423,7 @@ function JobDetail() {
         <AiReviewDesk jobId={jobId} />
       </div>
       {/* ========================================================= */}
-      
+
       <TrackingLinkPreviewNotice
         className="max-w-3xl"
         sampleToken={trackingQ.data?.token?.token ?? undefined}

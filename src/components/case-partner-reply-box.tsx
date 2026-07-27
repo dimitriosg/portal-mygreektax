@@ -1,7 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 
 // Follow up with partner.
 //
@@ -100,7 +98,9 @@ export function CasePartnerReplyBox({ conversationId, caseSerialId, onSent }: Pr
       const payload = await res.json().catch(() => ({}));
       if (!res.ok || !payload?.ok) {
         const detail =
-          typeof payload?.detail === "string" ? payload.detail : payload?.error ?? `HTTP ${res.status}`;
+          typeof payload?.detail === "string"
+            ? payload.detail
+            : (payload?.error ?? `HTTP ${res.status}`);
         setError(`Send failed: ${detail}`);
         return;
       }
@@ -120,29 +120,24 @@ export function CasePartnerReplyBox({ conversationId, caseSerialId, onSent }: Pr
   const canSend = !!toEmail && !!subject.trim() && !!bodyText.trim();
 
   return (
-    <Card className="border-slate-200">
-      <CardContent className="py-4 space-y-3">
-        <div className="flex items-center gap-2 flex-wrap">
-          <h2 className="text-sm font-medium text-slate-500 uppercase tracking-wide">
-            Follow up with partner
-          </h2>
-          <span className="text-[10px] uppercase tracking-wide bg-amber-50 text-amber-800 rounded px-1.5 py-0.5">
-            Internal
-          </span>
-          <span className="ml-auto text-xs text-slate-400">
-            Sends from hello@mygreektax.eu, logs to the partner thread
-          </span>
-        </div>
+    <section className="card">
+      <div className="card-head">
+        <h2>Follow up with partner</h2>
+        <span className="tag tag-internal">Internal</span>
+        <span className="head-actions stamp">
+          Sends from hello@mygreektax.eu, logs to the partner thread
+        </span>
+      </div>
 
+      <div className="card-body">
         <div className="grid grid-cols-1 sm:grid-cols-[220px_1fr] gap-3">
-          <div className="flex flex-col gap-1">
-            <label className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">
-              To
-            </label>
+          <div className="field">
+            <label htmlFor="partner-to">To</label>
             <select
+              id="partner-to"
               value={toEmail}
               onChange={(e) => setToEmail(e.target.value)}
-              className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+              className="mc-input"
             >
               {partners.map((p) => (
                 <option key={p.email} value={p.email}>
@@ -151,17 +146,16 @@ export function CasePartnerReplyBox({ conversationId, caseSerialId, onSent }: Pr
               ))}
             </select>
           </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">
-              Subject
-            </label>
+          <div className="field">
+            <label htmlFor="partner-subject">Subject</label>
             <input
+              id="partner-subject"
               value={subject}
               onChange={(e) => {
                 subjectTouchedRef.current = true;
                 setSubject(e.target.value);
               }}
-              className="rounded-md border border-slate-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+              className="mc-input"
             />
           </div>
         </div>
@@ -171,41 +165,55 @@ export function CasePartnerReplyBox({ conversationId, caseSerialId, onSent }: Pr
           onChange={(e) => setBodyText(e.target.value)}
           rows={6}
           placeholder="Γράψε το μήνυμα προς τον συνεργάτη. Η υπογραφή και το MGT-REF-ID μπαίνουν αυτόματα."
-          className="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
+          className="mc-input"
+          style={{ marginTop: 12 }}
         />
 
         {!confirming && (
-          <div className="flex items-center gap-3">
-            <Button
+          <div className="flex items-center gap-3" style={{ marginTop: 12 }}>
+            <button
+              className="btn btn-solid"
               onClick={() => setConfirming(true)}
               disabled={!canSend || sending}
-              className="bg-[#0B192C] hover:bg-slate-800 text-white h-8 px-4 text-sm"
             >
               Send
-            </Button>
-            {sentMsg && <span className="text-xs text-emerald-700">{sentMsg}</span>}
+            </button>
+            {sentMsg && (
+              <span className="text-xs" style={{ color: "var(--mc-ok)" }}>
+                {sentMsg}
+              </span>
+            )}
           </div>
         )}
 
         {confirming && (
-          <div className="border border-amber-200 bg-amber-50 rounded-lg p-3 space-y-2">
-            <p className="text-sm text-slate-800">
-              Send to <span className="font-medium">{selected?.full_name ?? toEmail}</span>{" "}
-              <span className="text-slate-500">({toEmail})</span>?
+          <div
+            className="callout"
+            style={{ marginTop: 12, flexDirection: "column", alignItems: "stretch", gap: 8 }}
+          >
+            <p style={{ margin: 0, color: "var(--mc-ink)", fontSize: 13 }}>
+              Send to <span style={{ fontWeight: 600 }}>{selected?.full_name ?? toEmail}</span>{" "}
+              <span style={{ color: "var(--mc-ink-3)" }}>({toEmail})</span>?
             </p>
-            <p className="text-xs text-slate-600">
-              <span className="font-medium">Subject:</span> {subject}
+            <p style={{ margin: 0, fontSize: 12 }}>
+              <span style={{ fontWeight: 600 }}>Subject:</span> {subject}
             </p>
-            <p className="text-xs text-slate-600 line-clamp-2 whitespace-pre-wrap">
+            <p
+              style={{
+                margin: 0,
+                fontSize: 12,
+                whiteSpace: "pre-wrap",
+                display: "-webkit-box",
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: "vertical",
+                overflow: "hidden",
+              }}
+            >
               {bodyText.slice(0, 160)}
               {bodyText.length > 160 ? "…" : ""}
             </p>
-            <div className="flex items-center gap-2 pt-1">
-              <Button
-                onClick={send}
-                disabled={sending}
-                className="bg-[#0B192C] hover:bg-slate-800 text-white h-8 px-4 text-sm"
-              >
+            <div className="flex items-center gap-2" style={{ paddingTop: 4 }}>
+              <button className="btn btn-solid" onClick={send} disabled={sending}>
                 {sending ? (
                   <span className="inline-flex items-center gap-2">
                     <span className="inline-block h-3 w-3 rounded-full border-2 border-white/40 border-t-white animate-spin" />
@@ -214,25 +222,23 @@ export function CasePartnerReplyBox({ conversationId, caseSerialId, onSent }: Pr
                 ) : (
                   "Confirm send"
                 )}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => setConfirming(false)}
-                disabled={sending}
-                className="h-8 px-4 text-sm"
-              >
+              </button>
+              <button className="btn" onClick={() => setConfirming(false)} disabled={sending}>
                 Cancel
-              </Button>
+              </button>
             </div>
           </div>
         )}
 
         {error && (
-          <p className="text-sm text-red-600 border border-red-200 bg-red-50 rounded px-3 py-2">
+          <p
+            className="text-sm text-red-600 border border-red-200 bg-red-50 rounded px-3 py-2"
+            style={{ marginTop: 12 }}
+          >
             {error}
           </p>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }

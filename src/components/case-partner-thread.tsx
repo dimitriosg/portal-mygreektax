@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { Check, RefreshCw, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { Button } from "@/components/ui/button";
 
 // Partner thread pane.
 //
@@ -99,7 +99,9 @@ export function CasePartnerThread({
       const payload = await res.json().catch(() => ({}));
       if (!res.ok || !payload?.ok) {
         const detail =
-          typeof payload?.detail === "string" ? payload.detail : payload?.error ?? `HTTP ${res.status}`;
+          typeof payload?.detail === "string"
+            ? payload.detail
+            : (payload?.error ?? `HTTP ${res.status}`);
         setSyncMsg(`Sync could not start: ${detail}`);
         return;
       }
@@ -110,9 +112,7 @@ export function CasePartnerThread({
       setCollapsed(false);
       onSynced?.();
     } catch (err) {
-      setSyncMsg(
-        `Could not reach the server: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      setSyncMsg(`Could not reach the server: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setSyncing(false);
     }
@@ -128,109 +128,102 @@ export function CasePartnerThread({
   };
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-2 flex-wrap pb-3 border-b border-dashed border-slate-200">
-        <span className="text-xs text-slate-500">Send to the Brain</span>
-        <Button
-          variant={scope === "all" ? "default" : "outline"}
-          onClick={() => setScope("all")}
-          className={`h-7 px-2.5 text-xs ${scope === "all" ? "bg-[#0B192C] text-white" : ""}`}
-        >
-          All
-        </Button>
-        <Button
-          variant={scope === "last_n" ? "default" : "outline"}
-          onClick={() => setScope("last_n")}
-          className={`h-7 px-2.5 text-xs ${scope === "last_n" ? "bg-[#0B192C] text-white" : ""}`}
-        >
-          Last N
-        </Button>
+    <div>
+      <div className="ctrl-row">
+        <span className="ctrl-label">Send to the Brain</span>
+        <span className="seg">
+          <button aria-pressed={scope === "all"} onClick={() => setScope("all")}>
+            All
+          </button>
+          <button aria-pressed={scope === "last_n"} onClick={() => setScope("last_n")}>
+            Last N
+          </button>
+        </span>
         {scope === "last_n" && (
-          <input
-            type="number"
-            min={1}
-            max={99}
-            value={lastN}
-            onChange={(e) => setLastN(Math.max(1, Number(e.target.value) || 1))}
-            className="w-16 rounded-md border border-slate-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-slate-400"
-          />
+          <span className="numwrap">
+            <input
+              type="number"
+              min={1}
+              max={99}
+              value={lastN}
+              onChange={(e) => setLastN(Math.max(1, Number(e.target.value) || 1))}
+              className="mc-input"
+            />
+            <span className="ctrl-label">most recent</span>
+          </span>
         )}
         <span className="ml-auto flex items-center gap-1.5">
-          <Button
-            variant="outline"
+          <button
+            className="btn btn-sm inline-flex items-center gap-1.5"
             onClick={sync}
             disabled={syncing}
-            className="h-7 px-2.5 text-xs"
             title="Search the partner mailboxes for mail carrying this case code"
           >
             {syncing ? (
-              <span className="inline-flex items-center gap-1.5">
+              <>
                 <span className="inline-block h-3 w-3 rounded-full border-2 border-slate-300 border-t-slate-600 animate-spin" />
                 Syncing...
-              </span>
+              </>
             ) : (
-              "Sync from Gmail"
+              <>
+                <RefreshCw size={12} /> Sync from Gmail
+              </>
             )}
-          </Button>
+          </button>
           {events.length > 0 && (
-            <Button
-              variant="outline"
-              onClick={() => setCollapsed((c) => !c)}
-              className="h-7 px-2.5 text-xs"
-            >
+            <button className="btn btn-sm" onClick={() => setCollapsed((c) => !c)}>
               {collapsed ? `Show (${events.length})` : "Collapse"}
-            </Button>
+            </button>
           )}
         </span>
       </div>
 
-      {syncMsg && <p className="text-xs text-slate-500">{syncMsg}</p>}
+      {syncMsg && <p className="stamp">{syncMsg}</p>}
 
-      {loading && <p className="text-sm text-slate-400">Loading...</p>}
+      {loading && <p className="empty">Loading...</p>}
 
       {!loading && events.length === 0 && (
-        <p className="text-sm text-slate-400">
+        <p className="empty">
           No partner correspondence on this case. Partner mail is not being imported yet.
         </p>
       )}
 
       {!loading && events.length > 0 && collapsed && (
-        <p className="text-xs text-slate-400 italic">
+        <p className="empty">
           Partner thread collapsed. {events.length} message{events.length === 1 ? "" : "s"} hidden.
         </p>
       )}
 
       {!loading && !collapsed && (
-        <div className="h-[320px] overflow-y-auto pr-1 space-y-4">
+        <div className="pane">
           {events.map((e) => {
             const included = inScope.has(e.id);
             return (
-              <div key={e.id} className="border-l-2 border-amber-300 pl-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-medium text-slate-700">{labelFor(e)}</span>
-                  <span className="text-xs text-slate-400">{formatWhen(e.occurred_at)}</span>
+              <div key={e.id} className={`msg msg-partner ${included ? "" : "excluded"}`}>
+                <div className="msg-head">
+                  <span className="who">{labelFor(e)}</span>
+                  <span className="when">{formatWhen(e.occurred_at)}</span>
+                  <span className="spacer" />
                   <button
                     onClick={() => toggle(e.id)}
+                    aria-pressed={included}
+                    aria-label={
+                      included
+                        ? "Exclude this message from drafting"
+                        : "Include this message in drafting"
+                    }
                     title={
                       included
                         ? "Included when a draft is generated"
                         : "Excluded when a draft is generated"
                     }
-                    className={`ml-auto text-xs px-1.5 py-0.5 rounded hover:bg-slate-100 ${
-                      included ? "text-emerald-700" : "text-slate-400"
-                    }`}
+                    className={`icon-btn ${included ? "pill-ok" : "pill-off"}`}
                   >
-                    {included ? "In" : "Out"}
+                    {included ? <Check size={14} /> : <X size={14} />}
                   </button>
                 </div>
-                {e.subject && <p className="text-xs text-slate-500 mt-1">Subject: {e.subject}</p>}
-                <p
-                  className={`text-sm whitespace-pre-wrap mt-1 ${
-                    included ? "text-slate-600" : "text-slate-400"
-                  }`}
-                >
-                  {e.body_text ?? ""}
-                </p>
+                {e.subject && <p className="msg-subject">Subject: {e.subject}</p>}
+                <p>{e.body_text ?? ""}</p>
               </div>
             );
           })}

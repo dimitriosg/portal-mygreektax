@@ -1,8 +1,6 @@
 import { useState } from "react";
 import DOMPurify from "dompurify";
 import { supabase } from "@/integrations/supabase/client";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { getSignatureHtml } from "@/lib/signature";
 
@@ -64,7 +62,13 @@ export function CaseReplyBox({
           "Content-Type": "application/json",
           Authorization: `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify({ conversationId, toEmail: clientEmail, caseSerialId, subject, bodyHtml: cleanHtml }),
+        body: JSON.stringify({
+          conversationId,
+          toEmail: clientEmail,
+          caseSerialId,
+          subject,
+          bodyHtml: cleanHtml,
+        }),
       });
       const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
       if (!res.ok || !data.ok) {
@@ -84,47 +88,51 @@ export function CaseReplyBox({
   }
 
   return (
-    <Card className="border border-slate-200 bg-white shadow-md">
-      <CardHeader>
-        <CardTitle className="text-slate-800 text-lg font-sans font-semibold flex items-center gap-2">
-          <span>✍️</span> Reply to {clientName ? `${clientName} · ` : ""}
-          {clientEmail}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        <div>
-          <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Subject</label>
+    <section className="card">
+      <div className="card-head">
+        <h2>Reply to client</h2>
+        {(clientName || clientEmail) && (
+          <span className="head-actions stamp">
+            {clientName ? `${clientName} · ` : ""}
+            {clientEmail}
+          </span>
+        )}
+      </div>
+      <div className="card-body">
+        <div className="field" style={{ marginBottom: 12 }}>
+          <label htmlFor="reply-subject">Subject</label>
           <input
+            id="reply-subject"
             type="text"
             value={subject}
             onChange={(e) => setSubject(e.target.value)}
             placeholder="Subject"
-            className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400"
+            className="mc-input"
           />
         </div>
-        <div>
-          <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Message</label>
-          <div className="mt-1">
-            <RichTextEditor initialHtml="" onChange={setBodyHtml} />
-          </div>
+        <div className="field" style={{ marginBottom: 12 }}>
+          <label>Message</label>
+          <RichTextEditor initialHtml="" onChange={setBodyHtml} />
         </div>
-        <div>
-          <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Signature</label>
-          <p className="text-xs text-slate-400 mb-1">
+        <div className="field" style={{ marginBottom: 12 }}>
+          <label>Signature</label>
+          <p className="stamp" style={{ marginBottom: 2 }}>
             Loaded from the default. Edit here to change it for this email only.
           </p>
           <RichTextEditor initialHtml={signatureHtml} onChange={setSignatureHtml} />
         </div>
         {error && <p className="text-sm text-red-600">{error}</p>}
-        {sentOk && <p className="text-sm text-emerald-600">Sent and logged to this case.</p>}
-        <Button
-          onClick={handleSend}
-          disabled={sending}
-          className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-5"
-        >
-          {sending ? "Sending..." : "Send reply"}
-        </Button>
-      </CardContent>
-    </Card>
+        {sentOk && (
+          <p className="text-sm" style={{ color: "var(--mc-ok)" }}>
+            Sent and logged to this case.
+          </p>
+        )}
+        <div className="reply-foot">
+          <button className="btn btn-solid" onClick={handleSend} disabled={sending}>
+            {sending ? "Sending..." : "Send reply"}
+          </button>
+        </div>
+      </div>
+    </section>
   );
 }

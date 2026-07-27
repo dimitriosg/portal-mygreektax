@@ -41,7 +41,10 @@ interface DraftInfo {
 
 function preview(text: string | null, max = 150): string {
   if (!text) return "";
-  const flat = text.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+  const flat = text
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
   return flat.length > max ? `${flat.slice(0, max)}...` : flat;
 }
 
@@ -93,6 +96,7 @@ function CaseWorkspace() {
         .select("id, full_name, email, client_code, stage")
         .in("id", clientIds);
       const cmap: Record<string, ClientInfo> = {};
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (clientRows ?? []).forEach((c: any) => {
         cmap[c.id] = {
           full_name: c.full_name,
@@ -111,6 +115,7 @@ function CaseWorkspace() {
         .select("case_id, proposed_draft, is_approved, last_updated")
         .in("case_id", convIds);
       const dmap: Record<string, DraftInfo> = {};
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (draftRows ?? []).forEach((d: any) => {
         dmap[d.case_id] = {
           proposed_draft: d.proposed_draft,
@@ -129,10 +134,8 @@ function CaseWorkspace() {
     const channel = supabase
       .channel("realtime:case-workspace")
       .on("postgres_changes", { event: "*", schema: "public", table: "case_drafts" }, () => load())
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "brain_conversations" },
-        () => load(),
+      .on("postgres_changes", { event: "*", schema: "public", table: "brain_conversations" }, () =>
+        load(),
       )
       .subscribe();
     return () => {
@@ -162,7 +165,9 @@ function CaseWorkspace() {
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) {
         const detail =
-          typeof payload?.detail === "string" ? payload.detail : payload?.error ?? `HTTP ${res.status}`;
+          typeof payload?.detail === "string"
+            ? payload.detail
+            : (payload?.error ?? `HTTP ${res.status}`);
         setErrors((e) => ({ ...e, [row.id]: `Action failed: ${detail}` }));
       } else {
         await load();
@@ -206,7 +211,7 @@ function CaseWorkspace() {
         const detail =
           typeof payload?.detail === "string"
             ? payload.detail
-            : payload?.error ?? `HTTP ${res.status}`;
+            : (payload?.error ?? `HTTP ${res.status}`);
         setCreateErr(`Could not create the case: ${detail}`);
         return;
       }
@@ -271,7 +276,11 @@ function CaseWorkspace() {
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                 <span
                   className={`inline-block w-2 h-2 rounded-full ${
-                    hasDraft ? (draft?.is_approved ? "bg-emerald-500" : "bg-amber-500") : "bg-slate-300"
+                    hasDraft
+                      ? draft?.is_approved
+                        ? "bg-emerald-500"
+                        : "bg-amber-500"
+                      : "bg-slate-300"
                   }`}
                 />
                 <span className="font-medium text-slate-900 truncate">{nameFor(row)}</span>
@@ -292,7 +301,9 @@ function CaseWorkspace() {
                 )}
               </div>
               <div className="text-xs text-slate-500 mt-1 truncate">{emailFor(row)}</div>
-              {hasDraft && <p className="text-sm text-slate-600 mt-1">{preview(draft?.proposed_draft)}</p>}
+              {hasDraft && (
+                <p className="text-sm text-slate-600 mt-1">{preview(draft?.proposed_draft)}</p>
+              )}
             </div>
 
             <div className="flex items-center gap-2 shrink-0">
@@ -338,7 +349,9 @@ function CaseWorkspace() {
             </div>
           </div>
           {err && (
-            <p className="text-sm text-red-600 border border-red-200 bg-red-50 rounded px-3 py-2">{err}</p>
+            <p className="text-sm text-red-600 border border-red-200 bg-red-50 rounded px-3 py-2">
+              {err}
+            </p>
           )}
         </CardContent>
       </Card>
@@ -417,7 +430,9 @@ function CaseWorkspace() {
               just opens the case. If it is new, it creates the lead too. No duplicates.
             </p>
             <div>
-              <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Name</label>
+              <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">
+                Name
+              </label>
               <input
                 value={newCaseName}
                 onChange={(e) => setNewCaseName(e.target.value)}
@@ -426,7 +441,9 @@ function CaseWorkspace() {
               />
             </div>
             <div>
-              <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Email</label>
+              <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">
+                Email
+              </label>
               <input
                 autoFocus
                 type="email"

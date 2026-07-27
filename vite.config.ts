@@ -12,4 +12,15 @@ export default defineConfig({
   tanstackStart: {
     server: { entry: "server" },
   },
+  // `cloudflare:workers` is a runtime-provided virtual module (waitUntil), not a
+  // bundleable dependency. Mark it external so Rollup leaves the import intact
+  // for the Workers runtime to resolve, instead of failing the build trying to
+  // resolve it. The Cloudflare runtime provides it at execution time.
+  vite: {
+    build: {
+      rollupOptions: {
+        external: ["cloudflare:workers"],
+      },
+    },
+  },
 });

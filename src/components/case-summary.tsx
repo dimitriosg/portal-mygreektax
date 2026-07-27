@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import { ChevronRight } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 
 // Case summary panel. Summarizing is asynchronous: the server accepts the job
 // (202) and the Brain writes the result to case_summaries in the background.
@@ -57,7 +56,10 @@ function splitSummary(text: string): { profile: string | null; rest: string } {
     }
   }
 
-  const profile = lines.slice(startIdx + 1, endIdx).join("\n").trim();
+  const profile = lines
+    .slice(startIdx + 1, endIdx)
+    .join("\n")
+    .trim();
   const rest = [...lines.slice(0, startIdx), ...lines.slice(endIdx)].join("\n").trim();
   return { profile: profile || null, rest };
 }
@@ -73,7 +75,7 @@ function renderMarkdown(text: string) {
 
     const parts = content.split(/(\*\*[^*]+\*\*)/g).map((p, j) =>
       p.length > 4 && p.startsWith("**") && p.endsWith("**") ? (
-        <strong key={j} className="font-semibold text-slate-900">
+        <strong key={j} style={{ fontWeight: 600, color: "var(--mc-ink)" }}>
           {p.slice(2, -2)}
         </strong>
       ) : (
@@ -83,23 +85,27 @@ function renderMarkdown(text: string) {
 
     if (heading) {
       return (
-        <p key={i} className="text-sm font-semibold text-slate-900 mt-3 first:mt-0">
+        <p
+          key={i}
+          style={{
+            fontSize: "12.5px",
+            fontWeight: 600,
+            color: "var(--mc-ink)",
+            margin: "10px 0 4px",
+          }}
+        >
           {parts}
         </p>
       );
     }
     if (bullet) {
       return (
-        <p key={i} className="text-sm text-slate-700 pl-4 leading-relaxed">
+        <p key={i} style={{ paddingLeft: 16 }}>
           • {parts}
         </p>
       );
     }
-    return (
-      <p key={i} className="text-sm text-slate-700 leading-relaxed">
-        {parts}
-      </p>
-    );
+    return <p key={i}>{parts}</p>;
   });
 }
 
@@ -161,7 +167,7 @@ export function CaseSummary({ caseId }: CaseSummaryProps) {
         const detail =
           typeof payload?.detail === "string"
             ? payload.detail
-            : payload?.error ?? `HTTP ${res.status}`;
+            : (payload?.error ?? `HTTP ${res.status}`);
         setError(`Could not start the summary: ${detail}`);
         return;
       }
@@ -198,103 +204,88 @@ export function CaseSummary({ caseId }: CaseSummaryProps) {
   const hasSummary = !!row?.summary;
   const split = hasSummary ? splitSummary(row!.summary!) : { profile: null, rest: "" };
 
+  const bodyOpen = hasSummary ? expanded : true;
+
   return (
-    <Card className="border-slate-200 h-full">
-      <CardContent className="py-4 space-y-3">
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          <h2 className="text-sm font-medium text-slate-500 uppercase tracking-wide">Summary</h2>
-          <div className="flex items-center gap-2 flex-wrap">
-            {hasSummary && row?.generated_at && (
-              <span className="text-xs text-slate-400">Updated {formatWhen(row.generated_at)}</span>
+    <section className="card" data-open={bodyOpen}>
+      <div className="card-head">
+        {hasSummary && (
+          <button
+            className="disc"
+            onClick={() => setExpanded((v) => !v)}
+            aria-expanded={expanded}
+            aria-label={expanded ? "Collapse summary" : "Expand summary"}
+          >
+            <ChevronRight size={15} />
+          </button>
+        )}
+        <h2>Summary</h2>
+        <span className="stamp" style={{ marginLeft: 4 }}>
+          client and partner combined
+        </span>
+        <div className="head-actions">
+          {hasSummary && row?.generated_at && (
+            <span className="stamp" style={{ marginRight: 4 }}>
+              Updated {formatWhen(row.generated_at)}
+            </span>
+          )}
+          <button
+            className="btn btn-sm"
+            onClick={summarize}
+            disabled={running}
+            title="Run the Brain once to summarize this case, using the conversation and the knowledge base"
+          >
+            {running ? (
+              <span className="inline-flex items-center gap-1.5">
+                <span className="inline-block h-3 w-3 rounded-full border-2 border-slate-300 border-t-slate-600 animate-spin" />
+                Summarizing...
+              </span>
+            ) : hasSummary ? (
+              "Re-summarize"
+            ) : (
+              "Summarize"
             )}
-
-            {hasSummary && (
-              <>
-                <Button
-                  variant={!expanded ? "default" : "outline"}
-                  onClick={() => setExpanded(false)}
-                  className={`h-7 px-2.5 text-xs ${!expanded ? "bg-[#0B192C] text-white" : ""}`}
-                >
-                  Collapse
-                </Button>
-                <Button
-                  variant={expanded ? "default" : "outline"}
-                  onClick={() => setExpanded(true)}
-                  className={`h-7 px-2.5 text-xs ${expanded ? "bg-[#0B192C] text-white" : ""}`}
-                >
-                  Show
-                </Button>
-                <span className="mx-0.5 h-4 w-px bg-slate-200" />
-              </>
-            )}
-
-            <Button
-              variant="outline"
-              onClick={summarize}
-              disabled={running}
-              className="h-7 px-2.5 text-xs"
-              title="Run the Brain once to summarize this case, using the conversation and the knowledge base"
-            >
-              {running ? (
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="inline-block h-3 w-3 rounded-full border-2 border-slate-300 border-t-slate-600 animate-spin" />
-                  Summarizing...
-                </span>
-              ) : hasSummary ? (
-                "Re-summarize"
-              ) : (
-                "Summarize"
-              )}
-            </Button>
-          </div>
+          </button>
         </div>
+      </div>
 
-        {loading && <p className="text-sm text-slate-400">Loading summary...</p>}
+      <div className="card-body">
+        {loading && <p className="empty">Loading summary...</p>}
 
         {!loading && !hasSummary && !running && (
-          <p className="text-sm text-slate-400">
+          <p className="empty">
             No summary yet. Summarize runs the Brain once over the whole thread and the knowledge
             base.
           </p>
         )}
 
-        {running && (
-          <p className="text-sm text-slate-400">Working on it. This usually takes about a minute.</p>
-        )}
+        {running && <p className="empty">Working on it. This usually takes about a minute.</p>}
 
         {hasSummary && expanded && (
-          <div className="space-y-4 max-h-[280px] overflow-y-auto pr-1">
+          <div className="max-h-[280px] overflow-y-auto pr-1">
             {split.profile && (
-              <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
-                <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wide mb-1">
-                  Customer profile
-                </p>
-                <div className="space-y-1">{renderMarkdown(split.profile)}</div>
+              <div className="sum-block">
+                <div className="sum-label">Customer profile</div>
+                {renderMarkdown(split.profile)}
               </div>
             )}
             {split.rest && (
-              <div className="space-y-2">
-                {split.profile && (
-                  <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">
-                    Case summary
-                  </p>
-                )}
+              <div className="sum-block">
+                {split.profile && <div className="sum-label">Case summary</div>}
                 {renderMarkdown(split.rest)}
               </div>
             )}
           </div>
         )}
 
-        {hasSummary && !expanded && (
-          <p className="text-xs text-slate-400 italic">Summary collapsed.</p>
-        )}
+        {hasSummary && !expanded && <p className="empty">Summary collapsed.</p>}
 
         {error && (
           <p className="text-sm text-red-600 border border-red-200 bg-red-50 rounded px-3 py-2">
             {error}
           </p>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }

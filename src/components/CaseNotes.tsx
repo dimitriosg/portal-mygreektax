@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
+import { Check, Pencil, Pin, Trash2, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { Button } from "@/components/ui/button";
 
 // Case notes. Free standing operator notes attached to a conversation.
 //
@@ -144,24 +144,24 @@ export function CaseNotes({ conversationId, onIncludedCountChange }: Props) {
   };
 
   return (
-    <div className="space-y-3">
+    <div>
       <textarea
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         rows={3}
         placeholder="Client mentioned a UK property, check the treaty tie-breaker"
-        className="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
+        className="mc-input"
       />
-      <div className="flex items-center gap-3">
-        <Button onClick={add} disabled={saving || !draft.trim()} className="h-8 px-3 text-xs">
+      <div className="flex items-center gap-3" style={{ margin: "8px 0 14px" }}>
+        <button className="btn btn-sm" onClick={add} disabled={saving || !draft.trim()}>
           {saving ? "Saving..." : "Save note"}
-        </Button>
-        <label className="flex items-center gap-1.5 text-xs text-slate-600">
+        </button>
+        <label className="flex items-center gap-1.5 ctrl-label">
           <input
             type="checkbox"
             checked={pinNew}
             onChange={(e) => setPinNew(e.target.checked)}
-            className="h-3.5 w-3.5"
+            style={{ width: "auto" }}
           />
           pin
         </label>
@@ -173,44 +173,45 @@ export function CaseNotes({ conversationId, onIncludedCountChange }: Props) {
         </p>
       )}
 
-      {loading && <p className="text-sm text-slate-400">Loading notes...</p>}
+      {loading && <p className="empty">Loading notes...</p>}
 
       {!loading && notes.length === 0 && !error && (
-        <p className="text-sm text-slate-400 italic">
+        <p className="empty">
           No notes yet. Anything written here reaches the Brain but never the client.
         </p>
       )}
 
-      <div className="divide-y divide-slate-200 max-h-[280px] overflow-y-auto pr-1">
+      <div className="max-h-[280px] overflow-y-auto pr-1">
         {notes.map((n) => {
           const isDeleting = deletingId === n.id;
           const isConfirming = confirmId === n.id && !isDeleting;
 
           return (
-            <div key={n.id} className="pt-3 pb-1 first:pt-0">
-              <div className="flex items-center gap-2">
+            <div key={n.id} className={`note ${n.include_in_ai ? "" : "excluded"}`}>
+              <div className="note-head">
                 {n.pinned ? (
-                  <span className="text-xs text-sky-700">Pinned</span>
+                  <span className="pinned-flag">
+                    <Pin size={12} />
+                    Pinned
+                  </span>
                 ) : (
-                  <span className="text-xs text-slate-400">{formatWhen(n.created_at)}</span>
+                  <span className="when">{formatWhen(n.created_at)}</span>
                 )}
 
-                <span className="ml-auto flex items-center gap-1">
-                  {isDeleting && <span className="text-xs text-slate-400">Deleting...</span>}
+                <span className="note-acts">
+                  {isDeleting && <span className="when">Deleting...</span>}
 
                   {isConfirming && (
                     <>
-                      <span className="text-xs text-slate-600">Delete note?</span>
+                      <span className="when">Delete note?</span>
                       <button
                         onClick={() => remove(n.id)}
-                        className="text-xs px-1.5 py-0.5 rounded font-medium text-red-600 hover:bg-red-50"
+                        className="btn btn-sm"
+                        style={{ color: "#c0392b", fontWeight: 500 }}
                       >
                         Yes
                       </button>
-                      <button
-                        onClick={() => setConfirmId(null)}
-                        className="text-xs px-1.5 py-0.5 rounded text-slate-500 hover:bg-slate-100"
-                      >
+                      <button onClick={() => setConfirmId(null)} className="btn btn-sm">
                         No
                       </button>
                     </>
@@ -220,40 +221,48 @@ export function CaseNotes({ conversationId, onIncludedCountChange }: Props) {
                     <>
                       <button
                         onClick={() => patch(n.id, { include_in_ai: !n.include_in_ai })}
+                        aria-pressed={n.include_in_ai}
+                        aria-label={
+                          n.include_in_ai
+                            ? "Exclude this note from drafting"
+                            : "Include this note in drafting"
+                        }
                         title={
                           n.include_in_ai
                             ? "Included when a draft is generated"
                             : "Excluded when a draft is generated"
                         }
-                        className={`text-xs px-1.5 py-0.5 rounded hover:bg-slate-100 ${
-                          n.include_in_ai ? "text-emerald-700" : "text-slate-400"
-                        }`}
+                        className={`icon-btn ${n.include_in_ai ? "pill-ok" : "pill-off"}`}
                       >
-                        {n.include_in_ai ? "In" : "Out"}
+                        {n.include_in_ai ? <Check size={14} /> : <X size={14} />}
                       </button>
                       <button
                         onClick={() => patch(n.id, { pinned: !n.pinned })}
+                        aria-pressed={n.pinned}
+                        aria-label={n.pinned ? "Unpin note" : "Pin note"}
                         title={n.pinned ? "Unpin" : "Pin"}
-                        className="text-xs px-1.5 py-0.5 rounded text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                        className="icon-btn"
                       >
-                        Pin
+                        <Pin size={14} />
                       </button>
                       <button
                         onClick={() => {
                           setEditingId(n.id);
                           setEditText(n.body);
                         }}
+                        aria-label="Edit note"
                         title="Edit"
-                        className="text-xs px-1.5 py-0.5 rounded text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                        className="icon-btn"
                       >
-                        Edit
+                        <Pencil size={14} />
                       </button>
                       <button
                         onClick={() => setConfirmId(n.id)}
+                        aria-label="Delete note"
                         title="Delete"
-                        className="text-xs px-1.5 py-0.5 rounded text-slate-400 hover:bg-red-50 hover:text-red-600"
+                        className="icon-btn"
                       >
-                        Delete
+                        <Trash2 size={14} />
                       </button>
                     </>
                   )}
@@ -266,32 +275,25 @@ export function CaseNotes({ conversationId, onIncludedCountChange }: Props) {
                     value={editText}
                     onChange={(e) => setEditText(e.target.value)}
                     rows={3}
-                    className="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
+                    className="mc-input"
                   />
                   <div className="flex gap-2">
-                    <Button onClick={saveEdit} className="h-7 px-3 text-xs">
+                    <button className="btn btn-sm" onClick={saveEdit}>
                       Save
-                    </Button>
-                    <Button
-                      variant="outline"
+                    </button>
+                    <button
+                      className="btn btn-sm"
                       onClick={() => {
                         setEditingId(null);
                         setEditText("");
                       }}
-                      className="h-7 px-3 text-xs"
                     >
                       Cancel
-                    </Button>
+                    </button>
                   </div>
                 </div>
               ) : (
-                <p
-                  className={`text-sm mt-0.5 whitespace-pre-wrap ${
-                    n.include_in_ai ? "text-slate-700" : "text-slate-400 line-through"
-                  } ${isDeleting ? "opacity-50" : ""}`}
-                >
-                  {n.body}
-                </p>
+                <p style={isDeleting ? { opacity: 0.5 } : undefined}>{n.body}</p>
               )}
             </div>
           );

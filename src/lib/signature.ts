@@ -8,8 +8,7 @@
 // This HTML must stay in sync with what the email should look like. It is the
 // SINGLE source of truth for the signature; Make no longer appends one.
 
-export const SIGNATURE_HTML = 
-`<p style="margin: 0; line-height: 1.2;">
+export const SIGNATURE_HTML = `<p style="margin: 0; line-height: 1.2;">
   Με εκτίμηση,<br>
   <strong>MyGreekTax Team</strong><br>
   <!-- You can continue adding lines here directly below -->

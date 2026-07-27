@@ -1,7 +1,6 @@
 import { useEffect, type ReactNode } from "react";
 import { useState } from "react";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { ChevronRight, Maximize2, X } from "lucide-react";
 
 // A case-page section that can be read in place or opened in a focused window.
 //
@@ -45,51 +44,47 @@ export function PopOutSection({
     return () => document.removeEventListener("keydown", onKey);
   }, [popped]);
 
-  const header = (
-    <div className="flex items-center gap-2 flex-wrap">
-      <h2 className="text-sm font-medium text-slate-500 uppercase tracking-wide">{title}</h2>
+  const showBody = popped || !collapsible || !collapsed;
+
+  const head = (
+    <div className="card-head">
+      {collapsible && !popped && (
+        <button
+          className="disc"
+          onClick={() => setCollapsed((c) => !c)}
+          aria-expanded={!collapsed}
+          aria-label={collapsed ? `Expand ${title}` : `Collapse ${title}`}
+        >
+          <ChevronRight size={15} />
+        </button>
+      )}
+      <h2>{title}</h2>
       {headerExtras}
-      <span className="ml-auto flex items-center gap-1.5">
-        {collapsible && !popped && (
-          <Button
-            variant="outline"
-            onClick={() => setCollapsed((c) => !c)}
-            className="h-7 px-2.5 text-xs"
-          >
-            {collapsed ? "Show" : "Collapse"}
-          </Button>
-        )}
-        <Button
-          variant="outline"
+      <div className="head-actions">
+        <button
+          className="icon-btn"
           onClick={() => setPopped((p) => !p)}
-          className="h-7 px-2 text-xs"
           title={popped ? "Close the window" : "Open in a focused window"}
           aria-label={popped ? "Close the window" : "Open in a focused window"}
         >
-          {popped ? "Close" : "Expand"}
-        </Button>
-      </span>
+          {popped ? <X size={15} /> : <Maximize2 size={15} />}
+        </button>
+      </div>
     </div>
   );
-
-  const showBody = popped || !collapsible || !collapsed;
 
   if (popped) {
     return (
       <>
-        <Card className="border-slate-200 border-dashed">
-          <CardContent className="py-4">
-            <div className="flex items-center gap-2">
-              <h2 className="text-sm font-medium text-slate-400 uppercase tracking-wide">
-                {title}
-              </h2>
-              <span className="ml-auto text-xs text-slate-400">Open in a window</span>
-            </div>
-          </CardContent>
-        </Card>
+        <section className="card" style={{ opacity: 0.6 }}>
+          <div className="card-head">
+            <h2>{title}</h2>
+            <span className="head-actions stamp">Open in a window</span>
+          </div>
+        </section>
 
         <div
-          className="fixed inset-0 bg-black/40 flex items-start justify-center p-4 sm:p-10 z-50 overflow-y-auto"
+          className="mgt-case-backdrop"
           role="dialog"
           aria-modal="true"
           aria-label={title}
@@ -97,9 +92,22 @@ export function PopOutSection({
             if (e.target === e.currentTarget) setPopped(false);
           }}
         >
-          <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full">
-            <div className="px-5 py-3 border-b border-slate-200">{header}</div>
-            <div className="p-5">{children}</div>
+          <div className="mgt-case-sheet">
+            <div className="sheet-head">
+              <h2>{title}</h2>
+              {headerExtras}
+              <div className="head-actions">
+                <button
+                  className="icon-btn"
+                  onClick={() => setPopped(false)}
+                  title="Close"
+                  aria-label="Close the window"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            </div>
+            <div className="sheet-body">{children}</div>
           </div>
         </div>
       </>
@@ -107,12 +115,9 @@ export function PopOutSection({
   }
 
   return (
-    <Card className="border-slate-200">
-      <CardContent className="py-4 space-y-3">
-        {header}
-        {showBody && children}
-        {!showBody && <p className="text-xs text-slate-400 italic">{title} collapsed.</p>}
-      </CardContent>
-    </Card>
+    <section className="card" data-open={showBody}>
+      {head}
+      {showBody && <div className="card-body">{children}</div>}
+    </section>
   );
 }
