@@ -263,7 +263,7 @@ export function CaseSummary({ caseId }: CaseSummaryProps) {
         )}
 
         {hasSummary && expanded && (
-          <div className="space-y-4">
+          <div className="space-y-4 max-h-[280px] overflow-y-auto pr-1">
             {split.profile && (
               <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
                 <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wide mb-1">
