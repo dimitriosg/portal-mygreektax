@@ -13,6 +13,7 @@ import { CaseSummary } from "@/components/case-summary";
 import { CaseNotes } from "@/components/CaseNotes";
 import { CasePartnerThread } from "@/components/case-partner-thread";
 import { DraftHistory } from "@/components/DraftHistory";
+import { PopOutSection } from "@/components/section-shell";
 
 // Case review page (new spine). The route param $caseId is a
 // brain_conversations.id. This page shows the full conversation from
@@ -592,35 +593,32 @@ function ReviewCase() {
           </CardContent>
         </Card>
 
-        <Card className="border-slate-200">
-          <CardContent className="py-4 space-y-3">
-            <div className="flex items-center gap-2">
-              <h2 className="text-sm font-medium text-slate-500 uppercase tracking-wide">
-                Partner thread
-              </h2>
-              <span className="text-[10px] uppercase tracking-wide bg-amber-50 text-amber-800 rounded px-1.5 py-0.5">
-                Internal
-              </span>
-            </div>
-            <CasePartnerThread
-              events={partnerEvents}
-              loading={loading}
-              conversationId={caseId}
-              onIncludedCountChange={setIncludedPartner}
-              onSynced={load}
-            />
-          </CardContent>
-        </Card>
+        <PopOutSection
+          title="Partner thread"
+          collapsible={false}
+          headerExtras={
+            <span className="text-[10px] uppercase tracking-wide bg-amber-50 text-amber-800 rounded px-1.5 py-0.5">
+              Internal
+            </span>
+          }
+        >
+          <CasePartnerThread
+            events={partnerEvents}
+            loading={loading}
+            conversationId={caseId}
+            onIncludedCountChange={setIncludedPartner}
+            onSynced={load}
+          />
+        </PopOutSection>
       </div>
 
       {/* Row 2: notes at one third, summary at two thirds. */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
-        <Card className="border-slate-200 lg:col-span-1">
-          <CardContent className="py-4 space-y-3">
-            <h2 className="text-sm font-medium text-slate-500 uppercase tracking-wide">My notes</h2>
+        <div className="lg:col-span-1">
+          <PopOutSection title="My notes" defaultCollapsed={false}>
             <CaseNotes conversationId={caseId} onIncludedCountChange={setIncludedNotes} />
-          </CardContent>
-        </Card>
+          </PopOutSection>
+        </div>
 
         <div className="lg:col-span-2">
           <CaseSummary caseId={caseId} caseSerialId={conversation?.case_serial_id ?? null} />
