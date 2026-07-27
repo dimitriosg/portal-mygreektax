@@ -181,7 +181,7 @@ export function CaseNotes({ conversationId, onIncludedCountChange }: Props) {
         </p>
       )}
 
-      <div className="divide-y divide-slate-200">
+      <div className="divide-y divide-slate-200 max-h-[280px] overflow-y-auto pr-1">
         {notes.map((n) => {
           const isDeleting = deletingId === n.id;
           const isConfirming = confirmId === n.id && !isDeleting;

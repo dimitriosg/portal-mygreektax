@@ -14,6 +14,7 @@ import { CaseNotes } from "@/components/CaseNotes";
 import { CasePartnerThread } from "@/components/case-partner-thread";
 import { DraftHistory } from "@/components/DraftHistory";
 import { PopOutSection } from "@/components/section-shell";
+import { CasePartnerReplyBox } from "@/components/case-partner-reply-box";
 
 // Case review page (new spine). The route param $caseId is a
 // brain_conversations.id. This page shows the full conversation from
@@ -634,6 +635,14 @@ function ReviewCase() {
         replyToSubject={
           clientEvents.length ? clientEvents[clientEvents.length - 1].subject ?? undefined : undefined
         }
+        onSent={load}
+      />
+
+      {/* Follow up with partner: plain compose for now, Brain drafting comes
+          with the pricing-compartment work. Logs as partner_email_sent. */}
+      <CasePartnerReplyBox
+        conversationId={caseId}
+        caseSerialId={conversation?.case_serial_id ?? null}
         onSent={load}
       />
 
