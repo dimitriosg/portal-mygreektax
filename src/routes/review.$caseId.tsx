@@ -605,7 +605,9 @@ function ReviewCase() {
             <CasePartnerThread
               events={partnerEvents}
               loading={loading}
+              conversationId={caseId}
               onIncludedCountChange={setIncludedPartner}
+              onSynced={load}
             />
           </CardContent>
         </Card>
