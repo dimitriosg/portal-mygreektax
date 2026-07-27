@@ -221,6 +221,12 @@ export function CaseNotes({ conversationId, onIncludedCountChange }: Props) {
                     <>
                       <button
                         onClick={() => patch(n.id, { include_in_ai: !n.include_in_ai })}
+                        aria-pressed={n.include_in_ai}
+                        aria-label={
+                          n.include_in_ai
+                            ? "Exclude this note from drafting"
+                            : "Include this note in drafting"
+                        }
                         title={
                           n.include_in_ai
                             ? "Included when a draft is generated"
@@ -232,6 +238,8 @@ export function CaseNotes({ conversationId, onIncludedCountChange }: Props) {
                       </button>
                       <button
                         onClick={() => patch(n.id, { pinned: !n.pinned })}
+                        aria-pressed={n.pinned}
+                        aria-label={n.pinned ? "Unpin note" : "Pin note"}
                         title={n.pinned ? "Unpin" : "Pin"}
                         className="icon-btn"
                       >
@@ -242,6 +250,7 @@ export function CaseNotes({ conversationId, onIncludedCountChange }: Props) {
                           setEditingId(n.id);
                           setEditText(n.body);
                         }}
+                        aria-label="Edit note"
                         title="Edit"
                         className="icon-btn"
                       >
@@ -249,6 +258,7 @@ export function CaseNotes({ conversationId, onIncludedCountChange }: Props) {
                       </button>
                       <button
                         onClick={() => setConfirmId(n.id)}
+                        aria-label="Delete note"
                         title="Delete"
                         className="icon-btn"
                       >

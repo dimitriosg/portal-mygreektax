@@ -206,6 +206,12 @@ export function CasePartnerThread({
                   <span className="spacer" />
                   <button
                     onClick={() => toggle(e.id)}
+                    aria-pressed={included}
+                    aria-label={
+                      included
+                        ? "Exclude this message from drafting"
+                        : "Include this message in drafting"
+                    }
                     title={
                       included
                         ? "Included when a draft is generated"
