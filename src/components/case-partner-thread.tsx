@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 
 // Partner thread pane.
@@ -32,8 +33,12 @@ type Scope = "all" | "last_n";
 interface Props {
   events: PartnerEvent[];
   loading?: boolean;
+  /** brain_conversations.id, needed to trigger a partner mailbox sync. */
+  conversationId: string;
   /** Reports how many partner messages are currently in scope for drafting. */
   onIncludedCountChange?: (count: number) => void;
+  /** Called after a sync is accepted, so the page can refresh events. */
+  onSynced?: () => void;
 }
 
 function formatWhen(iso: string | null): string {
@@ -47,11 +52,19 @@ function labelFor(e: PartnerEvent): string {
   return "Partner";
 }
 
-export function CasePartnerThread({ events, loading, onIncludedCountChange }: Props) {
+export function CasePartnerThread({
+  events,
+  loading,
+  conversationId,
+  onIncludedCountChange,
+  onSynced,
+}: Props) {
   const [scope, setScope] = useState<Scope>("all");
   const [lastN, setLastN] = useState(5);
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
   const [collapsed, setCollapsed] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState("");
 
   const inScope = useMemo(() => {
     const window =
@@ -65,6 +78,45 @@ export function CasePartnerThread({ events, loading, onIncludedCountChange }: Pr
   useEffect(() => {
     onIncludedCountChange?.(inScope.size);
   }, [inScope, onIncludedCountChange]);
+
+  const sync = async () => {
+    setSyncMsg("");
+    setSyncing(true);
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      const res = await fetch("/webhooks/partner-sync", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({ conversation_id: conversationId }),
+      });
+
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok || !payload?.ok) {
+        const detail =
+          typeof payload?.detail === "string" ? payload.detail : payload?.error ?? `HTTP ${res.status}`;
+        setSyncMsg(`Sync could not start: ${detail}`);
+        return;
+      }
+
+      setSyncMsg(
+        `Searching ${payload.started} partner mailbox${payload.started === 1 ? "" : "es"} for mail carrying ${payload.refCore}. Messages appear here as they import.`,
+      );
+      setCollapsed(false);
+      onSynced?.();
+    } catch (err) {
+      setSyncMsg(
+        `Could not reach the server: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const toggle = (id: string) => {
     setExcluded((prev) => {
@@ -103,16 +155,36 @@ export function CasePartnerThread({ events, loading, onIncludedCountChange }: Pr
             className="w-16 rounded-md border border-slate-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-slate-400"
           />
         )}
-        {events.length > 0 && (
+        <span className="ml-auto flex items-center gap-1.5">
           <Button
             variant="outline"
-            onClick={() => setCollapsed((c) => !c)}
-            className="ml-auto h-7 px-2.5 text-xs"
+            onClick={sync}
+            disabled={syncing}
+            className="h-7 px-2.5 text-xs"
+            title="Search the partner mailboxes for mail carrying this case code"
           >
-            {collapsed ? `Show (${events.length})` : "Collapse"}
+            {syncing ? (
+              <span className="inline-flex items-center gap-1.5">
+                <span className="inline-block h-3 w-3 rounded-full border-2 border-slate-300 border-t-slate-600 animate-spin" />
+                Syncing...
+              </span>
+            ) : (
+              "Sync from Gmail"
+            )}
           </Button>
-        )}
+          {events.length > 0 && (
+            <Button
+              variant="outline"
+              onClick={() => setCollapsed((c) => !c)}
+              className="h-7 px-2.5 text-xs"
+            >
+              {collapsed ? `Show (${events.length})` : "Collapse"}
+            </Button>
+          )}
+        </span>
       </div>
+
+      {syncMsg && <p className="text-xs text-slate-500">{syncMsg}</p>}
 
       {loading && <p className="text-sm text-slate-400">Loading...</p>}
 
