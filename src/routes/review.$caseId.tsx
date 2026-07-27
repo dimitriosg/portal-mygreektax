@@ -1,14 +1,12 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
+import { RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { AiReviewDesk } from "@/components/AiReviewDesk";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { CaseReplyBox } from "@/components/case-reply-box";
 import { updateLead } from "@/lib/leads.functions";
 import { CLIENT_STAGES } from "@/lib/leads-shared";
-import { stageBadgeClass } from "@/lib/stage-colors";
 import { CaseSummary } from "@/components/case-summary";
 import { CaseNotes } from "@/components/CaseNotes";
 import { CasePartnerThread } from "@/components/case-partner-thread";
@@ -284,7 +282,7 @@ function ReviewCase() {
         const detail =
           typeof payload?.detail === "string"
             ? payload.detail
-            : payload?.error ?? `HTTP ${res.status}`;
+            : (payload?.error ?? `HTTP ${res.status}`);
         setGenError(`Generation failed: ${detail}`);
         return;
       }
@@ -389,7 +387,7 @@ function ReviewCase() {
         const detail =
           typeof payload?.detail === "string"
             ? payload.detail
-            : payload?.error ?? `HTTP ${res.status}`;
+            : (payload?.error ?? `HTTP ${res.status}`);
         setSyncing(false);
         syncRef.current = null;
         setSyncMsg(`Sync could not start: ${detail}`);
@@ -414,42 +412,37 @@ function ReviewCase() {
   const visibleEvents =
     convView === "all" ? clientEvents : convView === "latest" ? clientEvents.slice(-1) : [];
 
-  const fieldClass =
-    "rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400";
-  const labelClass = "text-[11px] font-medium text-slate-500 uppercase tracking-wide";
-
   const contextLine = `${includedNotes} note${includedNotes === 1 ? "" : "s"} and ${includedPartner} partner message${includedPartner === 1 ? "" : "s"} will be included`;
 
   return (
-    <div className="max-w-7xl mx-auto p-6 space-y-5">
+    <div className="mgt-case max-w-7xl mx-auto p-6 space-y-3.5">
       <div>
-        <Link to="/drafts" className="text-sm text-slate-500 hover:text-slate-800">
+        <Link to="/drafts" className="crumb">
           Back to cases
         </Link>
-        <div className="flex flex-wrap items-center gap-2 mt-2">
-          <h1 className="text-2xl font-serif font-semibold text-slate-900">{title}</h1>
+        <div className="case-title">
+          <h1>{title}</h1>
           {conversation?.case_serial_id && (
-            <span className="text-xs font-mono text-slate-500 bg-slate-100 rounded px-1.5 py-0.5">
-              {conversation.case_serial_id}
-            </span>
+            <span className="code">{conversation.case_serial_id}</span>
           )}
         </div>
-        {email && <p className="text-sm text-slate-500">{email}</p>}
+        {email && <div className="mail">{email}</div>}
 
         {/* Linked lead fields. Same public.clients row as /leads, saved through
             updateLead, so edits sync both ways and are audit-logged. */}
         {conversation?.client_id && (
-          <div className="mt-3 flex flex-wrap items-end gap-3">
-            <div className="flex flex-col gap-1">
-              <label className={labelClass}>Stage</label>
+          <div className="strip">
+            <div className="field">
+              <label htmlFor="case-stage">Stage</label>
               <select
+                id="case-stage"
+                className="mc-input"
                 value={stageDraft}
                 onChange={(e) => {
                   const v = e.target.value;
                   setStageDraft(v);
                   saveLead({ stage: v });
                 }}
-                className={`rounded-md border px-2 py-1.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-slate-400 ${stageBadgeClass(stageDraft)}`}
               >
                 {!stageDraft && <option value="">Select stage</option>}
                 {CLIENT_STAGES.map((s) => (
@@ -460,10 +453,12 @@ function ReviewCase() {
               </select>
             </div>
 
-            <div className="flex flex-col gap-1 flex-1 min-w-[200px]">
-              <label className={labelClass}>Next action</label>
+            <div className="field grow">
+              <label htmlFor="case-next">Next action</label>
               <input
+                id="case-next"
                 type="text"
+                className="mc-input"
                 value={nextActionDraft}
                 placeholder="Next action..."
                 onChange={(e) => setNextActionDraft(e.target.value)}
@@ -472,135 +467,127 @@ function ReviewCase() {
                     saveLead({ nextAction: nextActionDraft });
                   }
                 }}
-                className={`${fieldClass} w-full`}
               />
             </div>
 
-            <div className="flex flex-col gap-1">
-              <label className={labelClass}>Date</label>
+            <div className="field">
+              <label htmlFor="case-date">Date</label>
               <input
+                id="case-date"
                 type="date"
+                className="mc-input"
                 value={nextActionDateDraft}
                 onChange={(e) => {
                   const v = e.target.value;
                   setNextActionDateDraft(v);
                   saveLead({ nextActionDate: v || null });
                 }}
-                className={fieldClass}
               />
             </div>
 
-            {leadSaveMsg && <span className="text-xs text-slate-400 pb-2">{leadSaveMsg}</span>}
+            {leadSaveMsg && (
+              <span className="stamp" style={{ marginLeft: "auto", paddingBottom: 6 }}>
+                {leadSaveMsg}
+              </span>
+            )}
           </div>
         )}
       </div>
 
       {/* Row 1: client conversation and partner thread, half each. */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
-        <Card className="border-slate-200">
-          <CardContent className="py-4 space-y-4">
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <h2 className="text-sm font-medium text-slate-500 uppercase tracking-wide">
-                Client conversation
-              </h2>
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <Button
-                  variant="outline"
-                  onClick={handleSync}
-                  disabled={syncing || !email}
-                  className="h-7 px-2.5 text-xs"
-                  title="Search Gmail for this customer and import the whole thread into this case"
-                >
-                  {syncing ? (
-                    <span className="inline-flex items-center gap-1.5">
-                      <span className="inline-block h-3 w-3 rounded-full border-2 border-slate-300 border-t-slate-600 animate-spin" />
-                      Syncing...
-                    </span>
-                  ) : (
-                    "Sync from Gmail"
-                  )}
-                </Button>
-                {!loading && clientEvents.length > 0 && (
-                  <>
-                    <span className="mx-0.5 h-4 w-px bg-slate-200" />
-                    <Button
-                      variant={convView === "collapsed" ? "default" : "outline"}
-                      onClick={() => setConvView("collapsed")}
-                      className={`h-7 px-2.5 text-xs ${convView === "collapsed" ? "bg-[#0B192C] text-white" : ""}`}
-                    >
-                      Collapse
-                    </Button>
-                    <Button
-                      variant={convView === "latest" ? "default" : "outline"}
-                      onClick={() => setConvView("latest")}
-                      className={`h-7 px-2.5 text-xs ${convView === "latest" ? "bg-[#0B192C] text-white" : ""}`}
-                    >
-                      Latest
-                    </Button>
-                    <Button
-                      variant={convView === "all" ? "default" : "outline"}
-                      onClick={() => setConvView("all")}
-                      className={`h-7 px-2.5 text-xs ${convView === "all" ? "bg-[#0B192C] text-white" : ""}`}
-                    >
-                      All ({clientEvents.length})
-                    </Button>
-                  </>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 items-start">
+        <section className="card" data-open={convView !== "collapsed"}>
+          <div className="card-head">
+            <h2>Client conversation</h2>
+            {!loading && clientEvents.length > 0 && (
+              <span className="count">{clientEvents.length}</span>
+            )}
+            <div className="head-actions">
+              {!loading && clientEvents.length > 0 && (
+                <span className="seg">
+                  <button
+                    aria-pressed={convView === "collapsed"}
+                    onClick={() => setConvView("collapsed")}
+                  >
+                    Collapse
+                  </button>
+                  <button
+                    aria-pressed={convView === "latest"}
+                    onClick={() => setConvView("latest")}
+                  >
+                    Latest
+                  </button>
+                  <button aria-pressed={convView === "all"} onClick={() => setConvView("all")}>
+                    All ({clientEvents.length})
+                  </button>
+                </span>
+              )}
+              <button
+                className="icon-btn"
+                onClick={handleSync}
+                disabled={syncing || !email}
+                title="Search Gmail for this customer and import the whole thread into this case"
+                aria-label="Sync from Gmail"
+              >
+                {syncing ? (
+                  <span className="inline-block h-3.5 w-3.5 rounded-full border-2 border-slate-300 border-t-slate-600 animate-spin" />
+                ) : (
+                  <RefreshCw size={15} />
                 )}
-              </div>
+              </button>
             </div>
+          </div>
 
-            {syncMsg && <p className="text-xs text-slate-500">{syncMsg}</p>}
+          <div className="card-body">
+            {syncMsg && <p className="stamp">{syncMsg}</p>}
 
-            {loading && <p className="text-sm text-slate-400">Loading conversation...</p>}
+            {loading && <p className="empty">Loading conversation...</p>}
             {!loading && clientEvents.length === 0 && (
-              <p className="text-sm text-slate-400">
+              <p className="empty">
                 No messages logged for this case yet. Use Sync from Gmail to pull the history.
               </p>
             )}
 
-            <div className={convView === "all" ? "h-[320px] overflow-y-auto pr-1 space-y-4" : "space-y-4"}>
-              {visibleEvents.map((row) => (
-                <div key={row.id} className="border-l-2 border-slate-200 pl-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-medium text-slate-700">
-                      {ACTOR_LABELS[row.actor ?? ""] ?? row.actor ?? "Unknown"}
-                    </span>
-                    {row.direction && (
-                      <span className="text-xs text-slate-400">({row.direction})</span>
-                    )}
-                    <span className="text-xs text-slate-400">{formatWhen(row.occurred_at)}</span>
+            {visibleEvents.length > 0 && (
+              <div className={convView === "all" ? "pane" : ""}>
+                {visibleEvents.map((row) => (
+                  <div key={row.id} className="msg">
+                    <div className="msg-head">
+                      <span className="who">
+                        {ACTOR_LABELS[row.actor ?? ""] ?? row.actor ?? "Unknown"}
+                      </span>
+                      {row.direction && <span className="when">({row.direction})</span>}
+                      <span className="when">{formatWhen(row.occurred_at)}</span>
+                    </div>
+                    {row.subject && <p className="msg-subject">Subject: {row.subject}</p>}
+                    <p>{row.body_text ?? ""}</p>
                   </div>
-                  {row.subject && (
-                    <p className="text-xs text-slate-500 mt-1">Subject: {row.subject}</p>
-                  )}
-                  <p className="text-sm text-slate-600 whitespace-pre-wrap mt-1">
-                    {row.body_text ?? ""}
-                  </p>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
 
             {!loading && convView === "latest" && clientEvents.length > 1 && (
-              <p className="text-xs text-slate-400 italic">
+              <p className="empty">
                 Showing the latest message only. {clientEvents.length - 1} earlier hidden.
               </p>
             )}
             {!loading && convView === "collapsed" && clientEvents.length > 0 && (
-              <p className="text-xs text-slate-400 italic">
+              <p className="empty">
                 Conversation collapsed. {clientEvents.length} message
                 {clientEvents.length === 1 ? "" : "s"} hidden.
               </p>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </section>
 
         <PopOutSection
           title="Partner thread"
           collapsible={false}
           headerExtras={
-            <span className="text-[10px] uppercase tracking-wide bg-amber-50 text-amber-800 rounded px-1.5 py-0.5">
-              Internal
-            </span>
+            <>
+              <span className="tag tag-internal">Internal</span>
+              {partnerEvents.length > 0 && <span className="count">{partnerEvents.length}</span>}
+            </>
           }
         >
           <CasePartnerThread
@@ -614,7 +601,7 @@ function ReviewCase() {
       </div>
 
       {/* Row 2: notes at one third, summary at two thirds. */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3.5 items-start">
         <div className="lg:col-span-1">
           <PopOutSection title="My notes" defaultCollapsed={false}>
             <CaseNotes conversationId={caseId} onIncludedCountChange={setIncludedNotes} />
@@ -633,7 +620,9 @@ function ReviewCase() {
         clientName={client?.full_name ?? undefined}
         caseSerialId={conversation?.case_serial_id ?? undefined}
         replyToSubject={
-          clientEvents.length ? clientEvents[clientEvents.length - 1].subject ?? undefined : undefined
+          clientEvents.length
+            ? (clientEvents[clientEvents.length - 1].subject ?? undefined)
+            : undefined
         }
         onSent={load}
       />
@@ -650,12 +639,8 @@ function ReviewCase() {
           is present, AiReviewDesk below takes over with edit + send. */}
       {!loading && !hasDraft && (
         <div className="flex flex-col items-start gap-2">
-          <div className="flex items-center gap-3 flex-wrap">
-            <Button
-              onClick={generate}
-              disabled={generating}
-              className="bg-[#0B192C] hover:bg-slate-800 text-white"
-            >
+          <div className="reply-foot" style={{ marginTop: 0 }}>
+            <button className="btn btn-solid" onClick={generate} disabled={generating}>
               {generating ? (
                 <span className="inline-flex items-center gap-2">
                   <span className="inline-block h-3 w-3 rounded-full border-2 border-white/40 border-t-white animate-spin" />
@@ -664,16 +649,26 @@ function ReviewCase() {
               ) : (
                 "Generate draft"
               )}
-            </Button>
+            </button>
             <DraftHistory conversationId={caseId} refreshKey={draftStamp} />
-            <span className="text-xs text-slate-500">{contextLine}</span>
+            <span className="ctx-line">{contextLine}</span>
           </div>
-          <p className="text-xs text-slate-400">
+          <p className="stamp">
             Runs the Brain once for this case. Costs a single AI call. Nothing is sent until you
             review and approve.
           </p>
           {generating && (
-            <div className="flex items-center gap-2 text-sm text-slate-600 border border-slate-200 bg-slate-50 rounded px-3 py-2">
+            <div
+              className="flex items-center gap-2"
+              style={{
+                fontSize: 13,
+                color: "var(--mc-ink-2)",
+                border: "1px solid var(--mc-line)",
+                background: "var(--mc-page)",
+                borderRadius: 8,
+                padding: "8px 12px",
+              }}
+            >
               <span className="inline-block h-3 w-3 rounded-full border-2 border-slate-300 border-t-slate-600 animate-spin" />
               The Brain is reading the conversation and drafting a reply. This usually takes about a
               minute.
@@ -691,18 +686,17 @@ function ReviewCase() {
           offers a regenerate path. */}
       {hasDraft && (
         <div className="space-y-3">
-          <div className="flex items-center gap-3 flex-wrap">
-            <Button
-              variant="outline"
+          <div className="reply-foot" style={{ marginTop: 0 }}>
+            <button
+              className="btn btn-sm"
               onClick={generate}
               disabled={generating}
-              className="h-8 px-3 text-xs"
               title="Regenerate: runs the Brain again and replaces the current draft"
             >
               {generating ? "Regenerating..." : "Regenerate draft"}
-            </Button>
+            </button>
             <DraftHistory conversationId={caseId} refreshKey={draftStamp} />
-            <span className="text-xs text-slate-500">{contextLine}</span>
+            <span className="ctx-line">{contextLine}</span>
             {genError && <span className="text-sm text-red-600">{genError}</span>}
           </div>
           <AiReviewDesk key={draftStamp} jobId={caseId} />

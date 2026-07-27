@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
+import { X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { Button } from "@/components/ui/button";
 
 // Draft history. Every Brain generation for a case, newest first.
 //
@@ -87,40 +87,43 @@ export function DraftHistory({ conversationId, onLoadIntoReply, refreshKey }: Pr
 
   return (
     <>
-      <Button
-        variant="outline"
+      <button
+        className="btn btn-sm hist-head"
         onClick={(e) => {
           e.stopPropagation();
           setOpen(true);
         }}
         title="Every draft generated for this case"
-        className="h-7 px-2.5 text-xs"
       >
         Drafts ({versions.length})
-      </Button>
+      </button>
 
       {open && (
         <div
-          className="fixed inset-0 bg-black/40 flex items-start justify-center p-4 sm:p-10 z-50 overflow-y-auto"
+          className="mgt-case-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Draft history (${versions.length})`}
           onClick={(e) => {
             if (e.target === e.currentTarget) setOpen(false);
           }}
         >
-          <div className="bg-white rounded-xl shadow-xl max-w-3xl w-full">
-            <div className="flex items-center gap-3 px-5 py-3 border-b border-slate-200">
-              <h2 className="text-sm font-medium text-slate-500 uppercase tracking-wide">
-                Draft history ({versions.length})
-              </h2>
-              <Button
-                variant="outline"
-                onClick={() => setOpen(false)}
-                className="ml-auto h-7 px-2.5 text-xs"
-              >
-                Close
-              </Button>
+          <div className="mgt-case-sheet">
+            <div className="sheet-head">
+              <h2>Draft history ({versions.length})</h2>
+              <div className="head-actions">
+                <button
+                  className="icon-btn"
+                  onClick={() => setOpen(false)}
+                  title="Close"
+                  aria-label="Close draft history"
+                >
+                  <X size={16} />
+                </button>
+              </div>
             </div>
 
-            <div className="p-5 space-y-4">
+            <div className="sheet-body">
               {error && (
                 <p className="text-sm text-red-600 border border-red-200 bg-red-50 rounded px-3 py-2">
                   {error}
@@ -128,68 +131,60 @@ export function DraftHistory({ conversationId, onLoadIntoReply, refreshKey }: Pr
               )}
 
               {!error && versions.length === 0 && (
-                <p className="text-sm text-slate-500">
-                  No drafts generated for this case yet.
-                </p>
+                <p className="empty">No drafts generated for this case yet.</p>
               )}
 
               {versions.map((v, idx) => (
-                <div key={v.id} className="border border-slate-200 rounded-lg p-4">
-                  <div className="flex items-center gap-2 flex-wrap mb-2">
-                    <span className="font-mono text-xs text-slate-600 bg-slate-100 rounded px-1.5 py-0.5">
-                      v{v.version_no}
-                    </span>
-                    <span className="text-xs text-slate-400">{formatWhen(v.generated_at)}</span>
+                <div key={v.id} className="ver">
+                  <div className="ver-head">
+                    <span className="ver-no">v{v.version_no}</span>
+                    <span className="when">{formatWhen(v.generated_at)}</span>
                     {v.sent_at ? (
-                      <span className="text-xs text-emerald-700 bg-emerald-50 rounded px-1.5 py-0.5">
+                      <span className="badge-sent">
                         Sent ({v.sent_mode === "edited" ? "edited" : "as is"})
                       </span>
                     ) : idx === 0 ? null : (
-                      <span className="text-xs text-slate-400 bg-slate-100 rounded px-1.5 py-0.5">
-                        Superseded
-                      </span>
+                      <span className="badge-super">Superseded</span>
                     )}
                     {onLoadIntoReply && (
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          onLoadIntoReply(v);
-                          setOpen(false);
-                        }}
-                        className="ml-auto h-7 px-2.5 text-xs"
-                      >
-                        Load into reply
-                      </Button>
+                      <span className="ver-acts">
+                        <button
+                          className="btn btn-sm"
+                          onClick={() => {
+                            onLoadIntoReply(v);
+                            setOpen(false);
+                          }}
+                        >
+                          Load into reply
+                        </button>
+                      </span>
                     )}
                   </div>
 
-                  <p className="text-sm text-slate-700 whitespace-pre-wrap border-l-2 border-slate-200 pl-3">
-                    {v.draft_text}
-                  </p>
+                  <div className="ver-body">{v.draft_text}</div>
 
                   {v.compliance_insights && (
-                    <div className="mt-3 border border-slate-200 bg-slate-50 rounded p-3">
-                      <p className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">
-                        Brain technical compliance insights
-                      </p>
-                      <p className="text-xs text-slate-600 whitespace-pre-wrap">
-                        {v.compliance_insights}
-                      </p>
+                    <div className="insights" style={{ marginTop: 11 }}>
+                      <div className="insights-head">
+                        <span className="lbl">Brain technical compliance insights</span>
+                        <span className="tag tag-internal">Internal</span>
+                      </div>
+                      <p>{v.compliance_insights}</p>
                     </div>
                   )}
 
                   {describeContext(v.context_used) && (
-                    <p className="text-xs text-slate-400 mt-2">
+                    <div className="ver-ctx">
                       Context at generation: {describeContext(v.context_used)}
                       {v.sent_mode === "edited"
-                        ? ". The text above is what the Brain wrote, not what was sent."
+                        ? " · the text above is what the Brain wrote, not what was sent"
                         : ""}
-                    </p>
+                    </div>
                   )}
                 </div>
               ))}
 
-              <p className="text-xs text-slate-400">
+              <p className="stamp" style={{ marginTop: 14 }}>
                 Every generation is kept. Drafts live apart from the conversation history, so
                 loading an old one here changes nothing the client has seen.
               </p>
