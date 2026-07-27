@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -33,6 +33,12 @@ export function CasePartnerReplyBox({ conversationId, caseSerialId, onSent }: Pr
   const [partners, setPartners] = useState<PartnerOption[]>([]);
   const [toEmail, setToEmail] = useState("");
   const [subject, setSubject] = useState(caseSerialId ? `${caseSerialId}: ` : "");
+  // conversation (and caseSerialId) loads asynchronously in the parent and
+  // arrives after this component has already mounted with caseSerialId still
+  // null, so the useState initializer above misses it on the normal load path.
+  // This effect fills the subject in once it arrives, but only if the person
+  // has not already typed into the field.
+  const subjectTouchedRef = useRef(false);
   const [bodyText, setBodyText] = useState("");
   const [confirming, setConfirming] = useState(false);
   const [sending, setSending] = useState(false);
@@ -60,6 +66,12 @@ export function CasePartnerReplyBox({ conversationId, caseSerialId, onSent }: Pr
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!subjectTouchedRef.current && caseSerialId) {
+      setSubject(`${caseSerialId}: `);
+    }
+  }, [caseSerialId]);
 
   const selected = partners.find((p) => p.email === toEmail);
 
@@ -145,7 +157,10 @@ export function CasePartnerReplyBox({ conversationId, caseSerialId, onSent }: Pr
             </label>
             <input
               value={subject}
-              onChange={(e) => setSubject(e.target.value)}
+              onChange={(e) => {
+                subjectTouchedRef.current = true;
+                setSubject(e.target.value);
+              }}
               className="rounded-md border border-slate-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
             />
           </div>
