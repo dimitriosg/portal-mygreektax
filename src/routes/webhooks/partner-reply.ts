@@ -111,11 +111,16 @@ export const Route = createFileRoute("/webhooks/partner-reply")({
         try {
           // 1. The recipient must be an ACTIVE partner. This is the guard that
           //    keeps this endpoint partner-only regardless of what the UI sends.
+          // Escape ILIKE wildcards (% and _, both of which EMAIL_RE permits) so a
+          // crafted address cannot pattern-match an active partner without being
+          // an exact match.
+          const escapeLike = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
+
           const { data: partnerRows, error: partnerError } = await supabase
             .from("partner_profiles")
             .select("email, full_name")
             .is("disabled_at", null)
-            .ilike("email", toEmail)
+            .ilike("email", escapeLike(toEmail))
             .limit(1);
           if (partnerError) {
             throw new Error(`partner lookup failed: ${partnerError.message}`);
@@ -130,6 +135,10 @@ export const Route = createFileRoute("/webhooks/partner-reply")({
             );
           }
 
+          // From here on, use the canonical address from the database, never the
+          // raw request value, for both delivery and logging.
+          const partnerEmail = partnerRows[0].email as string;
+
           // 2. Resolve the case and its serial for the ref line.
           const { data: convRows, error: convError } = await supabase
             .from("brain_conversations")
@@ -143,6 +152,16 @@ export const Route = createFileRoute("/webhooks/partner-reply")({
           }
 
           const serial = (conversation.case_serial_id as string | null) ?? "";
+          if (!serial) {
+            return Response.json(
+              {
+                error: "Conversation has no case serial",
+                detail:
+                  "Cannot build a matchable MGT-REF-ID line, so the reply would be unroutable. Assign a case code first.",
+              },
+              { status: 422 },
+            );
+          }
           const refCore = serial.replace(/^MGT-/i, "");
           const refLineHtml = refCore
             ? '<div style="font-family: Arial, Helvetica, sans-serif; font-size: 12px; color: #9ca3af; margin-top: 16px;">MGT-REF-ID: [' +
@@ -156,19 +175,37 @@ export const Route = createFileRoute("/webhooks/partner-reply")({
           // 3. Send via Mailgun EU. No BCC, see header comment.
           const form = new URLSearchParams();
           form.set("from", "MyGreekTax <hello@mygreektax.eu>");
-          form.set("to", toEmail);
+          form.set("to", partnerEmail);
           form.set("subject", subject);
           form.set("html", html);
           form.set("h:X-Mailgun-Variables", JSON.stringify({ src: "portal" }));
 
-          const mgRes = await fetch(`https://api.eu.mailgun.net/v3/${domain}/messages`, {
-            method: "POST",
-            headers: {
-              Authorization: "Basic " + btoa("api:" + mailgunKey),
-              "Content-Type": "application/x-www-form-urlencoded",
-            },
-            body: form.toString(),
-          });
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 10000);
+          let mgRes: Response;
+          try {
+            mgRes = await fetch(`https://api.eu.mailgun.net/v3/${domain}/messages`, {
+              method: "POST",
+              headers: {
+                Authorization: "Basic " + btoa("api:" + mailgunKey),
+                "Content-Type": "application/x-www-form-urlencoded",
+              },
+              body: form.toString(),
+              signal: controller.signal,
+            });
+          } catch (fetchError) {
+            const isAbort = fetchError instanceof Error && fetchError.name === "AbortError";
+            console.error("[partner-reply] mailgun fetch failed:", fetchError);
+            return Response.json(
+              {
+                error: isAbort ? "Mailgun timed out" : "Could not reach Mailgun",
+                detail: fetchError instanceof Error ? fetchError.message : String(fetchError),
+              },
+              { status: 502 },
+            );
+          } finally {
+            clearTimeout(timeoutId);
+          }
           const mgText = await mgRes.text();
           if (!mgRes.ok) {
             console.error("[partner-reply] mailgun send failed:", mgRes.status, mgText);
@@ -192,7 +229,7 @@ export const Route = createFileRoute("/webhooks/partner-reply")({
             provider: "mailgun",
             provider_message_id: mgId || null,
             from_email: "hello@mygreektax.eu",
-            to_emails: [toEmail],
+            to_emails: [partnerEmail],
             subject,
             body_text: bodyText,
             metadata: { via: "portal_partner_box" },
