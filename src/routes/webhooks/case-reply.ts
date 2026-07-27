@@ -116,7 +116,8 @@ export const Route = createFileRoute("/webhooks/case-reply")({
 
         const domain = process.env.MAILGUN_DOMAIN || "mygreektax.eu";
         const mailgunKey = process.env.MAILGUN_API_KEY;
-        if (!mailgunKey) return Response.json({ error: "MAILGUN_API_KEY not set" }, { status: 500 });
+        if (!mailgunKey)
+          return Response.json({ error: "MAILGUN_API_KEY not set" }, { status: 500 });
 
         // Ref line so the customer's reply threads back to this case.
         const refCore = caseSerialId ? caseSerialId.replace(/^MGT-/i, "") : "";

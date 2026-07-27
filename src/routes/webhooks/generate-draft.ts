@@ -101,7 +101,10 @@ export const Route = createFileRoute("/webhooks/generate-draft")({
 
         if (convError) {
           console.error("[generate-draft] conversation lookup failed", { convError });
-          return Response.json({ error: "Lookup failed", detail: convError.message }, { status: 500 });
+          return Response.json(
+            { error: "Lookup failed", detail: convError.message },
+            { status: 500 },
+          );
         }
 
         const conversation = convRows?.[0];
@@ -157,7 +160,7 @@ export const Route = createFileRoute("/webhooks/generate-draft")({
           },
           { status: 202 },
         );
-        
+
         // <--- FROM HERE
         /*
         try { 

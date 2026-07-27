@@ -168,8 +168,8 @@ function ReviewCase() {
       .select("case_id, proposed_draft, last_updated")
       .eq("case_id", caseId)
       .maybeSingle();
-    setHasDraft(!!(draftData as any)?.proposed_draft);
-    setDraftStamp(((draftData as any)?.last_updated as string) || "none");
+    setHasDraft(!!draftData?.proposed_draft);
+    setDraftStamp((draftData?.last_updated as string) || "none");
 
     setLoading(false);
   }, [caseId]);
@@ -301,7 +301,7 @@ function ReviewCase() {
           .eq("case_id", caseId)
           .maybeSingle();
 
-        const stamp = (fresh as any)?.last_updated as string | undefined;
+        const stamp = fresh?.last_updated as string | undefined;
         if (stamp && stamp !== baseline) {
           await load();
           return;

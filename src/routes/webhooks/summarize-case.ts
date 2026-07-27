@@ -72,7 +72,10 @@ export const Route = createFileRoute("/webhooks/summarize-case")({
 
         if (convError) {
           console.error("[summarize-case] conversation lookup failed", { convError });
-          return Response.json({ error: "Lookup failed", detail: convError.message }, { status: 500 });
+          return Response.json(
+            { error: "Lookup failed", detail: convError.message },
+            { status: 500 },
+          );
         }
         const conversation = convRows?.[0];
         if (!conversation) {

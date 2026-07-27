@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import type { TablesUpdate } from "@/integrations/supabase/types";
 import { logActivityEvent } from "@/lib/activity.server";
 import { LEAD_URGENCY_OPTIONS } from "@/lib/leads-shared";
 
@@ -117,8 +118,8 @@ export const Route = createFileRoute("/webhooks/lead-intake")({
             .rpc("resolve_case_for_inbound", {
               p_email: email,
               p_name: name,
-              p_nationality: null,
-              p_message: situation ?? null,
+              p_nationality: undefined,
+              p_message: situation ?? undefined,
               p_external_event_id: externalEventId,
               p_provider: "form",
               p_subject: "New consultation request",
@@ -135,7 +136,7 @@ export const Route = createFileRoute("/webhooks/lead-intake")({
           // the same request. Best-effort: a failure here must not fail the
           // whole intake, the case already exists.
           if (phone || urgency || situation || source) {
-            const patch: Record<string, unknown> = {};
+            const patch: TablesUpdate<"clients"> = {};
             if (phone) patch.phone = phone;
             if (urgency) patch.urgency = urgency;
             if (source) patch.source = source;

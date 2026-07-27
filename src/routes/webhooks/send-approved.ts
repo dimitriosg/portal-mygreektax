@@ -71,10 +71,7 @@ export const Route = createFileRoute("/webhooks/send-approved")({
         const subject = readString(b.subject, 500) || DEFAULT_SUBJECT;
 
         if (!caseId || !finalText) {
-          return Response.json(
-            { error: "case_id and final_text are required" },
-            { status: 400 },
-          );
+          return Response.json({ error: "case_id and final_text are required" }, { status: 400 });
         }
 
         try {
@@ -91,7 +88,8 @@ export const Route = createFileRoute("/webhooks/send-approved")({
           }
 
           // 2. Resolve the recipient. Unchanged from the Make version.
-          let clientRow: { id: string; full_name: string | null; email: string | null } | null = null;
+          let clientRow: { id: string; full_name: string | null; email: string | null } | null =
+            null;
           let caseSerialId: string | null = null;
           let isNewSpine = false;
 
@@ -145,13 +143,19 @@ export const Route = createFileRoute("/webhooks/send-approved")({
                   typeof directoryRow.case_serial_id === "string"
                     ? directoryRow.case_serial_id
                     : caseSerialId;
-                const linkedClientId =
-                  typeof directoryRow.client_id === "string" ? directoryRow.client_id : null;
-                if (linkedClientId) {
+                // cases_directory carries the client's serial code
+                // (client_serial_id), not a UUID, so resolve the client by
+                // client_code. An exact-code miss yields no row (and the 422
+                // below), never a wrong recipient.
+                const linkedClientCode =
+                  typeof directoryRow.client_serial_id === "string"
+                    ? directoryRow.client_serial_id
+                    : null;
+                if (linkedClientCode) {
                   const { data: linkedClient } = await supabaseAdmin
                     .from("clients")
                     .select("id, full_name, email")
-                    .eq("id", linkedClientId)
+                    .eq("client_code", linkedClientCode)
                     .maybeSingle();
                   if (linkedClient) clientRow = linkedClient;
                 }
@@ -225,7 +229,10 @@ export const Route = createFileRoute("/webhooks/send-approved")({
             .eq("case_id", caseId);
 
           if (updateError) {
-            console.error("[send-approved] approval update failed (mail already sent):", updateError);
+            console.error(
+              "[send-approved] approval update failed (mail already sent):",
+              updateError,
+            );
           }
 
           // 6. Log it onto the case.
@@ -246,7 +253,10 @@ export const Route = createFileRoute("/webhooks/send-approved")({
             });
 
             if (eventError) {
-              console.error("[send-approved] brain_events log failed (mail already sent):", eventError);
+              console.error(
+                "[send-approved] brain_events log failed (mail already sent):",
+                eventError,
+              );
             }
           } else {
             const { error: timelineError } = await supabaseAdmin.from("case_timeline").insert({
@@ -258,7 +268,10 @@ export const Route = createFileRoute("/webhooks/send-approved")({
             });
 
             if (timelineError) {
-              console.error("[send-approved] timeline log failed (mail already sent):", timelineError);
+              console.error(
+                "[send-approved] timeline log failed (mail already sent):",
+                timelineError,
+              );
             }
           }
 

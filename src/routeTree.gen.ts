@@ -13,13 +13,26 @@ import { Route as UnsubscribeRouteImport } from './routes/unsubscribe'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as LeadsRouteImport } from './routes/leads'
+import { Route as DraftsRouteImport } from './routes/drafts'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
+import { Route as WebhooksSummarizeCaseRouteImport } from './routes/webhooks/summarize-case'
+import { Route as WebhooksSendApprovedRouteImport } from './routes/webhooks/send-approved'
+import { Route as WebhooksPartnerSyncRouteImport } from './routes/webhooks/partner-sync'
+import { Route as WebhooksPartnerReplyRouteImport } from './routes/webhooks/partner-reply'
+import { Route as WebhooksOpsSnapshotRouteImport } from './routes/webhooks/ops-snapshot'
+import { Route as WebhooksMailgunEventsRouteImport } from './routes/webhooks/mailgun-events'
 import { Route as WebhooksLeadIntakeRouteImport } from './routes/webhooks/lead-intake'
+import { Route as WebhooksGmailSyncRouteImport } from './routes/webhooks/gmail-sync'
+import { Route as WebhooksGenerateDraftRouteImport } from './routes/webhooks/generate-draft'
 import { Route as WebhooksConversationLogRouteImport } from './routes/webhooks/conversation-log'
+import { Route as WebhooksCaseReplyRouteImport } from './routes/webhooks/case-reply'
+import { Route as WebhooksCaseCreateRouteImport } from './routes/webhooks/case-create'
+import { Route as WebhooksCaseActionRouteImport } from './routes/webhooks/case-action'
 import { Route as TrackTokenRouteImport } from './routes/track.$token'
+import { Route as ReviewCaseIdRouteImport } from './routes/review.$caseId'
 import { Route as JobsJobIdRouteImport } from './routes/jobs.$jobId'
 import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as EmailUnsubscribeRouteImport } from './routes/email/unsubscribe'
@@ -52,6 +65,11 @@ const LeadsRoute = LeadsRouteImport.update({
   path: '/leads',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DraftsRoute = DraftsRouteImport.update({
+  id: '/drafts',
+  path: '/drafts',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DashboardRoute = DashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
@@ -72,9 +90,49 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AdminRoute,
 } as any)
+const WebhooksSummarizeCaseRoute = WebhooksSummarizeCaseRouteImport.update({
+  id: '/webhooks/summarize-case',
+  path: '/webhooks/summarize-case',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WebhooksSendApprovedRoute = WebhooksSendApprovedRouteImport.update({
+  id: '/webhooks/send-approved',
+  path: '/webhooks/send-approved',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WebhooksPartnerSyncRoute = WebhooksPartnerSyncRouteImport.update({
+  id: '/webhooks/partner-sync',
+  path: '/webhooks/partner-sync',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WebhooksPartnerReplyRoute = WebhooksPartnerReplyRouteImport.update({
+  id: '/webhooks/partner-reply',
+  path: '/webhooks/partner-reply',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WebhooksOpsSnapshotRoute = WebhooksOpsSnapshotRouteImport.update({
+  id: '/webhooks/ops-snapshot',
+  path: '/webhooks/ops-snapshot',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WebhooksMailgunEventsRoute = WebhooksMailgunEventsRouteImport.update({
+  id: '/webhooks/mailgun-events',
+  path: '/webhooks/mailgun-events',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const WebhooksLeadIntakeRoute = WebhooksLeadIntakeRouteImport.update({
   id: '/webhooks/lead-intake',
   path: '/webhooks/lead-intake',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WebhooksGmailSyncRoute = WebhooksGmailSyncRouteImport.update({
+  id: '/webhooks/gmail-sync',
+  path: '/webhooks/gmail-sync',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WebhooksGenerateDraftRoute = WebhooksGenerateDraftRouteImport.update({
+  id: '/webhooks/generate-draft',
+  path: '/webhooks/generate-draft',
   getParentRoute: () => rootRouteImport,
 } as any)
 const WebhooksConversationLogRoute = WebhooksConversationLogRouteImport.update({
@@ -82,9 +140,29 @@ const WebhooksConversationLogRoute = WebhooksConversationLogRouteImport.update({
   path: '/webhooks/conversation-log',
   getParentRoute: () => rootRouteImport,
 } as any)
+const WebhooksCaseReplyRoute = WebhooksCaseReplyRouteImport.update({
+  id: '/webhooks/case-reply',
+  path: '/webhooks/case-reply',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WebhooksCaseCreateRoute = WebhooksCaseCreateRouteImport.update({
+  id: '/webhooks/case-create',
+  path: '/webhooks/case-create',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WebhooksCaseActionRoute = WebhooksCaseActionRouteImport.update({
+  id: '/webhooks/case-action',
+  path: '/webhooks/case-action',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TrackTokenRoute = TrackTokenRouteImport.update({
   id: '/track/$token',
   path: '/track/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReviewCaseIdRoute = ReviewCaseIdRouteImport.update({
+  id: '/review/$caseId',
+  path: '/review/$caseId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const JobsJobIdRoute = JobsJobIdRouteImport.update({
@@ -150,6 +228,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
   '/dashboard': typeof DashboardRoute
+  '/drafts': typeof DraftsRoute
   '/leads': typeof LeadsRoute
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
@@ -159,9 +238,21 @@ export interface FileRoutesByFullPath {
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
   '/invite/$token': typeof InviteTokenRoute
   '/jobs/$jobId': typeof JobsJobIdRoute
+  '/review/$caseId': typeof ReviewCaseIdRoute
   '/track/$token': typeof TrackTokenRoute
+  '/webhooks/case-action': typeof WebhooksCaseActionRoute
+  '/webhooks/case-create': typeof WebhooksCaseCreateRoute
+  '/webhooks/case-reply': typeof WebhooksCaseReplyRoute
   '/webhooks/conversation-log': typeof WebhooksConversationLogRoute
+  '/webhooks/generate-draft': typeof WebhooksGenerateDraftRoute
+  '/webhooks/gmail-sync': typeof WebhooksGmailSyncRoute
   '/webhooks/lead-intake': typeof WebhooksLeadIntakeRoute
+  '/webhooks/mailgun-events': typeof WebhooksMailgunEventsRoute
+  '/webhooks/ops-snapshot': typeof WebhooksOpsSnapshotRoute
+  '/webhooks/partner-reply': typeof WebhooksPartnerReplyRoute
+  '/webhooks/partner-sync': typeof WebhooksPartnerSyncRoute
+  '/webhooks/send-approved': typeof WebhooksSendApprovedRoute
+  '/webhooks/summarize-case': typeof WebhooksSummarizeCaseRoute
   '/admin/': typeof AdminIndexRoute
   '/lovable/email/suppression': typeof LovableEmailSuppressionRoute
   '/lovable/email/auth/preview': typeof LovableEmailAuthPreviewRoute
@@ -173,6 +264,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRoute
+  '/drafts': typeof DraftsRoute
   '/leads': typeof LeadsRoute
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
@@ -182,9 +274,21 @@ export interface FileRoutesByTo {
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
   '/invite/$token': typeof InviteTokenRoute
   '/jobs/$jobId': typeof JobsJobIdRoute
+  '/review/$caseId': typeof ReviewCaseIdRoute
   '/track/$token': typeof TrackTokenRoute
+  '/webhooks/case-action': typeof WebhooksCaseActionRoute
+  '/webhooks/case-create': typeof WebhooksCaseCreateRoute
+  '/webhooks/case-reply': typeof WebhooksCaseReplyRoute
   '/webhooks/conversation-log': typeof WebhooksConversationLogRoute
+  '/webhooks/generate-draft': typeof WebhooksGenerateDraftRoute
+  '/webhooks/gmail-sync': typeof WebhooksGmailSyncRoute
   '/webhooks/lead-intake': typeof WebhooksLeadIntakeRoute
+  '/webhooks/mailgun-events': typeof WebhooksMailgunEventsRoute
+  '/webhooks/ops-snapshot': typeof WebhooksOpsSnapshotRoute
+  '/webhooks/partner-reply': typeof WebhooksPartnerReplyRoute
+  '/webhooks/partner-sync': typeof WebhooksPartnerSyncRoute
+  '/webhooks/send-approved': typeof WebhooksSendApprovedRoute
+  '/webhooks/summarize-case': typeof WebhooksSummarizeCaseRoute
   '/admin': typeof AdminIndexRoute
   '/lovable/email/suppression': typeof LovableEmailSuppressionRoute
   '/lovable/email/auth/preview': typeof LovableEmailAuthPreviewRoute
@@ -198,6 +302,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
   '/dashboard': typeof DashboardRoute
+  '/drafts': typeof DraftsRoute
   '/leads': typeof LeadsRoute
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
@@ -207,9 +312,21 @@ export interface FileRoutesById {
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
   '/invite/$token': typeof InviteTokenRoute
   '/jobs/$jobId': typeof JobsJobIdRoute
+  '/review/$caseId': typeof ReviewCaseIdRoute
   '/track/$token': typeof TrackTokenRoute
+  '/webhooks/case-action': typeof WebhooksCaseActionRoute
+  '/webhooks/case-create': typeof WebhooksCaseCreateRoute
+  '/webhooks/case-reply': typeof WebhooksCaseReplyRoute
   '/webhooks/conversation-log': typeof WebhooksConversationLogRoute
+  '/webhooks/generate-draft': typeof WebhooksGenerateDraftRoute
+  '/webhooks/gmail-sync': typeof WebhooksGmailSyncRoute
   '/webhooks/lead-intake': typeof WebhooksLeadIntakeRoute
+  '/webhooks/mailgun-events': typeof WebhooksMailgunEventsRoute
+  '/webhooks/ops-snapshot': typeof WebhooksOpsSnapshotRoute
+  '/webhooks/partner-reply': typeof WebhooksPartnerReplyRoute
+  '/webhooks/partner-sync': typeof WebhooksPartnerSyncRoute
+  '/webhooks/send-approved': typeof WebhooksSendApprovedRoute
+  '/webhooks/summarize-case': typeof WebhooksSummarizeCaseRoute
   '/admin/': typeof AdminIndexRoute
   '/lovable/email/suppression': typeof LovableEmailSuppressionRoute
   '/lovable/email/auth/preview': typeof LovableEmailAuthPreviewRoute
@@ -224,6 +341,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/dashboard'
+    | '/drafts'
     | '/leads'
     | '/login'
     | '/reset-password'
@@ -233,9 +351,21 @@ export interface FileRouteTypes {
     | '/email/unsubscribe'
     | '/invite/$token'
     | '/jobs/$jobId'
+    | '/review/$caseId'
     | '/track/$token'
+    | '/webhooks/case-action'
+    | '/webhooks/case-create'
+    | '/webhooks/case-reply'
     | '/webhooks/conversation-log'
+    | '/webhooks/generate-draft'
+    | '/webhooks/gmail-sync'
     | '/webhooks/lead-intake'
+    | '/webhooks/mailgun-events'
+    | '/webhooks/ops-snapshot'
+    | '/webhooks/partner-reply'
+    | '/webhooks/partner-sync'
+    | '/webhooks/send-approved'
+    | '/webhooks/summarize-case'
     | '/admin/'
     | '/lovable/email/suppression'
     | '/lovable/email/auth/preview'
@@ -247,6 +377,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/dashboard'
+    | '/drafts'
     | '/leads'
     | '/login'
     | '/reset-password'
@@ -256,9 +387,21 @@ export interface FileRouteTypes {
     | '/email/unsubscribe'
     | '/invite/$token'
     | '/jobs/$jobId'
+    | '/review/$caseId'
     | '/track/$token'
+    | '/webhooks/case-action'
+    | '/webhooks/case-create'
+    | '/webhooks/case-reply'
     | '/webhooks/conversation-log'
+    | '/webhooks/generate-draft'
+    | '/webhooks/gmail-sync'
     | '/webhooks/lead-intake'
+    | '/webhooks/mailgun-events'
+    | '/webhooks/ops-snapshot'
+    | '/webhooks/partner-reply'
+    | '/webhooks/partner-sync'
+    | '/webhooks/send-approved'
+    | '/webhooks/summarize-case'
     | '/admin'
     | '/lovable/email/suppression'
     | '/lovable/email/auth/preview'
@@ -271,6 +414,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/dashboard'
+    | '/drafts'
     | '/leads'
     | '/login'
     | '/reset-password'
@@ -280,9 +424,21 @@ export interface FileRouteTypes {
     | '/email/unsubscribe'
     | '/invite/$token'
     | '/jobs/$jobId'
+    | '/review/$caseId'
     | '/track/$token'
+    | '/webhooks/case-action'
+    | '/webhooks/case-create'
+    | '/webhooks/case-reply'
     | '/webhooks/conversation-log'
+    | '/webhooks/generate-draft'
+    | '/webhooks/gmail-sync'
     | '/webhooks/lead-intake'
+    | '/webhooks/mailgun-events'
+    | '/webhooks/ops-snapshot'
+    | '/webhooks/partner-reply'
+    | '/webhooks/partner-sync'
+    | '/webhooks/send-approved'
+    | '/webhooks/summarize-case'
     | '/admin/'
     | '/lovable/email/suppression'
     | '/lovable/email/auth/preview'
@@ -296,6 +452,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRouteWithChildren
   DashboardRoute: typeof DashboardRoute
+  DraftsRoute: typeof DraftsRoute
   LeadsRoute: typeof LeadsRoute
   LoginRoute: typeof LoginRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
@@ -303,9 +460,21 @@ export interface RootRouteChildren {
   EmailUnsubscribeRoute: typeof EmailUnsubscribeRoute
   InviteTokenRoute: typeof InviteTokenRoute
   JobsJobIdRoute: typeof JobsJobIdRoute
+  ReviewCaseIdRoute: typeof ReviewCaseIdRoute
   TrackTokenRoute: typeof TrackTokenRoute
+  WebhooksCaseActionRoute: typeof WebhooksCaseActionRoute
+  WebhooksCaseCreateRoute: typeof WebhooksCaseCreateRoute
+  WebhooksCaseReplyRoute: typeof WebhooksCaseReplyRoute
   WebhooksConversationLogRoute: typeof WebhooksConversationLogRoute
+  WebhooksGenerateDraftRoute: typeof WebhooksGenerateDraftRoute
+  WebhooksGmailSyncRoute: typeof WebhooksGmailSyncRoute
   WebhooksLeadIntakeRoute: typeof WebhooksLeadIntakeRoute
+  WebhooksMailgunEventsRoute: typeof WebhooksMailgunEventsRoute
+  WebhooksOpsSnapshotRoute: typeof WebhooksOpsSnapshotRoute
+  WebhooksPartnerReplyRoute: typeof WebhooksPartnerReplyRoute
+  WebhooksPartnerSyncRoute: typeof WebhooksPartnerSyncRoute
+  WebhooksSendApprovedRoute: typeof WebhooksSendApprovedRoute
+  WebhooksSummarizeCaseRoute: typeof WebhooksSummarizeCaseRoute
   LovableEmailSuppressionRoute: typeof LovableEmailSuppressionRoute
   LovableEmailAuthPreviewRoute: typeof LovableEmailAuthPreviewRoute
   LovableEmailAuthWebhookRoute: typeof LovableEmailAuthWebhookRoute
@@ -344,6 +513,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LeadsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/drafts': {
+      id: '/drafts'
+      path: '/drafts'
+      fullPath: '/drafts'
+      preLoaderRoute: typeof DraftsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/dashboard': {
       id: '/dashboard'
       path: '/dashboard'
@@ -372,11 +548,67 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminIndexRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/webhooks/summarize-case': {
+      id: '/webhooks/summarize-case'
+      path: '/webhooks/summarize-case'
+      fullPath: '/webhooks/summarize-case'
+      preLoaderRoute: typeof WebhooksSummarizeCaseRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/webhooks/send-approved': {
+      id: '/webhooks/send-approved'
+      path: '/webhooks/send-approved'
+      fullPath: '/webhooks/send-approved'
+      preLoaderRoute: typeof WebhooksSendApprovedRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/webhooks/partner-sync': {
+      id: '/webhooks/partner-sync'
+      path: '/webhooks/partner-sync'
+      fullPath: '/webhooks/partner-sync'
+      preLoaderRoute: typeof WebhooksPartnerSyncRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/webhooks/partner-reply': {
+      id: '/webhooks/partner-reply'
+      path: '/webhooks/partner-reply'
+      fullPath: '/webhooks/partner-reply'
+      preLoaderRoute: typeof WebhooksPartnerReplyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/webhooks/ops-snapshot': {
+      id: '/webhooks/ops-snapshot'
+      path: '/webhooks/ops-snapshot'
+      fullPath: '/webhooks/ops-snapshot'
+      preLoaderRoute: typeof WebhooksOpsSnapshotRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/webhooks/mailgun-events': {
+      id: '/webhooks/mailgun-events'
+      path: '/webhooks/mailgun-events'
+      fullPath: '/webhooks/mailgun-events'
+      preLoaderRoute: typeof WebhooksMailgunEventsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/webhooks/lead-intake': {
       id: '/webhooks/lead-intake'
       path: '/webhooks/lead-intake'
       fullPath: '/webhooks/lead-intake'
       preLoaderRoute: typeof WebhooksLeadIntakeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/webhooks/gmail-sync': {
+      id: '/webhooks/gmail-sync'
+      path: '/webhooks/gmail-sync'
+      fullPath: '/webhooks/gmail-sync'
+      preLoaderRoute: typeof WebhooksGmailSyncRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/webhooks/generate-draft': {
+      id: '/webhooks/generate-draft'
+      path: '/webhooks/generate-draft'
+      fullPath: '/webhooks/generate-draft'
+      preLoaderRoute: typeof WebhooksGenerateDraftRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/webhooks/conversation-log': {
@@ -386,11 +618,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WebhooksConversationLogRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/webhooks/case-reply': {
+      id: '/webhooks/case-reply'
+      path: '/webhooks/case-reply'
+      fullPath: '/webhooks/case-reply'
+      preLoaderRoute: typeof WebhooksCaseReplyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/webhooks/case-create': {
+      id: '/webhooks/case-create'
+      path: '/webhooks/case-create'
+      fullPath: '/webhooks/case-create'
+      preLoaderRoute: typeof WebhooksCaseCreateRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/webhooks/case-action': {
+      id: '/webhooks/case-action'
+      path: '/webhooks/case-action'
+      fullPath: '/webhooks/case-action'
+      preLoaderRoute: typeof WebhooksCaseActionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/track/$token': {
       id: '/track/$token'
       path: '/track/$token'
       fullPath: '/track/$token'
       preLoaderRoute: typeof TrackTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/review/$caseId': {
+      id: '/review/$caseId'
+      path: '/review/$caseId'
+      fullPath: '/review/$caseId'
+      preLoaderRoute: typeof ReviewCaseIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/jobs/$jobId': {
@@ -491,6 +751,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRouteWithChildren,
   DashboardRoute: DashboardRoute,
+  DraftsRoute: DraftsRoute,
   LeadsRoute: LeadsRoute,
   LoginRoute: LoginRoute,
   ResetPasswordRoute: ResetPasswordRoute,
@@ -498,9 +759,21 @@ const rootRouteChildren: RootRouteChildren = {
   EmailUnsubscribeRoute: EmailUnsubscribeRoute,
   InviteTokenRoute: InviteTokenRoute,
   JobsJobIdRoute: JobsJobIdRoute,
+  ReviewCaseIdRoute: ReviewCaseIdRoute,
   TrackTokenRoute: TrackTokenRoute,
+  WebhooksCaseActionRoute: WebhooksCaseActionRoute,
+  WebhooksCaseCreateRoute: WebhooksCaseCreateRoute,
+  WebhooksCaseReplyRoute: WebhooksCaseReplyRoute,
   WebhooksConversationLogRoute: WebhooksConversationLogRoute,
+  WebhooksGenerateDraftRoute: WebhooksGenerateDraftRoute,
+  WebhooksGmailSyncRoute: WebhooksGmailSyncRoute,
   WebhooksLeadIntakeRoute: WebhooksLeadIntakeRoute,
+  WebhooksMailgunEventsRoute: WebhooksMailgunEventsRoute,
+  WebhooksOpsSnapshotRoute: WebhooksOpsSnapshotRoute,
+  WebhooksPartnerReplyRoute: WebhooksPartnerReplyRoute,
+  WebhooksPartnerSyncRoute: WebhooksPartnerSyncRoute,
+  WebhooksSendApprovedRoute: WebhooksSendApprovedRoute,
+  WebhooksSummarizeCaseRoute: WebhooksSummarizeCaseRoute,
   LovableEmailSuppressionRoute: LovableEmailSuppressionRoute,
   LovableEmailAuthPreviewRoute: LovableEmailAuthPreviewRoute,
   LovableEmailAuthWebhookRoute: LovableEmailAuthWebhookRoute,
