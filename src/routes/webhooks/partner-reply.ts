@@ -53,8 +53,7 @@ function bodyToHtml(text: string): string {
 const BASE_FONT_OPEN =
   '<div style="font-family: Arial, Helvetica, sans-serif; font-size: 14px; color: #1E2A3A; line-height: 1.6;">';
 
-const SIGNATURE_HTML =
-  '<br><br>Με εκτίμηση,<br>Δημήτρης<br>MyGreekTax';
+const SIGNATURE_HTML = "<br><br>Με εκτίμηση,<br>Δημήτρης<br>MyGreekTax";
 
 export const Route = createFileRoute("/webhooks/partner-reply")({
   server: {
@@ -83,6 +82,26 @@ export const Route = createFileRoute("/webhooks/partner-reply")({
         if (!token) return Response.json({ error: "Unauthorized" }, { status: 401 });
         const { data: userData, error: userError } = await supabase.auth.getUser(token);
         if (userError || !userData?.user) {
+          return Response.json({ error: "Unauthorized" }, { status: 401 });
+        }
+
+        // getUser() only authenticates the caller; it does not authorize them.
+        // This route sends mail on the business's behalf, so it must be admin
+        // only, not just any logged-in session (a partner account would also
+        // pass the check above). Queried directly against user_roles, with the
+        // same service-role client already in scope, rather than assuming the
+        // shape of a shared helper.
+        const { data: roleRows, error: roleError } = await supabase
+          .from("user_roles")
+          .select("role")
+          .eq("user_id", userData.user.id)
+          .eq("role", "admin")
+          .limit(1);
+        if (roleError) {
+          console.error("[partner-reply] role check failed:", roleError.message);
+          return Response.json({ error: "Unauthorized" }, { status: 401 });
+        }
+        if (!roleRows || roleRows.length === 0) {
           return Response.json({ error: "Unauthorized" }, { status: 401 });
         }
 
