@@ -32,12 +32,14 @@ import { Route as WebhooksCaseReplyRouteImport } from './routes/webhooks/case-re
 import { Route as WebhooksCaseCreateRouteImport } from './routes/webhooks/case-create'
 import { Route as WebhooksCaseActionRouteImport } from './routes/webhooks/case-action'
 import { Route as TrackTokenRouteImport } from './routes/track.$token'
+import { Route as SecureFormTokenRouteImport } from './routes/secure-form.$token'
 import { Route as ReviewCaseIdRouteImport } from './routes/review.$caseId'
 import { Route as JobsJobIdRouteImport } from './routes/jobs.$jobId'
 import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as EmailUnsubscribeRouteImport } from './routes/email/unsubscribe'
 import { Route as AdminTrackingLinksRouteImport } from './routes/admin.tracking-links'
 import { Route as AdminSecureKeysRouteImport } from './routes/admin.secure-keys'
+import { Route as AdminSecureInboxRouteImport } from './routes/admin.secure-inbox'
 import { Route as AdminChangeRequestsRouteImport } from './routes/admin.change-requests'
 import { Route as LovableEmailSuppressionRouteImport } from './routes/lovable/email/suppression'
 import { Route as LovableEmailTransactionalSendRouteImport } from './routes/lovable/email/transactional/send'
@@ -161,6 +163,11 @@ const TrackTokenRoute = TrackTokenRouteImport.update({
   path: '/track/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SecureFormTokenRoute = SecureFormTokenRouteImport.update({
+  id: '/secure-form/$token',
+  path: '/secure-form/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ReviewCaseIdRoute = ReviewCaseIdRouteImport.update({
   id: '/review/$caseId',
   path: '/review/$caseId',
@@ -189,6 +196,11 @@ const AdminTrackingLinksRoute = AdminTrackingLinksRouteImport.update({
 const AdminSecureKeysRoute = AdminSecureKeysRouteImport.update({
   id: '/secure-keys',
   path: '/secure-keys',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminSecureInboxRoute = AdminSecureInboxRouteImport.update({
+  id: '/secure-inbox',
+  path: '/secure-inbox',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminChangeRequestsRoute = AdminChangeRequestsRouteImport.update({
@@ -240,12 +252,14 @@ export interface FileRoutesByFullPath {
   '/reset-password': typeof ResetPasswordRoute
   '/unsubscribe': typeof UnsubscribeRoute
   '/admin/change-requests': typeof AdminChangeRequestsRoute
+  '/admin/secure-inbox': typeof AdminSecureInboxRoute
   '/admin/secure-keys': typeof AdminSecureKeysRoute
   '/admin/tracking-links': typeof AdminTrackingLinksRoute
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
   '/invite/$token': typeof InviteTokenRoute
   '/jobs/$jobId': typeof JobsJobIdRoute
   '/review/$caseId': typeof ReviewCaseIdRoute
+  '/secure-form/$token': typeof SecureFormTokenRoute
   '/track/$token': typeof TrackTokenRoute
   '/webhooks/case-action': typeof WebhooksCaseActionRoute
   '/webhooks/case-create': typeof WebhooksCaseCreateRoute
@@ -277,12 +291,14 @@ export interface FileRoutesByTo {
   '/reset-password': typeof ResetPasswordRoute
   '/unsubscribe': typeof UnsubscribeRoute
   '/admin/change-requests': typeof AdminChangeRequestsRoute
+  '/admin/secure-inbox': typeof AdminSecureInboxRoute
   '/admin/secure-keys': typeof AdminSecureKeysRoute
   '/admin/tracking-links': typeof AdminTrackingLinksRoute
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
   '/invite/$token': typeof InviteTokenRoute
   '/jobs/$jobId': typeof JobsJobIdRoute
   '/review/$caseId': typeof ReviewCaseIdRoute
+  '/secure-form/$token': typeof SecureFormTokenRoute
   '/track/$token': typeof TrackTokenRoute
   '/webhooks/case-action': typeof WebhooksCaseActionRoute
   '/webhooks/case-create': typeof WebhooksCaseCreateRoute
@@ -316,12 +332,14 @@ export interface FileRoutesById {
   '/reset-password': typeof ResetPasswordRoute
   '/unsubscribe': typeof UnsubscribeRoute
   '/admin/change-requests': typeof AdminChangeRequestsRoute
+  '/admin/secure-inbox': typeof AdminSecureInboxRoute
   '/admin/secure-keys': typeof AdminSecureKeysRoute
   '/admin/tracking-links': typeof AdminTrackingLinksRoute
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
   '/invite/$token': typeof InviteTokenRoute
   '/jobs/$jobId': typeof JobsJobIdRoute
   '/review/$caseId': typeof ReviewCaseIdRoute
+  '/secure-form/$token': typeof SecureFormTokenRoute
   '/track/$token': typeof TrackTokenRoute
   '/webhooks/case-action': typeof WebhooksCaseActionRoute
   '/webhooks/case-create': typeof WebhooksCaseCreateRoute
@@ -356,12 +374,14 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/unsubscribe'
     | '/admin/change-requests'
+    | '/admin/secure-inbox'
     | '/admin/secure-keys'
     | '/admin/tracking-links'
     | '/email/unsubscribe'
     | '/invite/$token'
     | '/jobs/$jobId'
     | '/review/$caseId'
+    | '/secure-form/$token'
     | '/track/$token'
     | '/webhooks/case-action'
     | '/webhooks/case-create'
@@ -393,12 +413,14 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/unsubscribe'
     | '/admin/change-requests'
+    | '/admin/secure-inbox'
     | '/admin/secure-keys'
     | '/admin/tracking-links'
     | '/email/unsubscribe'
     | '/invite/$token'
     | '/jobs/$jobId'
     | '/review/$caseId'
+    | '/secure-form/$token'
     | '/track/$token'
     | '/webhooks/case-action'
     | '/webhooks/case-create'
@@ -431,12 +453,14 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/unsubscribe'
     | '/admin/change-requests'
+    | '/admin/secure-inbox'
     | '/admin/secure-keys'
     | '/admin/tracking-links'
     | '/email/unsubscribe'
     | '/invite/$token'
     | '/jobs/$jobId'
     | '/review/$caseId'
+    | '/secure-form/$token'
     | '/track/$token'
     | '/webhooks/case-action'
     | '/webhooks/case-create'
@@ -473,6 +497,7 @@ export interface RootRouteChildren {
   InviteTokenRoute: typeof InviteTokenRoute
   JobsJobIdRoute: typeof JobsJobIdRoute
   ReviewCaseIdRoute: typeof ReviewCaseIdRoute
+  SecureFormTokenRoute: typeof SecureFormTokenRoute
   TrackTokenRoute: typeof TrackTokenRoute
   WebhooksCaseActionRoute: typeof WebhooksCaseActionRoute
   WebhooksCaseCreateRoute: typeof WebhooksCaseCreateRoute
@@ -658,6 +683,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TrackTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/secure-form/$token': {
+      id: '/secure-form/$token'
+      path: '/secure-form/$token'
+      fullPath: '/secure-form/$token'
+      preLoaderRoute: typeof SecureFormTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/review/$caseId': {
       id: '/review/$caseId'
       path: '/review/$caseId'
@@ -698,6 +730,13 @@ declare module '@tanstack/react-router' {
       path: '/secure-keys'
       fullPath: '/admin/secure-keys'
       preLoaderRoute: typeof AdminSecureKeysRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/secure-inbox': {
+      id: '/admin/secure-inbox'
+      path: '/secure-inbox'
+      fullPath: '/admin/secure-inbox'
+      preLoaderRoute: typeof AdminSecureInboxRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/change-requests': {
@@ -754,6 +793,7 @@ declare module '@tanstack/react-router' {
 
 interface AdminRouteChildren {
   AdminChangeRequestsRoute: typeof AdminChangeRequestsRoute
+  AdminSecureInboxRoute: typeof AdminSecureInboxRoute
   AdminSecureKeysRoute: typeof AdminSecureKeysRoute
   AdminTrackingLinksRoute: typeof AdminTrackingLinksRoute
   AdminIndexRoute: typeof AdminIndexRoute
@@ -761,6 +801,7 @@ interface AdminRouteChildren {
 
 const AdminRouteChildren: AdminRouteChildren = {
   AdminChangeRequestsRoute: AdminChangeRequestsRoute,
+  AdminSecureInboxRoute: AdminSecureInboxRoute,
   AdminSecureKeysRoute: AdminSecureKeysRoute,
   AdminTrackingLinksRoute: AdminTrackingLinksRoute,
   AdminIndexRoute: AdminIndexRoute,
@@ -781,6 +822,7 @@ const rootRouteChildren: RootRouteChildren = {
   InviteTokenRoute: InviteTokenRoute,
   JobsJobIdRoute: JobsJobIdRoute,
   ReviewCaseIdRoute: ReviewCaseIdRoute,
+  SecureFormTokenRoute: SecureFormTokenRoute,
   TrackTokenRoute: TrackTokenRoute,
   WebhooksCaseActionRoute: WebhooksCaseActionRoute,
   WebhooksCaseCreateRoute: WebhooksCaseCreateRoute,
