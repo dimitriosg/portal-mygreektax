@@ -1,33 +1,85 @@
 -- Corrections to 20260728143000_credential_intake.sql.
 --
 -- Already applied to igfwqgiscjpshxfsyunq on 2026-07-28. This file exists so the
--- database can be rebuilt from migrations alone. Safe to re-run.
+-- database can be rebuilt from migrations alone. Every statement is idempotent
+-- and safe to re-run.
 --
--- Three fixes:
+-- Run the statements one at a time in the SQL editor. A multi statement batch
+-- against this project silently stops partway and still reports success.
+--
+-- Four fixes:
 --   1. credential_access_log.service_label was never added. The original table was
 --      created before the column existed, and `create table if not exists` does not
 --      alter an existing table, so re-running the corrected file was a silent no-op.
---      credential_mark_accessed references this column and would have failed on first call.
---   2. credential_delete and credential_mark_accessed had EXECUTE granted to anon.
+--   2. credential_mark_accessed gained a p_service_label argument. Each service needs
+--      its own authorisation, so the same credential is revealed repeatedly over
+--      months and "reveal" on its own is not an answerable audit record. The one
+--      argument version is dropped rather than left in place, because an overload
+--      whose second argument defaults to null makes single argument calls ambiguous.
+--   3. credential_delete and credential_mark_accessed had EXECUTE granted to anon.
 --      `revoke all from public` does not remove Supabase's separate default grants
 --      to the anon and authenticated roles. Both functions check has_role internally,
 --      so this was defence in depth rather than an open hole, but anon has no business here.
---   3. Default retention moved from 180 days to 18 months, expressed as a calendar
+--   4. Default retention moved from 180 days to 18 months, expressed as a calendar
 --      interval rather than a day count so it lands on the same day of the month.
 
+-- ---------------------------------------------------------------------------
 -- 1. Missing column
+-- ---------------------------------------------------------------------------
+
 alter table public.credential_access_log
   add column if not exists service_label text;
 
 comment on column public.credential_access_log.service_label is
   'Which service justified this access. Each service needs its own authorisation, so the same credential is used repeatedly over months and "reveal" alone is not an answerable audit record.';
 
--- 2. Tighten grants
-revoke all on function public.credential_delete(uuid) from anon;
-revoke all on function public.credential_mark_accessed(uuid, text) from anon;
+-- ---------------------------------------------------------------------------
+-- 2. credential_mark_accessed now records why
+-- ---------------------------------------------------------------------------
 
--- 3. Default retention: 18 months
+drop function if exists public.credential_mark_accessed(uuid);
+
+create or replace function public.credential_mark_accessed(
+  p_submission_id uuid,
+  p_service_label text default null
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.has_role(auth.uid(), 'admin'::app_role) then
+    raise exception 'not authorised';
+  end if;
+
+  update public.credential_submissions
+     set access_count     = access_count + 1,
+         last_accessed_at = now()
+   where id = p_submission_id;
+
+  insert into public.credential_access_log (submission_id, actor, action, service_label)
+  values (p_submission_id, auth.uid(), 'reveal', p_service_label);
+end $$;
+
+comment on function public.credential_mark_accessed(uuid, text) is
+  'Logs a reveal against a submission, recording which service justified it. Admin only, checked inside the function because it is security definer.';
+
+-- ---------------------------------------------------------------------------
+-- 3. Tighten grants
+-- ---------------------------------------------------------------------------
+
+revoke all on function public.credential_mark_accessed(uuid, text) from public;
+revoke all on function public.credential_mark_accessed(uuid, text) from anon;
+grant execute on function public.credential_mark_accessed(uuid, text) to authenticated;
+
+revoke all on function public.credential_delete(uuid) from anon;
+
+-- ---------------------------------------------------------------------------
+-- 4. Default retention: 18 months
 -- Signature and parameter names are unchanged, so this replaces rather than overloads.
+-- ---------------------------------------------------------------------------
+
 create or replace function public.credential_submit(
   p_token           text,
   p_ciphertext      text,
