@@ -216,11 +216,9 @@ function SecureInboxPage() {
           */}
           <div className="flex items-center justify-between gap-3">
             <CardTitle>Private key</CardTitle>
-            <Link to="/admin/secure-keys">
-              <Button variant="outline" size="sm">
-                Secure keys
-              </Button>
-            </Link>
+            <Button asChild variant="outline" size="sm">
+              <Link to="/admin/secure-keys">Secure keys</Link>
+            </Button>
           </div>
         </CardHeader>
         <CardContent className="space-y-2">
