@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import {
@@ -209,7 +209,17 @@ function SecureInboxPage() {
     <div className="mx-auto max-w-3xl space-y-6 p-6">
       <Card>
         <CardHeader>
-          <CardTitle>Private key</CardTitle>
+          {/*
+            Sits here rather than in a page header because this is the card you are looking
+            at when you discover you need it: a row whose fingerprint you cannot match, or a
+            rotation you are about to run.
+          */}
+          <div className="flex items-center justify-between gap-3">
+            <CardTitle>Private key</CardTitle>
+            <Button asChild variant="outline" size="sm">
+              <Link to="/admin/secure-keys">Secure keys</Link>
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="space-y-2">
           <Textarea

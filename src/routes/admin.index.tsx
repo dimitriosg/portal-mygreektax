@@ -318,12 +318,15 @@ function AdminPage() {
             <p className="text-sm text-muted-foreground">All jobs across all partners.</p>
           </div>
           <div className="flex items-center gap-2">
-            <Link to="/admin/tracking-links">
-              <Button variant="outline">Tracking links</Button>
-            </Link>
-            <Link to="/admin/change-requests">
-              <Button variant="outline">Change requests</Button>
-            </Link>
+            <Button asChild variant="outline">
+              <Link to="/admin/tracking-links">Tracking links</Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link to="/admin/change-requests">Change requests</Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link to="/admin/secure-inbox">Secure inbox</Link>
+            </Button>
             <Dialog open={open} onOpenChange={setOpen}>
               <DialogTrigger asChild>
                 <Button>+ New job</Button>
