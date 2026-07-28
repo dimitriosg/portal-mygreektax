@@ -324,6 +324,9 @@ function AdminPage() {
             <Link to="/admin/change-requests">
               <Button variant="outline">Change requests</Button>
             </Link>
+            <Link to="/admin/secure-inbox">
+              <Button variant="outline">Secure inbox</Button>
+            </Link>
             <Dialog open={open} onOpenChange={setOpen}>
               <DialogTrigger asChild>
                 <Button>+ New job</Button>
