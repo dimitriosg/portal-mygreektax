@@ -160,11 +160,7 @@ export async function decryptPayload(
 
   let plaintext: ArrayBuffer;
   try {
-    const rawAesKey = await s.decrypt(
-      { name: "RSA-OAEP" },
-      privateKey,
-      base64ToBuffer(envelope.k),
-    );
+    const rawAesKey = await s.decrypt({ name: "RSA-OAEP" }, privateKey, base64ToBuffer(envelope.k));
     const aesKey = await s.importKey("raw", rawAesKey, { name: "AES-GCM" }, false, ["decrypt"]);
     plaintext = await s.decrypt(
       { name: "AES-GCM", iv: new Uint8Array(base64ToBuffer(envelope.iv)) },
