@@ -252,7 +252,18 @@ Worth knowing before reading the repo in a hurry:
 
 ## Security
 
-Keep `.env`, `.env.*`, `.dev.vars`, and `.wrangler/` git ignored, and keep `.env.example` free of real values. All production secrets live in Cloudflare Workers Variables and Secrets and in Supabase, never in git. Client TAXISnet credentials are never stored in this system.
+Keep `.env`, `.env.*`, `.dev.vars`, and `.wrangler/` git ignored, and keep `.env.example` free of real values. All production secrets live in Cloudflare Workers Variables and Secrets and in Supabase, never in git.
+
+### Client TAXISnet credentials
+
+A client may choose to hand over their TAXISnet login so that we can register the authorisation (εξουσιοδότηση) that lets our licensed accountant partner file for them. Where that happens, the credential is stored as ciphertext and nothing more:
+
+- The client's browser encrypts the payload at `/secure-form/$token` before anything leaves the page. Supabase only ever receives an envelope.
+- The matching private key is held outside this system entirely. It is not in Supabase, not in a Cloudflare secret, not in an environment variable, and not in this repository. Decryption happens in an admin's browser after the key is pasted in by hand, and the key is dropped on page reload.
+- `src/config/secure-form-key.ts` holds the public key. Anyone who can change that file can substitute their own key and silently read every later submission, so changes to it go through a pull request and get read line by line, never straight to `main`.
+- Every reveal and every deletion is written to `credential_access_log`, with the service that justified it. A reveal that cannot be logged does not happen.
+
+Note that the published privacy policy still says we never store TAXISnet credentials. That page lives on the Astro marketing site rather than in this repository, and it needs updating before this feature is used with a real client.
 
 ---
 

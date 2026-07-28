@@ -281,9 +281,8 @@ function AppShell() {
     if (isDark) root.classList.add("dark");
     else root.classList.remove("dark");
   }, [isDark]);
-  const isPublicClientPage =
-  pathname.startsWith("/track/") || pathname.startsWith("/secure-form/");
-  
+  const isPublicClientPage = pathname.startsWith("/track/") || pathname.startsWith("/secure-form/");
+
   const overdueJobsQuery = useQuery({
     queryKey: ["jobs", user?.id, ""],
     queryFn: () => fetchJobs({ data: {} }),

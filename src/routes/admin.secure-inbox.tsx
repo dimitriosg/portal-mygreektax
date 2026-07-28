@@ -40,19 +40,32 @@ const SERVICES = [
   "Other",
 ];
 
+/** Locale and timezone are both pinned, so the server and the browser render the same string. */
 function formatDate(value: string | null): string {
-  if (!value) return "—";
+  if (!value) return "not set";
   return new Date(value).toLocaleDateString("en-GB", {
     day: "2-digit",
     month: "short",
     year: "numeric",
+    timeZone: "UTC",
   });
+}
+
+/** The label the request was created with, falling back to the first service. */
+function requestService(row: SubmissionRow): string {
+  return row.credential_requests?.service_label ?? SERVICES[0];
+}
+
+/** Keeps a request's own label selectable even if it is not one of the standard services. */
+function serviceOptions(current: string): string[] {
+  return SERVICES.includes(current) ? SERVICES : [current, ...SERVICES];
 }
 
 function SecureInboxPage() {
   const { isAdmin, sessionReady } = useAuth();
   const [privateKey, setPrivateKey] = useState("");
   const [revealed, setRevealed] = useState<Record<string, CredentialPayload>>({});
+  const [revealService, setRevealService] = useState<Record<string, string>>({});
   const [clientId, setClientId] = useState("");
   const [service, setService] = useState(SERVICES[0]);
   const [note, setNote] = useState("");
@@ -124,14 +137,31 @@ function SecureInboxPage() {
       toast.error("This submission has no payload left.");
       return;
     }
+
+    let payload: CredentialPayload;
     try {
-      const payload = await decryptPayload(row.ciphertext, privateKey.trim());
-      setRevealed((prev) => ({ ...prev, [row.id]: payload }));
-      await markAccessed(row.id, service);
-      submissions.refetch();
+      payload = await decryptPayload(row.ciphertext, privateKey.trim());
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not decrypt.");
+      return;
     }
+
+    // The audit row is written before anything is shown. If the log write fails the
+    // credential stays hidden, because a reveal with no audit entry is the one
+    // outcome this feature cannot produce.
+    try {
+      await markAccessed(row.id, revealService[row.id] ?? requestService(row));
+    } catch (err) {
+      toast.error(
+        err instanceof Error
+          ? `Access could not be recorded, so nothing was revealed. ${err.message}`
+          : "Access could not be recorded, so nothing was revealed.",
+      );
+      return;
+    }
+
+    setRevealed((prev) => ({ ...prev, [row.id]: payload }));
+    submissions.refetch();
   };
 
   const destroy = async (row: SubmissionRow) => {
@@ -251,8 +281,8 @@ function SecureInboxPage() {
                 </div>
 
                 <p className="text-sm text-muted-foreground">
-                  Submitted {formatDate(row.submitted_at)} · delete by{" "}
-                  {formatDate(row.retain_until)} · opened {row.access_count}×
+                  Requested for {requestService(row)} · submitted {formatDate(row.submitted_at)} ·
+                  delete by {formatDate(row.retain_until)} · opened {row.access_count}×
                 </p>
 
                 {payload && (
@@ -277,18 +307,37 @@ function SecureInboxPage() {
                         Copy
                       </Button>
                     </div>
-                    <p>ΑΦΜ: {payload.afm || "—"}</p>
-                    <p>ΑΜΚΑ: {payload.amka || "—"}</p>
+                    <p>ΑΦΜ: {payload.afm || "not given"}</p>
+                    <p>ΑΜΚΑ: {payload.amka || "not given"}</p>
                     <p>2FA: {payload.twoFactor}</p>
                     {payload.notes && <p>notes: {payload.notes}</p>}
                   </div>
                 )}
 
-                <div className="flex gap-2">
+                <div className="flex flex-wrap items-end gap-2">
                   {row.status === "active" && !payload && (
-                    <Button size="sm" onClick={() => reveal(row)}>
-                      Reveal
-                    </Button>
+                    <>
+                      <div className="space-y-1.5">
+                        <Label htmlFor={`reveal-service-${row.id}`} className="text-xs">
+                          Opening this for
+                        </Label>
+                        <select
+                          id={`reveal-service-${row.id}`}
+                          value={revealService[row.id] ?? requestService(row)}
+                          onChange={(e) =>
+                            setRevealService((prev) => ({ ...prev, [row.id]: e.target.value }))
+                          }
+                          className="border-input bg-background h-9 rounded-md border px-2 text-sm"
+                        >
+                          {serviceOptions(requestService(row)).map((s) => (
+                            <option key={s}>{s}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <Button size="sm" onClick={() => reveal(row)}>
+                        Reveal
+                      </Button>
+                    </>
                   )}
                   {row.status !== "deleted" && (
                     <Button size="sm" variant="destructive" onClick={() => destroy(row)}>

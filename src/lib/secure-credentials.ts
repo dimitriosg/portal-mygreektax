@@ -1,38 +1,28 @@
 import { supabase } from "@/integrations/supabase/client";
 
 /**
- * The credential tables and functions are newer than src/integrations/supabase/types.ts.
- * Until that file is regenerated from the Supabase dashboard, the typed client does not
- * know about them, so this module holds one narrowly scoped cast and exposes typed
- * wrappers around it. When types.ts is refreshed, delete the cast and the local types,
- * not the wrappers.
+ * Data layer for the encrypted credential intake.
+ *
+ * Nothing in this file ever sees plaintext. The client browser encrypts before
+ * submitCredentials is called, and decryption happens in the admin's browser after
+ * listSubmissions returns. This module only moves ciphertext around and records
+ * who touched it.
  */
 
 type PgError = { message: string } | null;
-
-type Filtered<T> = PromiseLike<{ data: T[] | null; error: PgError }>;
-
-type Selected<T> = Filtered<T> & {
-  order: (column: string, options: { ascending: boolean }) => Filtered<T>;
-};
-
-type Table<T> = {
-  select: (columns: string) => Selected<T>;
-  insert: (values: Record<string, unknown>) => PromiseLike<{ error: PgError }>;
-};
-
-type UntypedClient = {
-  rpc: <T>(fn: string, args?: Record<string, unknown>) => PromiseLike<{ data: T; error: PgError }>;
-  from: <T>(table: string) => Table<T>;
-};
-
-const db = supabase as unknown as UntypedClient;
 
 export type RequestInfo = {
   valid: boolean;
   firstName: string | null;
   serviceLabel: string | null;
 };
+
+/**
+ * The request is embedded so a reveal can be logged against the service the link was
+ * created for, rather than against whatever the create-link panel happens to be showing.
+ */
+const SUBMISSION_COLUMNS =
+  "id, client_id, ciphertext, key_fingerprint, status, submitted_at, retain_until, access_count, last_accessed_at, clients(full_name, client_code), credential_requests(service_label)";
 
 export type SubmissionRow = {
   id: string;
@@ -45,12 +35,7 @@ export type SubmissionRow = {
   access_count: number;
   last_accessed_at: string | null;
   clients: { full_name: string | null; client_code: string | null } | null;
-};
-
-type OpenRow = {
-  out_valid: boolean;
-  out_first_name: string | null;
-  out_service_label: string | null;
+  credential_requests: { service_label: string | null } | null;
 };
 
 function fail(error: PgError, fallback: string): never {
@@ -67,7 +52,7 @@ export function newRequestToken(): string {
 
 /** Public. Validates a form token and returns display-only information. */
 export async function openRequest(token: string): Promise<RequestInfo> {
-  const { data, error } = await db.rpc<OpenRow[]>("credential_request_open", { p_token: token });
+  const { data, error } = await supabase.rpc("credential_request_open", { p_token: token });
   if (error) fail(error, "Could not open this form.");
   const row = data?.[0];
   return {
@@ -83,7 +68,7 @@ export async function submitCredentials(input: {
   ciphertext: string;
   keyFingerprint: string;
 }): Promise<string> {
-  const { data, error } = await db.rpc<string>("credential_submit", {
+  const { data, error } = await supabase.rpc("credential_submit", {
     p_token: input.token,
     p_ciphertext: input.ciphertext,
     p_key_fingerprint: input.keyFingerprint,
@@ -94,11 +79,9 @@ export async function submitCredentials(input: {
 
 /** Admin. */
 export async function listSubmissions(): Promise<SubmissionRow[]> {
-  const { data, error } = await db
-    .from<SubmissionRow>("credential_submissions")
-    .select(
-      "id, client_id, ciphertext, key_fingerprint, status, submitted_at, retain_until, access_count, last_accessed_at, clients(full_name, client_code)",
-    )
+  const { data, error } = await supabase
+    .from("credential_submissions")
+    .select(SUBMISSION_COLUMNS)
     .order("submitted_at", { ascending: false });
   if (error) fail(error, "Could not load submissions.");
   return data ?? [];
@@ -111,7 +94,7 @@ export async function createRequest(input: {
   note: string;
 }): Promise<string> {
   const token = newRequestToken();
-  const { error } = await db.from("credential_requests").insert({
+  const { error } = await supabase.from("credential_requests").insert({
     token,
     client_id: input.clientId,
     service_label: input.serviceLabel,
@@ -123,15 +106,15 @@ export async function createRequest(input: {
 
 /** Admin. Records that a payload was decrypted, and why. */
 export async function markAccessed(submissionId: string, serviceLabel: string): Promise<void> {
-  const { error } = await db.rpc("credential_mark_accessed", {
+  const { error } = await supabase.rpc("credential_mark_accessed", {
     p_submission_id: submissionId,
-    p_service_label: serviceLabel || null,
+    p_service_label: serviceLabel || undefined,
   });
   if (error) fail(error, "Could not record access.");
 }
 
 /** Admin. Wipes the ciphertext and keeps the row as evidence of destruction. */
 export async function deleteSubmission(submissionId: string): Promise<void> {
-  const { error } = await db.rpc("credential_delete", { p_submission_id: submissionId });
+  const { error } = await supabase.rpc("credential_delete", { p_submission_id: submissionId });
   if (error) fail(error, "Could not delete.");
 }

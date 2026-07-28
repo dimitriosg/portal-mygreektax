@@ -897,6 +897,154 @@ export type Database = {
         };
         Relationships: [];
       };
+      credential_access_log: {
+        Row: {
+          action: string;
+          actor: string | null;
+          at: string;
+          id: string;
+          service_label: string | null;
+          submission_id: string;
+        };
+        Insert: {
+          action: string;
+          actor?: string | null;
+          at?: string;
+          id?: string;
+          service_label?: string | null;
+          submission_id: string;
+        };
+        Update: {
+          action?: string;
+          actor?: string | null;
+          at?: string;
+          id?: string;
+          service_label?: string | null;
+          submission_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "credential_access_log_submission_id_fkey";
+            columns: ["submission_id"];
+            isOneToOne: false;
+            referencedRelation: "credential_submissions";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      credential_requests: {
+        Row: {
+          client_id: string | null;
+          created_at: string;
+          created_by: string | null;
+          expires_at: string;
+          first_opened_at: string | null;
+          id: string;
+          last_opened_at: string | null;
+          note: string | null;
+          open_count: number;
+          revoked_at: string | null;
+          service_label: string | null;
+          token: string;
+        };
+        Insert: {
+          client_id?: string | null;
+          created_at?: string;
+          created_by?: string | null;
+          expires_at?: string;
+          first_opened_at?: string | null;
+          id?: string;
+          last_opened_at?: string | null;
+          note?: string | null;
+          open_count?: number;
+          revoked_at?: string | null;
+          service_label?: string | null;
+          token: string;
+        };
+        Update: {
+          client_id?: string | null;
+          created_at?: string;
+          created_by?: string | null;
+          expires_at?: string;
+          first_opened_at?: string | null;
+          id?: string;
+          last_opened_at?: string | null;
+          note?: string | null;
+          open_count?: number;
+          revoked_at?: string | null;
+          service_label?: string | null;
+          token?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "credential_requests_client_id_fkey";
+            columns: ["client_id"];
+            isOneToOne: false;
+            referencedRelation: "clients";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      credential_submissions: {
+        Row: {
+          access_count: number;
+          ciphertext: string | null;
+          client_id: string | null;
+          deleted_at: string | null;
+          deleted_by: string | null;
+          id: string;
+          key_fingerprint: string;
+          last_accessed_at: string | null;
+          request_id: string;
+          retain_until: string | null;
+          status: string;
+          submitted_at: string;
+        };
+        Insert: {
+          access_count?: number;
+          ciphertext?: string | null;
+          client_id?: string | null;
+          deleted_at?: string | null;
+          deleted_by?: string | null;
+          id?: string;
+          key_fingerprint: string;
+          last_accessed_at?: string | null;
+          request_id: string;
+          retain_until?: string | null;
+          status?: string;
+          submitted_at?: string;
+        };
+        Update: {
+          access_count?: number;
+          ciphertext?: string | null;
+          client_id?: string | null;
+          deleted_at?: string | null;
+          deleted_by?: string | null;
+          id?: string;
+          key_fingerprint?: string;
+          last_accessed_at?: string | null;
+          request_id?: string;
+          retain_until?: string | null;
+          status?: string;
+          submitted_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "credential_submissions_client_id_fkey";
+            columns: ["client_id"];
+            isOneToOne: false;
+            referencedRelation: "clients";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "credential_submissions_request_id_fkey";
+            columns: ["request_id"];
+            isOneToOne: false;
+            referencedRelation: "credential_requests";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       email_send_log: {
         Row: {
           created_at: string;
@@ -1676,6 +1824,31 @@ export type Database = {
     };
     Functions: {
       archive_case: { Args: { p_conversation_id: string }; Returns: undefined };
+      credential_delete: {
+        Args: { p_submission_id: string };
+        Returns: undefined;
+      };
+      credential_mark_accessed: {
+        Args: { p_service_label?: string; p_submission_id: string };
+        Returns: undefined;
+      };
+      credential_request_open: {
+        Args: { p_token: string };
+        Returns: {
+          out_first_name: string;
+          out_service_label: string;
+          out_valid: boolean;
+        }[];
+      };
+      credential_submit: {
+        Args: {
+          p_ciphertext: string;
+          p_key_fingerprint: string;
+          p_retain_days?: number;
+          p_token: string;
+        };
+        Returns: string;
+      };
       delete_case: { Args: { p_conversation_id: string }; Returns: undefined };
       delete_email: {
         Args: { message_id: number; queue_name: string };

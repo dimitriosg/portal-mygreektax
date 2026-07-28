@@ -47,7 +47,7 @@ function SecureFormPage() {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ["secure-form", token],
     queryFn: () => openRequest(token),
     retry: false,
@@ -68,6 +68,21 @@ function SecureFormPage() {
         <h1 className="text-lg font-medium">This form is not ready yet</h1>
         <p className="text-sm text-muted-foreground">
           Please contact us at hello@mygreektax.eu and we will send you a working link.
+        </p>
+      </Shell>
+    );
+  }
+
+  // A failed request and an invalid token are not the same thing. Telling someone on a
+  // flaky connection that their link expired is how they give up and email us a password.
+  if (isError) {
+    return (
+      <Shell>
+        <h1 className="text-lg font-medium">We could not load this form</h1>
+        <p className="text-sm text-muted-foreground">
+          This looks like a connection problem rather than a problem with your link. Please refresh
+          the page and try again. If it keeps happening, reply to our email and we will sort it out.
+          Please do not send your password by email in the meantime.
         </p>
       </Shell>
     );
@@ -162,9 +177,35 @@ function SecureFormPage() {
         </p>
       </div>
 
-      <div className="rounded-md bg-muted p-3 text-sm text-muted-foreground">
-        We use this login once, to register the authorisation that lets our licensed accountant file
-        for you. We do not file anything with it ourselves.
+      <div className="space-y-4 rounded-md bg-muted p-4 text-sm text-muted-foreground">
+        <p>
+          This form is end-to-end encrypted. Your answers are encrypted in your browser before they
+          are sent, which means the people who run this platform cannot read them. Only MyGreekTax
+          can.
+        </p>
+
+        <div className="space-y-1.5">
+          <p className="font-medium text-foreground">Why we are asking</p>
+          <p>
+            All filing work is carried out by our licensed Greek accountant partner, working under a
+            formal authorisation (εξουσιοδότηση) registered on your account with the Greek tax
+            authority. That authorisation has to be set up once per service, through myAADE, and
+            myAADE is only available in Greek.
+          </p>
+        </div>
+
+        <div className="space-y-1.5">
+          <p className="font-medium text-foreground">What we do with your login</p>
+          <p>
+            We use it for one thing only: registering the authorisation. We do not file anything
+            with it, and we do not browse your records with it.
+          </p>
+        </div>
+
+        <p>
+          Please do not send your password by email, WhatsApp, or any messaging app, either now or
+          later.
+        </p>
       </div>
 
       <form onSubmit={submit} className="space-y-4">
@@ -232,18 +273,46 @@ function SecureFormPage() {
           <Textarea id="notes" value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
         </div>
 
-        <div className="flex items-start gap-3 border-t pt-4">
-          <Checkbox
-            id="consent"
-            checked={consent}
-            onCheckedChange={(v) => setConsent(v === true)}
-            className="mt-1"
-          />
-          <Label htmlFor="consent" className="text-sm font-normal text-muted-foreground">
-            I am providing this voluntarily so MyGreekTax can register an authorisation on my
-            behalf. It will be used only for that, kept encrypted, deleted on request, and never
-            shared.
-          </Label>
+        <div className="space-y-3 border-t pt-4">
+          <div className="flex items-start gap-3">
+            <Checkbox
+              id="consent"
+              checked={consent}
+              onCheckedChange={(v) => setConsent(v === true)}
+              className="mt-1"
+            />
+            <Label htmlFor="consent" className="text-sm font-normal text-muted-foreground">
+              I am providing my TAXISnet login voluntarily, so that MyGreekTax can register an
+              authorisation (εξουσιοδότηση) on my account on my behalf.
+            </Label>
+          </div>
+
+          <div className="space-y-2 pl-7 text-sm text-muted-foreground">
+            <p>I understand that:</p>
+            <ul className="list-disc space-y-1.5 pl-4">
+              <li>
+                My login will be used only to set up that authorisation, and for nothing else.
+              </li>
+              <li>It will be stored in an encrypted password manager and deleted on request.</li>
+              <li>
+                It will not be shared with anyone, including the accountant partner, who works
+                through the authorisation and not through my password.
+              </li>
+              <li>
+                The regulated filing itself is carried out by a licensed accountant registered with
+                the Economic Chamber of Greece (OEE), under that authorisation.
+              </li>
+              <li>
+                I can withdraw this consent and ask for deletion at any time by emailing
+                hello@mygreektax.eu.
+              </li>
+              <li>
+                The regulated filing is still carried out by our licensed accountant partner under a
+                formal authorisation. Providing these credentials is a convenience I have chosen,
+                and it does not change who performs the work or how it is performed.
+              </li>
+            </ul>
+          </div>
         </div>
 
         <Button type="submit" className="w-full" disabled={busy}>
