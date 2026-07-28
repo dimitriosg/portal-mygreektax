@@ -143,14 +143,17 @@ function SecureFormPage() {
       };
       const ciphertext = await encryptPayload(payload, SECURE_FORM_PUBLIC_KEY);
 
-      setPassword("");
-      setUsername("");
-
       await submitCredentials({
         token,
         ciphertext,
         keyFingerprint: SECURE_FORM_KEY_FINGERPRINT,
       });
+
+      // Cleared only once the send has succeeded. Clearing beforehand bought no real
+      // hygiene, because the plaintext is still held in payload for the whole flight,
+      // and it cost the client both hard fields on any failed submit.
+      setPassword("");
+      setUsername("");
       setDone(true);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Something went wrong. Please try again.");

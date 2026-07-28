@@ -51,13 +51,18 @@ function formatDate(value: string | null): string {
   });
 }
 
-/** The label the request was created with, falling back to the first service. */
-function requestService(row: SubmissionRow): string {
-  return row.credential_requests?.service_label ?? SERVICES[0];
+/**
+ * The label the request was created with, or null. Deliberately not defaulted: this
+ * value reaches credential_access_log, and a guessed purpose is worse than no record
+ * because it reads exactly like a real one.
+ */
+function requestService(row: SubmissionRow): string | null {
+  return row.credential_requests?.service_label ?? null;
 }
 
 /** Keeps a request's own label selectable even if it is not one of the standard services. */
-function serviceOptions(current: string): string[] {
+function serviceOptions(current: string | null): string[] {
+  if (!current) return SERVICES;
   return SERVICES.includes(current) ? SERVICES : [current, ...SERVICES];
 }
 
@@ -66,6 +71,7 @@ function SecureInboxPage() {
   const [privateKey, setPrivateKey] = useState("");
   const [revealed, setRevealed] = useState<Record<string, CredentialPayload>>({});
   const [revealService, setRevealService] = useState<Record<string, string>>({});
+  const [revealing, setRevealing] = useState<Record<string, boolean>>({});
   const [clientId, setClientId] = useState("");
   const [service, setService] = useState(SERVICES[0]);
   const [note, setNote] = useState("");
@@ -129,6 +135,10 @@ function SecureInboxPage() {
   };
 
   const reveal = async (row: SubmissionRow) => {
+    // Without this guard a double click writes two audit rows for one intended opening,
+    // because setRevealed has not landed yet when the second call starts.
+    if (revealing[row.id]) return;
+
     if (!privateKey.trim()) {
       toast.error("Paste your private key first.");
       return;
@@ -138,30 +148,45 @@ function SecureInboxPage() {
       return;
     }
 
-    let payload: CredentialPayload;
-    try {
-      payload = await decryptPayload(row.ciphertext, privateKey.trim());
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not decrypt.");
+    const serviceLabel = revealService[row.id] ?? requestService(row);
+    if (!serviceLabel) {
+      toast.error("Choose which service you are opening this for.");
       return;
     }
 
-    // The audit row is written before anything is shown. If the log write fails the
-    // credential stays hidden, because a reveal with no audit entry is the one
-    // outcome this feature cannot produce.
+    setRevealing((prev) => ({ ...prev, [row.id]: true }));
     try {
-      await markAccessed(row.id, revealService[row.id] ?? requestService(row));
-    } catch (err) {
-      toast.error(
-        err instanceof Error
-          ? `Access could not be recorded, so nothing was revealed. ${err.message}`
-          : "Access could not be recorded, so nothing was revealed.",
-      );
-      return;
-    }
+      let payload: CredentialPayload;
+      try {
+        payload = await decryptPayload(row.ciphertext, privateKey.trim());
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Could not decrypt.");
+        return;
+      }
 
-    setRevealed((prev) => ({ ...prev, [row.id]: payload }));
-    submissions.refetch();
+      // The audit row is written before anything is shown. If the log write fails the
+      // credential stays hidden, because a reveal with no audit entry is the one
+      // outcome this feature cannot produce.
+      try {
+        await markAccessed(row.id, serviceLabel);
+      } catch (err) {
+        toast.error(
+          err instanceof Error
+            ? `Access could not be recorded, so nothing was revealed. ${err.message}`
+            : "Access could not be recorded, so nothing was revealed.",
+        );
+        return;
+      }
+
+      setRevealed((prev) => ({ ...prev, [row.id]: payload }));
+      submissions.refetch();
+    } finally {
+      setRevealing((prev) => {
+        const next = { ...prev };
+        delete next[row.id];
+        return next;
+      });
+    }
   };
 
   const destroy = async (row: SubmissionRow) => {
@@ -200,6 +225,20 @@ function SecureInboxPage() {
           </p>
         </CardContent>
       </Card>
+
+      {/*
+        Not a hard block, because testing this flow against a dummy client is exactly how
+        it gets verified. It is a reminder at the one moment it is relevant: the click
+        that produces a link somebody could be sent.
+      */}
+      <div className="rounded-md border border-destructive/50 p-3 text-sm">
+        <p className="font-medium">Not ready for a real client yet</p>
+        <p className="text-muted-foreground">
+          The published privacy policy still says we never store TAXISnet credentials, which this
+          form contradicts. Correct and publish that page before sending a link to anyone real. Test
+          links against a dummy client are fine.
+        </p>
+      </div>
 
       <Card>
         <CardHeader>
@@ -261,9 +300,25 @@ function SecureInboxPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           {submissions.isLoading && <Skeleton className="h-24 w-full" />}
-          {!submissions.isLoading && (submissions.data ?? []).length === 0 && (
-            <p className="text-sm text-muted-foreground">Nothing submitted yet.</p>
+          {/* An inbox that failed to load must not look like an inbox that is empty. */}
+          {!submissions.isLoading && submissions.isError && (
+            <div className="space-y-2 rounded-md border border-destructive/50 p-3">
+              <p className="text-sm font-medium">Could not load submissions.</p>
+              <p className="text-sm text-muted-foreground">
+                {submissions.error instanceof Error
+                  ? submissions.error.message
+                  : "Something went wrong."}
+              </p>
+              <Button size="sm" variant="outline" onClick={() => submissions.refetch()}>
+                Try again
+              </Button>
+            </div>
           )}
+          {!submissions.isLoading &&
+            !submissions.isError &&
+            (submissions.data ?? []).length === 0 && (
+              <p className="text-sm text-muted-foreground">Nothing submitted yet.</p>
+            )}
           {(submissions.data ?? []).map((row) => {
             const payload = revealed[row.id];
             return (
@@ -281,8 +336,9 @@ function SecureInboxPage() {
                 </div>
 
                 <p className="text-sm text-muted-foreground">
-                  Requested for {requestService(row)} · submitted {formatDate(row.submitted_at)} ·
-                  delete by {formatDate(row.retain_until)} · opened {row.access_count}×
+                  Requested for {requestService(row) ?? "no service recorded"} · submitted{" "}
+                  {formatDate(row.submitted_at)} · delete by {formatDate(row.retain_until)} · opened{" "}
+                  {row.access_count}×
                 </p>
 
                 {payload && (
@@ -323,19 +379,26 @@ function SecureInboxPage() {
                         </Label>
                         <select
                           id={`reveal-service-${row.id}`}
-                          value={revealService[row.id] ?? requestService(row)}
+                          value={revealService[row.id] ?? requestService(row) ?? ""}
                           onChange={(e) =>
                             setRevealService((prev) => ({ ...prev, [row.id]: e.target.value }))
                           }
                           className="border-input bg-background h-9 rounded-md border px-2 text-sm"
                         >
+                          <option value="" disabled>
+                            Choose a service
+                          </option>
                           {serviceOptions(requestService(row)).map((s) => (
                             <option key={s}>{s}</option>
                           ))}
                         </select>
                       </div>
-                      <Button size="sm" onClick={() => reveal(row)}>
-                        Reveal
+                      <Button
+                        size="sm"
+                        onClick={() => reveal(row)}
+                        disabled={Boolean(revealing[row.id])}
+                      >
+                        {revealing[row.id] ? "Opening…" : "Reveal"}
                       </Button>
                     </>
                   )}

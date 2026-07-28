@@ -252,7 +252,9 @@ Worth knowing before reading the repo in a hurry:
 
 ## Security
 
-Keep `.env`, `.env.*`, `.dev.vars`, and `.wrangler/` git ignored, and keep `.env.example` free of real values. All production secrets live in Cloudflare Workers Variables and Secrets and in Supabase, never in git.
+Keep `.env`, `.env.*`, `.dev.vars`, and `.wrangler/` git ignored, and keep `.env.example` free of real values. Every secret the application itself uses lives in Cloudflare Workers Variables and Secrets and in Supabase, never in git.
+
+There is exactly one deliberate exception, and it is the point of the design rather than an oversight: the private key that decrypts client credential submissions. It is described below and is held outside all three.
 
 ### Client TAXISnet credentials
 
@@ -263,7 +265,14 @@ A client may choose to hand over their TAXISnet login so that we can register th
 - `src/config/secure-form-key.ts` holds the public key. Anyone who can change that file can substitute their own key and silently read every later submission, so changes to it go through a pull request and get read line by line, never straight to `main`.
 - Every reveal and every deletion is written to `credential_access_log`, with the service that justified it. A reveal that cannot be logged does not happen.
 
-Note that the published privacy policy still says we never store TAXISnet credentials. That page lives on the Astro marketing site rather than in this repository, and it needs updating before this feature is used with a real client.
+**Private key custody.** The authoritative copy is a Bitwarden secure note named "MyGreekTax secure form private key", owned by the portal administrator. It must sit in a personal vault, not an organisation vault, because organisation items live in collections and collections are a sharing mechanism.
+
+**Rotation** is additive, never destructive. Generate a new pair at `/admin/secure-keys`, store the new private key alongside the old one, and update the public key and fingerprint in `src/config/secure-form-key.ts` by pull request. Every submission records the fingerprint of the key that encrypted it, so rows written before a rotation stay readable with the retired private key. Retire a private key only once no undeleted submission still carries its fingerprint.
+
+**There is no recovery.** Losing the private key makes every stored submission permanently unreadable. The only remedy is asking affected clients to submit again, so the note should be covered by whatever backup the vault itself provides.
+
+> [!WARNING]
+> Do not issue a `/secure-form/` link to a real client yet. The published privacy policy still tells clients we never store TAXISnet credentials, which this feature contradicts. That page lives on the Astro marketing site rather than in this repository. Correcting and publishing it is a prerequisite, not a follow-up.
 
 ---
 
