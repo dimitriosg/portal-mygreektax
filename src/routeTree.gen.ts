@@ -37,6 +37,7 @@ import { Route as JobsJobIdRouteImport } from './routes/jobs.$jobId'
 import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as EmailUnsubscribeRouteImport } from './routes/email/unsubscribe'
 import { Route as AdminTrackingLinksRouteImport } from './routes/admin.tracking-links'
+import { Route as AdminSecureKeysRouteImport } from './routes/admin.secure-keys'
 import { Route as AdminChangeRequestsRouteImport } from './routes/admin.change-requests'
 import { Route as LovableEmailSuppressionRouteImport } from './routes/lovable/email/suppression'
 import { Route as LovableEmailTransactionalSendRouteImport } from './routes/lovable/email/transactional/send'
@@ -185,6 +186,11 @@ const AdminTrackingLinksRoute = AdminTrackingLinksRouteImport.update({
   path: '/tracking-links',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminSecureKeysRoute = AdminSecureKeysRouteImport.update({
+  id: '/secure-keys',
+  path: '/secure-keys',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminChangeRequestsRoute = AdminChangeRequestsRouteImport.update({
   id: '/change-requests',
   path: '/change-requests',
@@ -234,6 +240,7 @@ export interface FileRoutesByFullPath {
   '/reset-password': typeof ResetPasswordRoute
   '/unsubscribe': typeof UnsubscribeRoute
   '/admin/change-requests': typeof AdminChangeRequestsRoute
+  '/admin/secure-keys': typeof AdminSecureKeysRoute
   '/admin/tracking-links': typeof AdminTrackingLinksRoute
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
   '/invite/$token': typeof InviteTokenRoute
@@ -270,6 +277,7 @@ export interface FileRoutesByTo {
   '/reset-password': typeof ResetPasswordRoute
   '/unsubscribe': typeof UnsubscribeRoute
   '/admin/change-requests': typeof AdminChangeRequestsRoute
+  '/admin/secure-keys': typeof AdminSecureKeysRoute
   '/admin/tracking-links': typeof AdminTrackingLinksRoute
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
   '/invite/$token': typeof InviteTokenRoute
@@ -308,6 +316,7 @@ export interface FileRoutesById {
   '/reset-password': typeof ResetPasswordRoute
   '/unsubscribe': typeof UnsubscribeRoute
   '/admin/change-requests': typeof AdminChangeRequestsRoute
+  '/admin/secure-keys': typeof AdminSecureKeysRoute
   '/admin/tracking-links': typeof AdminTrackingLinksRoute
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
   '/invite/$token': typeof InviteTokenRoute
@@ -347,6 +356,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/unsubscribe'
     | '/admin/change-requests'
+    | '/admin/secure-keys'
     | '/admin/tracking-links'
     | '/email/unsubscribe'
     | '/invite/$token'
@@ -383,6 +393,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/unsubscribe'
     | '/admin/change-requests'
+    | '/admin/secure-keys'
     | '/admin/tracking-links'
     | '/email/unsubscribe'
     | '/invite/$token'
@@ -420,6 +431,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/unsubscribe'
     | '/admin/change-requests'
+    | '/admin/secure-keys'
     | '/admin/tracking-links'
     | '/email/unsubscribe'
     | '/invite/$token'
@@ -681,6 +693,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminTrackingLinksRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/secure-keys': {
+      id: '/admin/secure-keys'
+      path: '/secure-keys'
+      fullPath: '/admin/secure-keys'
+      preLoaderRoute: typeof AdminSecureKeysRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/change-requests': {
       id: '/admin/change-requests'
       path: '/change-requests'
@@ -735,12 +754,14 @@ declare module '@tanstack/react-router' {
 
 interface AdminRouteChildren {
   AdminChangeRequestsRoute: typeof AdminChangeRequestsRoute
+  AdminSecureKeysRoute: typeof AdminSecureKeysRoute
   AdminTrackingLinksRoute: typeof AdminTrackingLinksRoute
   AdminIndexRoute: typeof AdminIndexRoute
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
   AdminChangeRequestsRoute: AdminChangeRequestsRoute,
+  AdminSecureKeysRoute: AdminSecureKeysRoute,
   AdminTrackingLinksRoute: AdminTrackingLinksRoute,
   AdminIndexRoute: AdminIndexRoute,
 }

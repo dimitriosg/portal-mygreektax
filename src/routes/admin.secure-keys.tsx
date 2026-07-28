@@ -63,16 +63,16 @@ function SecureKeysPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            Generates an RSA-OAEP 4096 keypair in this browser. Nothing is sent anywhere. The
-            public key goes into the repo so client browsers can encrypt with it. The private key
-            goes into Bitwarden and nowhere else, in particular not into the repo, not into a
-            Cloudflare secret, and not into an environment variable. Putting it on a server would
-            defeat the entire design.
+            Generates an RSA-OAEP 4096 keypair in this browser. Nothing is sent anywhere. The public
+            key goes into the repo so client browsers can encrypt with it. The private key goes into
+            Bitwarden and nowhere else, in particular not into the repo, not into a Cloudflare
+            secret, and not into an environment variable. Putting it on a server would defeat the
+            entire design.
           </p>
           <p className="text-sm text-muted-foreground">
             Generating a new pair does not invalidate the old one. Rotate by replacing the public
-            key in config and keeping the old private key in Bitwarden until every payload
-            encrypted with it has been read and deleted.
+            key in config and keeping the old private key in Bitwarden until every payload encrypted
+            with it has been read and deleted.
           </p>
           <Button onClick={generate} disabled={busy}>
             {busy ? "Generating…" : pair ? "Generate another pair" : "Generate keypair"}
@@ -89,7 +89,11 @@ function SecureKeysPage() {
             <div className="space-y-2">
               <Label>Public key — paste into src/config/secure-form-key.ts</Label>
               <Textarea readOnly value={pair.publicKey} rows={5} className="font-mono text-xs" />
-              <Button variant="outline" size="sm" onClick={() => copy(pair.publicKey, "Public key")}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => copy(pair.publicKey, "Public key")}
+              >
                 Copy public key
               </Button>
             </div>
