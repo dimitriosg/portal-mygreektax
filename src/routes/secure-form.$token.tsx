@@ -296,7 +296,11 @@ function SecureFormPage() {
               <li>
                 My login will be used only to set up that authorisation, and for nothing else.
               </li>
-              <li>It will be stored in an encrypted password manager and deleted on request.</li>
+              <li>
+                It will be stored only as ciphertext, which the systems holding it cannot read, and
+                deleted on request. If I do not ask sooner, it is deleted automatically after 180
+                days.
+              </li>
               <li>
                 It will not be shared with anyone, including the accountant partner, who works
                 through the authorisation and not through my password.
