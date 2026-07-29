@@ -271,8 +271,10 @@ A client may choose to hand over their TAXISnet login so that we can register th
 
 **There is no recovery.** Losing the private key makes every stored submission permanently unreadable. The only remedy is asking affected clients to submit again, so the note should be covered by whatever backup the vault itself provides.
 
-> [!WARNING]
-> Do not issue a `/secure-form/` link to a real client yet. The published privacy policy still tells clients we never store TAXISnet credentials, which this feature contradicts. That page lives on the Astro marketing site rather than in this repository. Correcting and publishing it is a prerequisite, not a follow-up.
+> [!NOTE]
+> The privacy policy prerequisite is done. `site-mygreektax` [#11](https://github.com/dimitriosg/site-mygreektax/pull/11) added a TAXISnet credentials section covering client-side encryption, the key held outside these systems, single-purpose use, access logging, the 30-day link expiry and 180-day retention, and consent as the lawful basis. The homepage FAQ, which used to answer this question with a flat "no", now describes the optional route. Links may be issued to real clients.
+>
+> That page lives on the Astro marketing site rather than in this repository, so anything here that changes what happens to a submission — retention, who can decrypt, what it is used for — needs the policy changed alongside it, not afterwards.
 
 ---
 
