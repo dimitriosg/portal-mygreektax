@@ -90,10 +90,18 @@ export function CasePartnerReplyBox({ conversationId, caseSerialId, clientStage,
   // in scope and every other partner's filtered out. Changing the recipient
   // afterwards is one click, and sending it as-is would put one partner's
   // context in front of another, which R6 forbids outright.
+  //
+  // Two distinct states, and neither may be treated as safe. A draft written
+  // for someone else is a known mismatch. A draft with no recorded recipient is
+  // UNKNOWN, not fine: the whole point of the check is that we cannot tell
+  // whose context it carries, so absence of evidence gets its own warning
+  // rather than falling through as a pass.
   const draftedForOther =
     !!draft?.drafted_for_email &&
     !!toEmail &&
     draft.drafted_for_email.toLowerCase() !== toEmail.toLowerCase();
+
+  const draftUnattributed = !!draft && !draft.drafted_for_email;
 
   useEffect(() => {
     let cancelled = false;
@@ -349,6 +357,16 @@ export function CasePartnerReplyBox({ conversationId, caseSerialId, clientStage,
             <span style={{ fontWeight: 600 }}>{draft?.drafted_for_email}</span>, and the recipient
             is now someone else. It may carry that partner&apos;s context, which must not reach
             another partner. Redraft for the current recipient before sending.
+          </p>
+        )}
+
+        {draftUnattributed && (
+          <p
+            className="text-sm border border-red-200 bg-red-50 text-red-700 rounded px-3 py-2"
+            style={{ marginBottom: 12 }}
+          >
+            This draft has no recorded recipient, so there is no way to tell whose context it
+            carries. Redraft before sending.
           </p>
         )}
 
