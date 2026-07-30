@@ -21,8 +21,14 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 // 3. The MGT-REF-ID line is kept. It is the matching mechanism: the partner's
 //    reply quotes it, and the Gmail sync finds the case by that core.
 //
-// Plain text body only for now. The Brain drafting path for partners comes
-// later, with the pricing-compartment work.
+// 4. No signature. Partner mail carries none, deliberately: these are working
+//    exchanges with counterparties we correspond with daily, not client
+//    correspondence. The body ends where the writer ended it. The MGT-REF-ID
+//    line below is routing metadata, not a sign-off, and stays.
+//
+// Plain text body in, HTML out. The body may be typed by hand in the case desk
+// or loaded from the Brain's Greek partner draft (case_partner_drafts, written
+// by the Lambda in mode "partner"); either way a human presses Confirm send.
 // -----------------------------------------------------------------------------
 
 let cachedClient: SupabaseClient | undefined;
@@ -52,8 +58,6 @@ function bodyToHtml(text: string): string {
 
 const BASE_FONT_OPEN =
   '<div style="font-family: Arial, Helvetica, sans-serif; font-size: 14px; color: #1E2A3A; line-height: 1.6;">';
-
-const SIGNATURE_HTML = "<br><br>Με εκτίμηση,<br>Δημήτρης<br>MyGreekTax";
 
 export const Route = createFileRoute("/webhooks/partner-reply")({
   server: {
@@ -188,8 +192,8 @@ export const Route = createFileRoute("/webhooks/partner-reply")({
               "]</div>"
             : "";
 
-          const html =
-            BASE_FONT_OPEN + bodyToHtml(bodyText) + "</div>" + SIGNATURE_HTML + refLineHtml;
+          // Body, then the ref line. No signature: see note 4 in the header.
+          const html = BASE_FONT_OPEN + bodyToHtml(bodyText) + "</div>" + refLineHtml;
 
           // 3. Send via Mailgun EU. No BCC, see header comment.
           const form = new URLSearchParams();

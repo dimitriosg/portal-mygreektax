@@ -26,6 +26,7 @@ import { Route as WebhooksOpsSnapshotRouteImport } from './routes/webhooks/ops-s
 import { Route as WebhooksMailgunEventsRouteImport } from './routes/webhooks/mailgun-events'
 import { Route as WebhooksLeadIntakeRouteImport } from './routes/webhooks/lead-intake'
 import { Route as WebhooksGmailSyncRouteImport } from './routes/webhooks/gmail-sync'
+import { Route as WebhooksGeneratePartnerDraftRouteImport } from './routes/webhooks/generate-partner-draft'
 import { Route as WebhooksGenerateDraftRouteImport } from './routes/webhooks/generate-draft'
 import { Route as WebhooksConversationLogRouteImport } from './routes/webhooks/conversation-log'
 import { Route as WebhooksCaseReplyRouteImport } from './routes/webhooks/case-reply'
@@ -133,6 +134,12 @@ const WebhooksGmailSyncRoute = WebhooksGmailSyncRouteImport.update({
   path: '/webhooks/gmail-sync',
   getParentRoute: () => rootRouteImport,
 } as any)
+const WebhooksGeneratePartnerDraftRoute =
+  WebhooksGeneratePartnerDraftRouteImport.update({
+    id: '/webhooks/generate-partner-draft',
+    path: '/webhooks/generate-partner-draft',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const WebhooksGenerateDraftRoute = WebhooksGenerateDraftRouteImport.update({
   id: '/webhooks/generate-draft',
   path: '/webhooks/generate-draft',
@@ -266,6 +273,7 @@ export interface FileRoutesByFullPath {
   '/webhooks/case-reply': typeof WebhooksCaseReplyRoute
   '/webhooks/conversation-log': typeof WebhooksConversationLogRoute
   '/webhooks/generate-draft': typeof WebhooksGenerateDraftRoute
+  '/webhooks/generate-partner-draft': typeof WebhooksGeneratePartnerDraftRoute
   '/webhooks/gmail-sync': typeof WebhooksGmailSyncRoute
   '/webhooks/lead-intake': typeof WebhooksLeadIntakeRoute
   '/webhooks/mailgun-events': typeof WebhooksMailgunEventsRoute
@@ -305,6 +313,7 @@ export interface FileRoutesByTo {
   '/webhooks/case-reply': typeof WebhooksCaseReplyRoute
   '/webhooks/conversation-log': typeof WebhooksConversationLogRoute
   '/webhooks/generate-draft': typeof WebhooksGenerateDraftRoute
+  '/webhooks/generate-partner-draft': typeof WebhooksGeneratePartnerDraftRoute
   '/webhooks/gmail-sync': typeof WebhooksGmailSyncRoute
   '/webhooks/lead-intake': typeof WebhooksLeadIntakeRoute
   '/webhooks/mailgun-events': typeof WebhooksMailgunEventsRoute
@@ -346,6 +355,7 @@ export interface FileRoutesById {
   '/webhooks/case-reply': typeof WebhooksCaseReplyRoute
   '/webhooks/conversation-log': typeof WebhooksConversationLogRoute
   '/webhooks/generate-draft': typeof WebhooksGenerateDraftRoute
+  '/webhooks/generate-partner-draft': typeof WebhooksGeneratePartnerDraftRoute
   '/webhooks/gmail-sync': typeof WebhooksGmailSyncRoute
   '/webhooks/lead-intake': typeof WebhooksLeadIntakeRoute
   '/webhooks/mailgun-events': typeof WebhooksMailgunEventsRoute
@@ -388,6 +398,7 @@ export interface FileRouteTypes {
     | '/webhooks/case-reply'
     | '/webhooks/conversation-log'
     | '/webhooks/generate-draft'
+    | '/webhooks/generate-partner-draft'
     | '/webhooks/gmail-sync'
     | '/webhooks/lead-intake'
     | '/webhooks/mailgun-events'
@@ -427,6 +438,7 @@ export interface FileRouteTypes {
     | '/webhooks/case-reply'
     | '/webhooks/conversation-log'
     | '/webhooks/generate-draft'
+    | '/webhooks/generate-partner-draft'
     | '/webhooks/gmail-sync'
     | '/webhooks/lead-intake'
     | '/webhooks/mailgun-events'
@@ -467,6 +479,7 @@ export interface FileRouteTypes {
     | '/webhooks/case-reply'
     | '/webhooks/conversation-log'
     | '/webhooks/generate-draft'
+    | '/webhooks/generate-partner-draft'
     | '/webhooks/gmail-sync'
     | '/webhooks/lead-intake'
     | '/webhooks/mailgun-events'
@@ -504,6 +517,7 @@ export interface RootRouteChildren {
   WebhooksCaseReplyRoute: typeof WebhooksCaseReplyRoute
   WebhooksConversationLogRoute: typeof WebhooksConversationLogRoute
   WebhooksGenerateDraftRoute: typeof WebhooksGenerateDraftRoute
+  WebhooksGeneratePartnerDraftRoute: typeof WebhooksGeneratePartnerDraftRoute
   WebhooksGmailSyncRoute: typeof WebhooksGmailSyncRoute
   WebhooksLeadIntakeRoute: typeof WebhooksLeadIntakeRoute
   WebhooksMailgunEventsRoute: typeof WebhooksMailgunEventsRoute
@@ -639,6 +653,13 @@ declare module '@tanstack/react-router' {
       path: '/webhooks/gmail-sync'
       fullPath: '/webhooks/gmail-sync'
       preLoaderRoute: typeof WebhooksGmailSyncRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/webhooks/generate-partner-draft': {
+      id: '/webhooks/generate-partner-draft'
+      path: '/webhooks/generate-partner-draft'
+      fullPath: '/webhooks/generate-partner-draft'
+      preLoaderRoute: typeof WebhooksGeneratePartnerDraftRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/webhooks/generate-draft': {
@@ -829,6 +850,7 @@ const rootRouteChildren: RootRouteChildren = {
   WebhooksCaseReplyRoute: WebhooksCaseReplyRoute,
   WebhooksConversationLogRoute: WebhooksConversationLogRoute,
   WebhooksGenerateDraftRoute: WebhooksGenerateDraftRoute,
+  WebhooksGeneratePartnerDraftRoute: WebhooksGeneratePartnerDraftRoute,
   WebhooksGmailSyncRoute: WebhooksGmailSyncRoute,
   WebhooksLeadIntakeRoute: WebhooksLeadIntakeRoute,
   WebhooksMailgunEventsRoute: WebhooksMailgunEventsRoute,

@@ -614,6 +614,47 @@ export type Database = {
           },
         ];
       };
+      case_partner_drafts: {
+        Row: {
+          body: string | null;
+          case_id: string;
+          id: string;
+          internal_notes: string | null;
+          last_updated: string;
+          model: string | null;
+          pricing_flag: boolean;
+          subject: string | null;
+        };
+        Insert: {
+          body?: string | null;
+          case_id: string;
+          id?: string;
+          internal_notes?: string | null;
+          last_updated?: string;
+          model?: string | null;
+          pricing_flag?: boolean;
+          subject?: string | null;
+        };
+        Update: {
+          body?: string | null;
+          case_id?: string;
+          id?: string;
+          internal_notes?: string | null;
+          last_updated?: string;
+          model?: string | null;
+          pricing_flag?: boolean;
+          subject?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "case_partner_drafts_case_id_fkey";
+            columns: ["case_id"];
+            isOneToOne: true;
+            referencedRelation: "brain_conversations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       case_summaries: {
         Row: {
           case_id: string;

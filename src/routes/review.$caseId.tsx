@@ -627,11 +627,13 @@ function ReviewCase() {
         onSent={load}
       />
 
-      {/* Follow up with partner: plain compose for now, Brain drafting comes
-          with the pricing-compartment work. Logs as partner_email_sent. */}
+      {/* Follow up with partner: compose by hand or draft with the Brain (in
+          Greek, mode "partner"). Logs as partner_email_sent. clientStage feeds
+          the R7 deposit-gate notice. */}
       <CasePartnerReplyBox
         conversationId={caseId}
         caseSerialId={conversation?.case_serial_id ?? null}
+        clientStage={client?.stage ?? null}
         onSent={load}
       />
 

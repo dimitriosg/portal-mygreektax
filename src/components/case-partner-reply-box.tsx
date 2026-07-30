@@ -1,23 +1,41 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { getClientStageSortOrder } from "@/lib/leads-shared";
 
 // Follow up with partner.
 //
-// Plain compose box for mailing the accountant partner from inside the case.
-// Deliberately not Brain-assisted yet: partner drafting arrives with the
-// pricing-compartment work, and until that fencing exists, what goes to the
-// partner is typed by a human.
+// Compose box for mailing the accountant partner from inside the case. Two ways
+// to fill it: type it, or press "Draft with Brain", which runs the Lambda in
+// mode "partner" and loads back a Greek draft from case_partner_drafts.
+//
+// The Brain assist is generation only. It never sends, never picks a recipient,
+// and never bypasses the confirmation: whatever lands in these fields is edited
+// and approved by a human exactly as a typed message is.
 //
 // Send is two-step. Send opens a confirmation showing exactly who receives it
 // and what, and only Confirm fires. The server independently refuses any
 // recipient that is not an active partner, so the dropdown is convenience, not
 // the guard.
 //
+// Two advisory notices, both non-blocking by design, because the operator has
+// context the portal does not:
+//
+//   - Pricing (rule R2). The Lambda scans its own output for currency figures
+//     and sets pricing_flag. R2 has no exceptions, so it gets a check that does
+//     not depend on the model having obeyed the prompt. The text is never
+//     silently edited: you have to see what the model wrote.
+//   - Deposit gate (rule R7). No assignment or scoping request goes to a
+//     partner while the case is still Quoted. A quick verification question
+//     before quoting is legitimate, which is why this warns rather than blocks.
+//
 // The sent message logs as partner_email_sent and appears in the partner pane.
+// Partner mail carries no signature, by design: see partner-reply.ts.
 
 interface Props {
   conversationId: string;
   caseSerialId?: string | null;
+  /** The linked lead's stage, for the R7 deposit-gate notice. */
+  clientStage?: string | null;
   /** Called after a successful send so the page can refresh the thread. */
   onSent?: () => void;
 }
@@ -27,7 +45,23 @@ interface PartnerOption {
   full_name: string | null;
 }
 
-export function CasePartnerReplyBox({ conversationId, caseSerialId, onSent }: Props) {
+interface PartnerDraft {
+  subject: string | null;
+  body: string | null;
+  internal_notes: string | null;
+  pricing_flag: boolean;
+  last_updated: string;
+}
+
+// Generation polling. Matches the customer path in review.$caseId.tsx: the
+// Brain writes to the database in the background, so there is nothing to await.
+const GEN_POLL_MS = 3000;
+const GEN_TIMEOUT_MS = 180000;
+
+// Stages at or after Active have cleared the deposit gate.
+const ACTIVE_STAGE_ORDER = getClientStageSortOrder("Active");
+
+export function CasePartnerReplyBox({ conversationId, caseSerialId, clientStage, onSent }: Props) {
   const [partners, setPartners] = useState<PartnerOption[]>([]);
   const [toEmail, setToEmail] = useState("");
   const [subject, setSubject] = useState(caseSerialId ? `${caseSerialId}: ` : "");
@@ -42,6 +76,14 @@ export function CasePartnerReplyBox({ conversationId, caseSerialId, onSent }: Pr
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const [sentMsg, setSentMsg] = useState("");
+
+  // Brain assist state.
+  const [draft, setDraft] = useState<PartnerDraft | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [genError, setGenError] = useState("");
+  const [notesOpen, setNotesOpen] = useState(false);
+
+  const beforeDeposit = !!clientStage && getClientStageSortOrder(clientStage) < ACTIVE_STAGE_ORDER;
 
   useEffect(() => {
     let cancelled = false;
@@ -65,11 +107,100 @@ export function CasePartnerReplyBox({ conversationId, caseSerialId, onSent }: Pr
     };
   }, []);
 
+  // Load any existing Brain draft, but never apply it automatically. Applying
+  // it overwrites whatever is in the fields, and on mount there is no way to
+  // know the operator did not mean to keep a half-typed message.
+  const loadDraft = useCallback(async () => {
+    const { data } = await supabase
+      .from("case_partner_drafts")
+      .select("subject, body, internal_notes, pricing_flag, last_updated")
+      .eq("case_id", conversationId)
+      .maybeSingle();
+    return (data as PartnerDraft | null) ?? null;
+  }, [conversationId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const row = await loadDraft();
+      if (!cancelled) setDraft(row);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loadDraft]);
+
   useEffect(() => {
     if (!subjectTouchedRef.current && caseSerialId) {
       setSubject(`${caseSerialId}: `);
     }
   }, [caseSerialId]);
+
+  const applyDraft = (row: PartnerDraft) => {
+    if (row.subject) {
+      // Mark the subject touched so the caseSerialId effect above does not
+      // overwrite the Brain's subject on the next parent refresh.
+      subjectTouchedRef.current = true;
+      setSubject(row.subject);
+    }
+    setBodyText(row.body ?? "");
+    setConfirming(false);
+  };
+
+  const generate = async () => {
+    setGenError("");
+    setGenerating(true);
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      const res = await fetch("/webhooks/generate-partner-draft", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({ conversation_id: conversationId }),
+      });
+
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok || !payload?.ok) {
+        const detail =
+          typeof payload?.detail === "string"
+            ? payload.detail
+            : (payload?.error ?? `HTTP ${res.status}`);
+        setGenError(`Generation failed: ${detail}`);
+        return;
+      }
+
+      // The Brain writes case_partner_drafts in the background, so poll until
+      // last_updated moves past the baseline the server handed back.
+      const baseline: string | null = payload.previousUpdatedAt ?? null;
+      const startedAt = Date.now();
+
+      while (Date.now() - startedAt < GEN_TIMEOUT_MS) {
+        await new Promise((r) => setTimeout(r, GEN_POLL_MS));
+
+        const fresh = await loadDraft();
+        if (fresh && fresh.last_updated !== baseline) {
+          setDraft(fresh);
+          applyDraft(fresh);
+          return;
+        }
+      }
+
+      setGenError(
+        "The draft is taking longer than expected. It may still finish, so try reloading the page in a minute.",
+      );
+    } catch (err) {
+      setGenError(
+        `Could not reach the server: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    } finally {
+      setGenerating(false);
+    }
+  };
 
   const selected = partners.find((p) => p.email === toEmail);
 
@@ -124,12 +255,70 @@ export function CasePartnerReplyBox({ conversationId, caseSerialId, onSent }: Pr
       <div className="card-head">
         <h2>Follow up with partner</h2>
         <span className="tag tag-internal">Internal</span>
-        <span className="head-actions stamp">
-          Sends from hello@mygreektax.eu, logs to the partner thread
-        </span>
+        <div className="head-actions">
+          {draft && !generating && (
+            <button className="btn btn-sm" onClick={() => applyDraft(draft)}>
+              Load Brain draft
+            </button>
+          )}
+          <button
+            className="btn btn-sm"
+            onClick={generate}
+            disabled={generating}
+            title="Runs the Brain once for this case and drafts to the partner in Greek. Costs a single AI call. Nothing is sent."
+          >
+            {generating ? (
+              <span className="inline-flex items-center gap-2">
+                <span className="inline-block h-3 w-3 rounded-full border-2 border-slate-300 border-t-slate-600 animate-spin" />
+                Drafting...
+              </span>
+            ) : draft ? (
+              "Redraft with Brain"
+            ) : (
+              "Draft with Brain"
+            )}
+          </button>
+          <span className="stamp">Sends from hello@mygreektax.eu, logs to the partner thread</span>
+        </div>
       </div>
 
       <div className="card-body">
+        {beforeDeposit && (
+          <p
+            className="text-sm border rounded px-3 py-2"
+            style={{
+              marginBottom: 12,
+              color: "#92400e",
+              borderColor: "#fcd34d",
+              background: "#fffbeb",
+            }}
+          >
+            This case is still at <span style={{ fontWeight: 600 }}>{clientStage}</span>. No
+            assignment or scoping request goes to a partner before the deposit is confirmed. A quick
+            verification question is fine.
+          </p>
+        )}
+
+        {draft?.pricing_flag && (
+          <p
+            className="text-sm border border-red-200 bg-red-50 text-red-700 rounded px-3 py-2"
+            style={{ marginBottom: 12 }}
+          >
+            The Brain draft contains a currency figure. Partner-facing text carries no retail price,
+            client fee total, margin or markup. Check every figure before sending, or replace it
+            with <span style={{ fontWeight: 600 }}>κατόπιν συμφωνίας</span>.
+          </p>
+        )}
+
+        {genError && (
+          <p
+            className="text-sm text-red-600 border border-red-200 bg-red-50 rounded px-3 py-2"
+            style={{ marginBottom: 12 }}
+          >
+            {genError}
+          </p>
+        )}
+
         <div className="grid grid-cols-1 sm:grid-cols-[220px_1fr] gap-3">
           <div className="field">
             <label htmlFor="partner-to">To</label>
@@ -164,10 +353,38 @@ export function CasePartnerReplyBox({ conversationId, caseSerialId, onSent }: Pr
           value={bodyText}
           onChange={(e) => setBodyText(e.target.value)}
           rows={6}
-          placeholder="Γράψε το μήνυμα προς τον συνεργάτη. Η υπογραφή και το MGT-REF-ID μπαίνουν αυτόματα."
+          placeholder="Γράψε το μήνυμα προς τον συνεργάτη, ή πάτα Draft with Brain. Το MGT-REF-ID μπαίνει αυτόματα."
           className="mc-input"
           style={{ marginTop: 12 }}
         />
+
+        {draft?.internal_notes && (
+          <div style={{ marginTop: 12 }}>
+            <button
+              className="btn btn-sm"
+              onClick={() => setNotesOpen((v) => !v)}
+              aria-expanded={notesOpen}
+            >
+              {notesOpen ? "Hide Brain notes" : "Brain notes"}
+            </button>
+            {notesOpen && (
+              <p
+                className="text-sm"
+                style={{
+                  marginTop: 8,
+                  whiteSpace: "pre-wrap",
+                  color: "var(--mc-ink-2)",
+                  border: "1px solid var(--mc-line)",
+                  background: "var(--mc-page)",
+                  borderRadius: 8,
+                  padding: "8px 12px",
+                }}
+              >
+                {draft.internal_notes}
+              </p>
+            )}
+          </div>
+        )}
 
         {!confirming && (
           <div className="flex items-center gap-3" style={{ marginTop: 12 }}>
