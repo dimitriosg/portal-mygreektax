@@ -40,6 +40,14 @@ create table if not exists public.case_partner_drafts (
   last_updated      timestamptz not null default now()
 );
 
+-- drafted_for_email was added after this file was first circulated, so the
+-- create above is not enough on its own: "if not exists" is a no-op on a table
+-- that already exists, and re-running would silently leave the column missing.
+-- The Lambda upserts that column, and an unknown column fails the whole write,
+-- so this makes the file correct whether or not it has already been run once.
+alter table public.case_partner_drafts
+  add column if not exists drafted_for_email text;
+
 -- One draft per case. This is the conflict target the Lambda upserts on, so it
 -- has to exist before the Brain change ships.
 create unique index if not exists case_partner_drafts_case_id_key
