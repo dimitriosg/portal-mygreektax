@@ -619,6 +619,7 @@ export type Database = {
           body: string | null;
           case_id: string;
           id: string;
+          drafted_for_email: string | null;
           internal_notes: string | null;
           last_updated: string;
           model: string | null;
@@ -628,6 +629,7 @@ export type Database = {
         Insert: {
           body?: string | null;
           case_id: string;
+          drafted_for_email?: string | null;
           id?: string;
           internal_notes?: string | null;
           last_updated?: string;
@@ -638,6 +640,7 @@ export type Database = {
         Update: {
           body?: string | null;
           case_id?: string;
+          drafted_for_email?: string | null;
           id?: string;
           internal_notes?: string | null;
           last_updated?: string;

@@ -30,6 +30,11 @@ type GenerateBody = {
   // Either identifier works. conversation_id is what the case desk has on hand.
   case_serial_id?: unknown;
   conversation_id?: unknown;
+  // Which partner the draft is for. Required: the Brain filters the case
+  // timeline to this partner's correspondence (R6) and addresses the draft to
+  // them, so drafting without knowing the recipient produces a draft that can
+  // carry another partner's context.
+  partner_email?: unknown;
 };
 
 function readString(value: unknown, maxLength = 200): string | undefined {
@@ -38,6 +43,8 @@ function readString(value: unknown, maxLength = 200): string | undefined {
   if (!trimmed) return undefined;
   return trimmed.slice(0, maxLength);
 }
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export const Route = createFileRoute("/webhooks/generate-partner-draft")({
   server: {
@@ -91,6 +98,7 @@ export const Route = createFileRoute("/webhooks/generate-partner-draft")({
 
         const caseSerialId = readString(body.case_serial_id);
         const conversationIdInput = readString(body.conversation_id);
+        const partnerEmailInput = readString(body.partner_email);
 
         if (!caseSerialId && !conversationIdInput) {
           return Response.json(
@@ -98,6 +106,46 @@ export const Route = createFileRoute("/webhooks/generate-partner-draft")({
             { status: 400 },
           );
         }
+
+        if (!partnerEmailInput || !EMAIL_RE.test(partnerEmailInput)) {
+          return Response.json({ error: "Valid partner_email is required" }, { status: 400 });
+        }
+
+        // The recipient must be an ACTIVE partner, checked here rather than
+        // trusted from the browser. Same guard, and the same ILIKE-wildcard
+        // escaping, as partner-reply.ts: EMAIL_RE permits % and _, so without
+        // escaping a crafted address could pattern-match a real partner.
+        const escapeLike = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
+
+        const { data: partnerRows, error: partnerError } = await supabaseAdmin
+          .from("partner_profiles")
+          .select("email, full_name")
+          .is("disabled_at", null)
+          .ilike("email", escapeLike(partnerEmailInput))
+          .limit(1);
+
+        if (partnerError) {
+          console.error("[generate-partner-draft] partner lookup failed", { partnerError });
+          return Response.json(
+            { error: "Lookup failed", detail: partnerError.message },
+            { status: 500 },
+          );
+        }
+        if (!partnerRows || partnerRows.length === 0) {
+          return Response.json(
+            {
+              error: "Recipient is not an active partner",
+              detail: `${partnerEmailInput} is not in partner_profiles or is disabled.`,
+            },
+            { status: 422 },
+          );
+        }
+
+        // Use the canonical address from the database, never the raw request
+        // value, so what the Brain filters on matches what the send path will
+        // accept.
+        const partnerEmail = partnerRows[0].email as string;
+        const partnerName = (partnerRows[0].full_name as string | null) ?? null;
 
         // Resolve to the conversation row so the Brain gets a stable case_id
         // and the case is known to exist before an AI call is spent.
@@ -164,6 +212,8 @@ export const Route = createFileRoute("/webhooks/generate-partner-draft")({
                 sender: "portal_partner_generate",
                 mode: "partner",
                 event_type: "partner_draft_requested",
+                partner_email: partnerEmail,
+                partner_name: partnerName,
               },
             }),
           }).catch((error) => {

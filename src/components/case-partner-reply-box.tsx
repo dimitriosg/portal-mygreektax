@@ -50,6 +50,7 @@ interface PartnerDraft {
   body: string | null;
   internal_notes: string | null;
   pricing_flag: boolean;
+  drafted_for_email: string | null;
   last_updated: string;
 }
 
@@ -85,6 +86,15 @@ export function CasePartnerReplyBox({ conversationId, caseSerialId, clientStage,
 
   const beforeDeposit = !!clientStage && getClientStageSortOrder(clientStage) < ACTIVE_STAGE_ORDER;
 
+  // The draft was written for one specific partner, with that partner's thread
+  // in scope and every other partner's filtered out. Changing the recipient
+  // afterwards is one click, and sending it as-is would put one partner's
+  // context in front of another, which R6 forbids outright.
+  const draftedForOther =
+    !!draft?.drafted_for_email &&
+    !!toEmail &&
+    draft.drafted_for_email.toLowerCase() !== toEmail.toLowerCase();
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -110,19 +120,33 @@ export function CasePartnerReplyBox({ conversationId, caseSerialId, clientStage,
   // Load any existing Brain draft, but never apply it automatically. Applying
   // it overwrites whatever is in the fields, and on mount there is no way to
   // know the operator did not mean to keep a half-typed message.
-  const loadDraft = useCallback(async () => {
-    const { data } = await supabase
+  //
+  // Returns the error rather than swallowing it. This backs both the mount load
+  // and every iteration of the poll loop below, so a query that keeps failing
+  // (an RLS problem, a missing table before the migration is run) would
+  // otherwise be indistinguishable from "no draft yet" and would surface three
+  // minutes later as a generic timeout, hiding the actual cause.
+  const loadDraft = useCallback(async (): Promise<{
+    row: PartnerDraft | null;
+    error: string | null;
+  }> => {
+    const { data, error: err } = await supabase
       .from("case_partner_drafts")
-      .select("subject, body, internal_notes, pricing_flag, last_updated")
+      .select("subject, body, internal_notes, pricing_flag, drafted_for_email, last_updated")
       .eq("case_id", conversationId)
       .maybeSingle();
-    return (data as PartnerDraft | null) ?? null;
+
+    if (err) {
+      console.error("[case-partner-reply-box] loadDraft failed:", err.message);
+      return { row: null, error: err.message };
+    }
+    return { row: (data as PartnerDraft | null) ?? null, error: null };
   }, [conversationId]);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const row = await loadDraft();
+      const { row } = await loadDraft();
       if (!cancelled) setDraft(row);
     })();
     return () => {
@@ -149,6 +173,10 @@ export function CasePartnerReplyBox({ conversationId, caseSerialId, clientStage,
 
   const generate = async () => {
     setGenError("");
+    if (!toEmail) {
+      setGenError("Pick a partner first. The draft is written for a specific recipient.");
+      return;
+    }
     setGenerating(true);
     try {
       const {
@@ -161,7 +189,10 @@ export function CasePartnerReplyBox({ conversationId, caseSerialId, clientStage,
           "Content-Type": "application/json",
           ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
         },
-        body: JSON.stringify({ conversation_id: conversationId }),
+        // The recipient goes with the request: the Brain filters the case
+        // timeline to this partner's correspondence (R6) and addresses the
+        // draft to them. The server revalidates it against active partners.
+        body: JSON.stringify({ conversation_id: conversationId, partner_email: toEmail }),
       });
 
       const payload = await res.json().catch(() => ({}));
@@ -182,7 +213,17 @@ export function CasePartnerReplyBox({ conversationId, caseSerialId, clientStage,
       while (Date.now() - startedAt < GEN_TIMEOUT_MS) {
         await new Promise((r) => setTimeout(r, GEN_POLL_MS));
 
-        const fresh = await loadDraft();
+        const { row: fresh, error: readError } = await loadDraft();
+
+        // Stop on a read failure rather than polling out. The Brain may well
+        // have written the draft; what is broken is our ability to read it, and
+        // saying so beats a three minute wait ending in "taking longer than
+        // expected".
+        if (readError) {
+          setGenError(`Could not read the draft back: ${readError}`);
+          return;
+        }
+
         if (fresh && fresh.last_updated !== baseline) {
           setDraft(fresh);
           applyDraft(fresh);
@@ -296,6 +337,18 @@ export function CasePartnerReplyBox({ conversationId, caseSerialId, clientStage,
             This case is still at <span style={{ fontWeight: 600 }}>{clientStage}</span>. No
             assignment or scoping request goes to a partner before the deposit is confirmed. A quick
             verification question is fine.
+          </p>
+        )}
+
+        {draftedForOther && (
+          <p
+            className="text-sm border border-red-200 bg-red-50 text-red-700 rounded px-3 py-2"
+            style={{ marginBottom: 12 }}
+          >
+            This draft was written for{" "}
+            <span style={{ fontWeight: 600 }}>{draft?.drafted_for_email}</span>, and the recipient
+            is now someone else. It may carry that partner&apos;s context, which must not reach
+            another partner. Redraft for the current recipient before sending.
           </p>
         )}
 

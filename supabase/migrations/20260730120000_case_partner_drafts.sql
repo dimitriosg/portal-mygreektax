@@ -23,15 +23,21 @@
 -- Audience: admin only. Partner drafts contain internal case reasoning and
 -- must never be readable by a partner logged into the portal.
 
+-- drafted_for_email records which partner the draft was written for. R6 says
+-- never reference what one partner said when writing to another, and the
+-- recipient dropdown is one click away from the draft, so the desk compares
+-- this against the selected recipient and warns on a mismatch rather than
+-- letting partner A's context reach partner B silently.
 create table if not exists public.case_partner_drafts (
-  id             uuid primary key default gen_random_uuid(),
-  case_id        uuid not null references public.brain_conversations(id) on delete cascade,
-  subject        text,
-  body           text,
-  internal_notes text,
-  pricing_flag   boolean not null default false,
-  model          text,
-  last_updated   timestamptz not null default now()
+  id                uuid primary key default gen_random_uuid(),
+  case_id           uuid not null references public.brain_conversations(id) on delete cascade,
+  subject           text,
+  body              text,
+  internal_notes    text,
+  pricing_flag      boolean not null default false,
+  drafted_for_email text,
+  model             text,
+  last_updated      timestamptz not null default now()
 );
 
 -- One draft per case. This is the conflict target the Lambda upserts on, so it
