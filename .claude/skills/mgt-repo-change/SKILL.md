@@ -49,7 +49,7 @@ Checked against the live database on 02 Aug 2026. Treat as given, do not re-deri
 Work the top item unless told otherwise. Update the status line in this file as part of the PR that closes an item.
 
 - [x] `portal-mygreektax` `.old` and `.backup*.old` cleanup. PR #67, merged 02 Aug 2026, 20 files removed.
-- [ ] Delete `src/integrations/supabase/20260721_link_leads_to_cases_on_insert.sql`. It sits outside `supabase/migrations/` so it has never run, and the table it targets does not exist. Delete only, do not relocate.
+- [x] Delete `src/integrations/supabase/20260721_link_leads_to_cases_on_insert.sql`. It sits outside `supabase/migrations/` so it has never run, and the table it targets does not exist. Delete only, do not relocate. PR #68, merged 02 Aug 2026, 1 file removed.
 - [ ] Audit every call site of `resolve_case_for_inbound`. Report only: file, line, exact parameter set, and any conditional path that sends fewer than seven. No code changes.
 - [ ] `brain-mygreektax` `.old` cleanup: `index.js.old` at root, five `src/index.js.backup*.old`, `wiki/index_old.md`, `wiki/rules/OLD BACKUP/`, `pricing/price-table_old.md`. PR only, never merge.
 - [ ] Migration filename fixes, blocked until the staging Supabase project exists: `mgt_ops_snapshot.sql` and `the-identity-link.sql` (no timestamp prefix), `the-ID-generator,sql` (trailing comma, not a `.sql` file), two 8-digit prefixes that sort wrongly, three filenames containing spaces, and `20260717120100_knowledge_seed.sql` existing in both repos against one database.
