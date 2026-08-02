@@ -19,7 +19,7 @@ Jim works entirely in the browser on Windows. No local checkout, no terminal, no
 
 Every file you propose to delete, move or rename gets a verdict and evidence:
 
-- `CONFIRMED DEAD`: a search wide enough to find one turns up no reference from live code, config, routing or build. For a backup file, the live sibling it shadows must also exist.
+- `CONFIRMED DEAD`: a search wide enough to find one turns up no reference to the file in live code, config, routing or build. For a backup file, the live sibling it shadows must also exist.
 - `UNCERTAIN`: anything else.
 
 `UNCERTAIN` never goes in the change. It goes in the report and Jim decides. A file with no sibling at all can still be `CONFIRMED DEAD`, on the reference evidence alone; the sibling test belongs to backup cleanup, not to every deletion.
@@ -43,7 +43,7 @@ Rules:
 
 Checked against the live database on 02 Aug 2026. Treat as given, do not re-derive, do not act on them without an instruction:
 
-- `public.resolve_case_for_inbound` exists **twice**, as two independent implementations: a stale 3-arg version (`p_email, p_name, p_nationality`) and the current 7-arg version (adds `p_message, p_external_event_id, p_provider, p_subject`). PostgREST resolves the overload by which keys are in the request body, not by how many. Those four are the discriminators: send any one of them and the current version runs, omit all four and the stale one runs silently, with no message stored, no dedupe on `external_event_id`, and duplicate cases on a retried webhook. A caller sending only three keys is therefore not automatically on the stale function, and a caller sending six is not automatically safe.
+- `public.resolve_case_for_inbound` exists **twice**, as two independent implementations: a stale 3-arg version (`p_email, p_name, p_nationality`) and the current 7-arg version (adds `p_message, p_external_event_id, p_provider, p_subject`). PostgREST resolves the overload by which keys are in the request body, not by how many. Those four are the discriminators: the current version is selected when at least one of them is present, and the stale one is selected only when all four are absent, in which case it runs silently, with no message stored, no dedupe on `external_event_id`, and duplicate cases on a retried webhook. A caller sending only three keys is therefore not automatically on the stale function, and a caller sending six is not automatically safe. Selecting the current version is also not the same as calling it correctly: a call that omits `p_message` reaches the right function and still logs no message.
 - There is **no `leads` table** and no leads-to-cases trigger in production.
 
 ## Step 4 backlog
@@ -58,7 +58,7 @@ Work the top item unless told otherwise. Update the status line in this file as 
 
 ## Stop and ask
 
-- A caller of `resolve_case_for_inbound` omits all four discriminator keys, or builds its payload so that a null or undefined value can drop the last discriminator it sends. Sending fewer than seven keys is not by itself the trigger.
+- A caller of `resolve_case_for_inbound` omits all four discriminator keys, or builds its payload so that an `undefined` value, or a builder that strips nulls, can drop the last discriminator it sends. A JSON `null` still transmits the key and still selects the current version, so it is `undefined` that is dangerous here. Sending fewer than seven keys is not by itself the trigger.
 - A deletion would touch anything under `supabase/migrations/`.
 - A file looks dead but is referenced somewhere unexpected, such as a client-side component or a public route.
 - A PR would exceed roughly 25 files.
