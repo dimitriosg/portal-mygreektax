@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
@@ -26,6 +26,7 @@ import { listJobs, listServices, listAccountants, createJob } from "@/lib/jobs.f
 import { useAuth } from "@/lib/auth-context";
 import { getErrorMessage, isAuthSessionError } from "@/lib/auth-errors";
 import { Card, CardContent } from "@/components/ui/card";
+import { JobEditDialog } from "@/components/job-edit-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -309,6 +310,7 @@ function LeadsPage() {
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState<string>("");
   const [editingLead, setEditingLead] = useState<Lead | null>(null);
+  const [editingJob, setEditingJob] = useState<Job | null>(null);
   const [creatingLead, setCreatingLead] = useState(false);
   const [collapsedStages, setCollapsedStages] = useState<Set<string>>(() => loadCollapsedStages());
 
@@ -564,6 +566,7 @@ function LeadsPage() {
                           lead={lead}
                           clientJobs={jobsByClientId.get(lead.id) ?? []}
                           onOpen={setEditingLead}
+                          onOpenJob={setEditingJob}
                           quickUpdate={quickUpdate.mutate}
                         />
                       ))}
@@ -599,7 +602,12 @@ function LeadsPage() {
           onCreateJob={(vars, onSuccess) =>
             createJobMut.mutate({ clientId: editingLead.id, ...vars }, { onSuccess })
           }
+          onOpenJob={setEditingJob}
         />
+      )}
+
+      {editingJob && (
+        <JobEditDialog key={editingJob.id} job={editingJob} onClose={() => setEditingJob(null)} />
       )}
 
       {creatingLead && (
@@ -809,11 +817,13 @@ function LeadListRow({
   lead,
   clientJobs,
   onOpen,
+  onOpenJob,
   quickUpdate,
 }: {
   lead: Lead;
   clientJobs: Job[];
   onOpen: (lead: Lead) => void;
+  onOpenJob: (job: Job) => void;
   quickUpdate: (vars: QuickUpdateVars) => void;
 }) {
   const overdue = isOverdue(lead);
@@ -856,14 +866,16 @@ function LeadListRow({
             {clientJobs.map((j, i) => (
               <span key={j.id}>
                 {i > 0 && ", "}
-                <Link
-                  to="/jobs/$jobId"
-                  params={{ jobId: j.id }}
+                <button
+                  type="button"
                   className="text-primary hover:underline"
-                  onClick={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenJob(j);
+                  }}
                 >
                   {j.fields["Job Code"] ?? "Job"}
-                </Link>{" "}
+                </button>{" "}
                 ({j.fields.Status ?? "—"})
               </span>
             ))}
@@ -1028,10 +1040,12 @@ function LeadEditDialog({
   accountants,
   creatingJob,
   onCreateJob,
+  onOpenJob,
 }: {
   lead: Lead;
   clientJobs: Job[];
   onClose: () => void;
+  onOpenJob: (job: Job) => void;
   onSave: (vars: {
     fullName?: string;
     clientCode?: string;
@@ -1230,13 +1244,13 @@ function LeadEditDialog({
               <ul className="space-y-0.5">
                 {clientJobs.map((j) => (
                   <li key={j.id}>
-                    <Link
-                      to="/jobs/$jobId"
-                      params={{ jobId: j.id }}
+                    <button
+                      type="button"
                       className="font-medium text-primary hover:underline"
+                      onClick={() => onOpenJob(j)}
                     >
                       {j.fields["Job Code"] ?? j.id}
-                    </Link>{" "}
+                    </button>{" "}
                     — {j.fields.Status ?? "—"}
                   </li>
                 ))}
