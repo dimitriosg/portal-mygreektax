@@ -36,12 +36,16 @@ export const Route = createFileRoute("/webhooks/case-action")({
         }
         // A valid session is not enough for case lifecycle actions — delete is
         // irreversible. Require the admin role, same as /webhooks/case-create.
-        const { data: roleRow } = await supabaseAdmin
+        const { data: roleRow, error: roleError } = await supabaseAdmin
           .from("user_roles")
           .select("role")
           .eq("user_id", userData.user.id)
           .eq("role", "admin")
           .limit(1);
+        if (roleError) {
+          console.error("case-action: role check failed", roleError.message);
+          return Response.json({ error: "Authorization check failed" }, { status: 500 });
+        }
         if (!roleRow || roleRow.length === 0) {
           return Response.json({ error: "Not authorized (admin role required)" }, { status: 403 });
         }
