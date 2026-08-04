@@ -75,6 +75,9 @@ type QuickUpdateVars = {
   stage?: string;
   nextAction?: string;
   nextActionDate?: string | null;
+  // Sent alongside a Quoted→Active stage change so the deposit gate can
+  // count a deposit typed in the dialog but not yet saved.
+  deposit?: number | null;
 };
 
 function leadValueLabel(value?: number | null) {
