@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
@@ -853,9 +853,20 @@ function LeadListRow({
       <td className="px-3 py-2 text-xs text-muted-foreground">
         {clientJobs.length > 0 ? (
           <div>
-            {clientJobs
-              .map((j) => `${j.fields["Job Code"] ?? "Job"} (${j.fields.Status ?? "—"})`)
-              .join(", ")}
+            {clientJobs.map((j, i) => (
+              <span key={j.id}>
+                {i > 0 && ", "}
+                <Link
+                  to="/jobs/$jobId"
+                  params={{ jobId: j.id }}
+                  className="text-primary hover:underline"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {j.fields["Job Code"] ?? "Job"}
+                </Link>{" "}
+                ({j.fields.Status ?? "—"})
+              </span>
+            ))}
           </div>
         ) : (
           "No jobs yet"
@@ -1219,7 +1230,14 @@ function LeadEditDialog({
               <ul className="space-y-0.5">
                 {clientJobs.map((j) => (
                   <li key={j.id}>
-                    {j.fields["Job Code"] ?? j.id} — {j.fields.Status ?? "—"}
+                    <Link
+                      to="/jobs/$jobId"
+                      params={{ jobId: j.id }}
+                      className="font-medium text-primary hover:underline"
+                    >
+                      {j.fields["Job Code"] ?? j.id}
+                    </Link>{" "}
+                    — {j.fields.Status ?? "—"}
                   </li>
                 ))}
               </ul>
