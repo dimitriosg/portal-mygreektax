@@ -205,6 +205,8 @@ function LeadsPage() {
     onSuccess: () => {
       toast.success("Job created");
       qc.invalidateQueries({ queryKey: ["jobs"] });
+      // Creating a job can move the client's stage (job→stage sync trigger).
+      qc.invalidateQueries({ queryKey: ["leads"] });
     },
     onError: handleMutationError,
   });

@@ -262,6 +262,8 @@ function JobDetail() {
     qc.invalidateQueries({ queryKey: ["job", jobId] });
     qc.invalidateQueries({ queryKey: ["jobs"] });
     qc.invalidateQueries({ queryKey: ["job-events", jobId] });
+    // A status change can move the client's stage (job→stage sync trigger).
+    qc.invalidateQueries({ queryKey: ["leads"] });
   };
 
   const save = useMutation({
