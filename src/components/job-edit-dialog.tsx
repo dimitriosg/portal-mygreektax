@@ -166,7 +166,11 @@ export function JobEditDialog({ job, onClose }: { job: Job; onClose: () => void 
                 onChange={(e) => setNextAction(e.target.value)}
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               >
-                <option value="">—</option>
+                {/* "None" is the vocabulary's explicit clear value; the empty
+                    option is only a placeholder for legacy jobs without one. */}
+                <option value="" disabled>
+                  —
+                </option>
                 {NEXT_ACTION_OPTIONS.map((s) => (
                   <option key={s} value={s}>
                     {s}
