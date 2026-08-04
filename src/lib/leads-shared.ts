@@ -7,6 +7,7 @@ export const CLIENT_STAGES = [
   "Potential",
   "Quoted",
   "Active",
+  "Delivered",
   "Complete",
   "Parked",
   "Lost",

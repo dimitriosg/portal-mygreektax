@@ -239,6 +239,19 @@ export const updateLead = createServerFn({ method: "POST" })
     const existing = rowToLead(existingRow);
     const previousStage = existing.fields.Stage ?? null;
 
+    // Deposit gate: a manual Quoted → Active move requires a recorded deposit.
+    // A deposit sent in the same save counts. System-driven transitions (the
+    // job→stage sync trigger writes clients.stage directly in SQL) bypass this
+    // by design — creating a real job implies the deposit was taken.
+    if (data.stage === "Active" && previousStage === "Quoted") {
+      const effectiveDeposit = data.deposit !== undefined ? data.deposit : existingRow.deposit;
+      if (!effectiveDeposit || effectiveDeposit <= 0) {
+        throw new Error(
+          "Deposit gate: record the deposit (€) on this lead before moving Quoted → Active.",
+        );
+      }
+    }
+
     // Build snake_case update payload for Supabase.
     type ClientUpdate = Database["public"]["Tables"]["clients"]["Update"];
     const cols: ClientUpdate = {};
@@ -314,6 +327,17 @@ export const deleteLead = createServerFn({ method: "POST" })
       .single();
     if (fetchErr || !existingRow)
       throw new Error(`Lead not found: ${fetchErr?.message ?? data.leadId}`);
+
+    // Every job must stay linked to a client — block deletion instead of
+    // silently orphaning this lead's jobs (the FK would null client_id).
+    const { count: jobCount, error: jobCountErr } = await supabaseAdmin
+      .from("jobs")
+      .select("id", { count: "exact", head: true })
+      .eq("client_id", data.leadId);
+    if (jobCountErr) throw new Error(`Failed to check jobs: ${jobCountErr.message}`);
+    if ((jobCount ?? 0) > 0) {
+      throw new Error(`This client has ${jobCount} job(s). Reassign or delete them first.`);
+    }
 
     const existing = rowToLead(existingRow);
 

@@ -75,6 +75,9 @@ type QuickUpdateVars = {
   stage?: string;
   nextAction?: string;
   nextActionDate?: string | null;
+  // Sent alongside a Quoted→Active stage change so the deposit gate can
+  // count a deposit typed in the dialog but not yet saved.
+  deposit?: number | null;
 };
 
 function leadValueLabel(value?: number | null) {
@@ -205,6 +208,8 @@ function LeadsPage() {
     onSuccess: () => {
       toast.success("Job created");
       qc.invalidateQueries({ queryKey: ["jobs"] });
+      // Creating a job can move the client's stage (job→stage sync trigger).
+      qc.invalidateQueries({ queryKey: ["leads"] });
     },
     onError: handleMutationError,
   });
@@ -983,7 +988,7 @@ function LeadHistory({ leadId }: { leadId: string }) {
 
 // Money fields are only shown once there is something to quote — Potential
 // leads with no quote yet don't need an empty wall of € inputs.
-const MONEY_RELEVANT_STAGES = new Set(["Quoted", "Active", "Parked", "Complete"]);
+const MONEY_RELEVANT_STAGES = new Set(["Quoted", "Active", "Delivered", "Parked", "Complete"]);
 
 const DEFAULT_NEW_JOB_FORM = {
   serviceId: "",
@@ -1245,7 +1250,12 @@ function LeadEditDialog({
                 onChange={(e) => {
                   const next = e.target.value;
                   setStage(next);
-                  onQuickUpdate({ stage: next });
+                  // Send the unsaved deposit draft along so the Quoted→Active
+                  // deposit gate counts a deposit typed in this dialog.
+                  onQuickUpdate({
+                    stage: next,
+                    ...(deposit !== "" ? { deposit: Number(deposit) } : {}),
+                  });
                 }}
                 className={`mt-1 w-full rounded border px-2 py-2 text-sm ${stageStyle(stage)}`}
               >
