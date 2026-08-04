@@ -315,6 +315,17 @@ export const deleteLead = createServerFn({ method: "POST" })
     if (fetchErr || !existingRow)
       throw new Error(`Lead not found: ${fetchErr?.message ?? data.leadId}`);
 
+    // Every job must stay linked to a client — block deletion instead of
+    // silently orphaning this lead's jobs (the FK would null client_id).
+    const { count: jobCount, error: jobCountErr } = await supabaseAdmin
+      .from("jobs")
+      .select("id", { count: "exact", head: true })
+      .eq("client_id", data.leadId);
+    if (jobCountErr) throw new Error(`Failed to check jobs: ${jobCountErr.message}`);
+    if ((jobCount ?? 0) > 0) {
+      throw new Error(`This client has ${jobCount} job(s). Reassign or delete them first.`);
+    }
+
     const existing = rowToLead(existingRow);
 
     await logActivityEvent({

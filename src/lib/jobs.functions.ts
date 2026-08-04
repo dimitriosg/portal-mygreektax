@@ -27,6 +27,25 @@ import { requireAdminAccess, requireVerifiedAccess } from "./access-context.serv
 const CLIENT_TRACKING_LINK_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 const TRACKING_TOKEN_PATTERN = /^[A-Fa-f0-9]{64}$/;
 
+// Every job must be linked to a client (a lead IS a client record); jobs
+// without one are unreachable from the pipeline. Mirrors RECORD_ID in
+// leads.functions.ts.
+const CLIENT_RECORD_ID = z
+  .string()
+  .min(1)
+  .max(80)
+  .regex(/^[0-9a-fA-F-]{36}$/, "Invalid client id");
+
+async function assertClientExists(clientId: string) {
+  const { data: row, error } = await supabaseAdmin
+    .from("clients")
+    .select("id")
+    .eq("id", clientId)
+    .maybeSingle();
+  if (error) throw new Error(`Failed to verify client: ${error.message}`);
+  if (!row) throw new Error("Client not found — every job must be linked to an existing lead.");
+}
+
 export type PublicTrackingErrorCode = "invalid" | "expired" | "revoked" | "temporary_unavailable";
 
 export type PublicTrackingData = {
@@ -343,7 +362,7 @@ export const updateJob = createServerFn({ method: "POST" })
       tier?: string | null;
       category?: string | null;
       serviceId?: string | null;
-      clientId?: string | null;
+      clientId?: string;
       accountantId?: string | null;
     }) =>
       z
@@ -362,7 +381,9 @@ export const updateJob = createServerFn({ method: "POST" })
           tier: z.string().max(100).nullable().optional(),
           category: z.string().max(100).nullable().optional(),
           serviceId: z.string().min(1).max(50).nullable().optional(),
-          clientId: z.string().min(1).max(50).nullable().optional(),
+          // Every job must stay linked to a client: re-linking is allowed,
+          // un-linking (null) is not.
+          clientId: CLIENT_RECORD_ID.optional(),
           accountantId: z.string().min(1).max(50).nullable().optional(),
         })
         .parse(d),
@@ -434,7 +455,10 @@ export const updateJob = createServerFn({ method: "POST" })
       if (data.category !== undefined) fields["Category"] = data.category ? [data.category] : null;
       if (data.serviceId !== undefined)
         fields["Service Catalog"] = data.serviceId ? [data.serviceId] : [];
-      if (data.clientId !== undefined) fields["Client"] = data.clientId ? [data.clientId] : [];
+      if (data.clientId !== undefined) {
+        await assertClientExists(data.clientId);
+        fields["Client"] = [data.clientId];
+      }
       if (data.accountantId !== undefined)
         fields["Assigned Accountant"] = data.accountantId ? [data.accountantId] : [];
     }
@@ -681,7 +705,7 @@ export const createJob = createServerFn({ method: "POST" })
     }) =>
       z
         .object({
-          clientId: z.string().min(1).max(50),
+          clientId: CLIENT_RECORD_ID,
           serviceId: z.string().min(1).max(50),
           accountantId: z.string().min(1).max(50).optional(),
           status: z.enum(JOB_STATUSES).optional(),
@@ -696,6 +720,7 @@ export const createJob = createServerFn({ method: "POST" })
       userId: context.userId,
       email: context.claims.email as string | undefined,
     });
+    await assertClientExists(data.clientId);
     // Compute next Job Code (e.g. JB105) by scanning all existing codes.
     let maxN = 0;
     let prefix = "JB";

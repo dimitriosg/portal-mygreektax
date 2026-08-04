@@ -295,7 +295,8 @@ function JobDetail() {
                       : null
                     : undefined,
                 notes: notes !== previousNotes ? notes : undefined,
-                clientId: clientId !== previousClientId ? clientId || null : undefined,
+                // Un-linking a client is not allowed — only send a real re-link.
+                clientId: clientId && clientId !== previousClientId ? clientId : undefined,
                 accountantId:
                   accountantId !== previousAccountantId ? accountantId || null : undefined,
                 serviceId: serviceId !== previousServiceId ? serviceId || null : undefined,
@@ -628,7 +629,9 @@ function JobDetail() {
                   onChange={(e) => setClientId(e.target.value)}
                   className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                 >
-                  <option value="">— Select client —</option>
+                  <option value="" disabled>
+                    — Select client —
+                  </option>
                   {(clientsQ.data?.clients ?? []).map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.fields["Full Name"] ?? c.fields["Client Code"] ?? c.id}
