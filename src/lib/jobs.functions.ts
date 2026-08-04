@@ -28,13 +28,8 @@ const CLIENT_TRACKING_LINK_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 const TRACKING_TOKEN_PATTERN = /^[A-Fa-f0-9]{64}$/;
 
 // Every job must be linked to a client (a lead IS a client record); jobs
-// without one are unreachable from the pipeline. Mirrors RECORD_ID in
-// leads.functions.ts.
-const CLIENT_RECORD_ID = z
-  .string()
-  .min(1)
-  .max(80)
-  .regex(/^[0-9a-fA-F-]{36}$/, "Invalid client id");
+// without one are unreachable from the pipeline.
+const CLIENT_RECORD_ID = z.string().uuid("Invalid client id");
 
 async function assertClientExists(clientId: string) {
   const { data: row, error } = await supabaseAdmin

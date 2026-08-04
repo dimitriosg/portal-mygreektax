@@ -34,7 +34,10 @@ begin
     return;
   end if;
 
-  select * into v_client from public.clients where id = p_client_id;
+  -- Lock the client row first so concurrent job writes for the same client
+  -- serialize their recomputations instead of aggregating stale snapshots
+  -- (e.g. two transactions each completing one of the last two open jobs).
+  select * into v_client from public.clients where id = p_client_id for update;
   if not found then
     return;  -- client mid-deletion: nothing to sync
   end if;
@@ -86,11 +89,24 @@ begin
     return old;
   end if;
 
-  perform public.recompute_client_stage(new.client_id);
-
-  -- A job re-linked to a different client must also recompute the old one.
+  -- A job re-linked to a different client must recompute both clients.
+  -- recompute_client_stage locks the client row, so when two rows are
+  -- involved always lock in ascending id order to avoid deadlocks between
+  -- concurrent relinks crossing the same pair.
   if tg_op = 'UPDATE' and old.client_id is distinct from new.client_id then
-    perform public.recompute_client_stage(old.client_id);
+    if old.client_id is null then
+      perform public.recompute_client_stage(new.client_id);
+    elsif new.client_id is null then
+      perform public.recompute_client_stage(old.client_id);
+    elsif old.client_id < new.client_id then
+      perform public.recompute_client_stage(old.client_id);
+      perform public.recompute_client_stage(new.client_id);
+    else
+      perform public.recompute_client_stage(new.client_id);
+      perform public.recompute_client_stage(old.client_id);
+    end if;
+  else
+    perform public.recompute_client_stage(new.client_id);
   end if;
 
   return new;

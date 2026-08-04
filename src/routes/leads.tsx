@@ -1247,7 +1247,12 @@ function LeadEditDialog({
                 onChange={(e) => {
                   const next = e.target.value;
                   setStage(next);
-                  onQuickUpdate({ stage: next });
+                  // Send the unsaved deposit draft along so the Quoted→Active
+                  // deposit gate counts a deposit typed in this dialog.
+                  onQuickUpdate({
+                    stage: next,
+                    ...(deposit !== "" ? { deposit: Number(deposit) } : {}),
+                  });
                 }}
                 className={`mt-1 w-full rounded border px-2 py-2 text-sm ${stageStyle(stage)}`}
               >
