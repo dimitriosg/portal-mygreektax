@@ -606,7 +606,9 @@ function LeadsPage() {
         />
       )}
 
-      {editingJob && <JobEditDialog job={editingJob} onClose={() => setEditingJob(null)} />}
+      {editingJob && (
+        <JobEditDialog key={editingJob.id} job={editingJob} onClose={() => setEditingJob(null)} />
+      )}
 
       {creatingLead && (
         <NewLeadDialog

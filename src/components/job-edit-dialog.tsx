@@ -97,7 +97,7 @@ export function JobEditDialog({ job, onClose }: { job: Job; onClose: () => void 
                 ? null
                 : Number(accountantFee)
               : undefined,
-          serviceId: serviceId && serviceId !== previous.serviceId ? serviceId : undefined,
+          serviceId: serviceId !== previous.serviceId ? serviceId || null : undefined,
           accountantId: accountantId !== previous.accountantId ? accountantId || null : undefined,
           adminInternalNotes:
             adminInternalNotes !== previous.adminInternalNotes ? adminInternalNotes : undefined,
@@ -128,7 +128,7 @@ export function JobEditDialog({ job, onClose }: { job: Job; onClose: () => void 
         <DialogHeader>
           <div className="flex items-center gap-2">
             <DialogTitle>{job.fields["Job Code"] ?? "Job"}</DialogTitle>
-            <StatusBadge status={job.fields.Status} />
+            <StatusBadge status={status} />
           </div>
           <div className="text-xs text-muted-foreground">
             {job.fields["Service Name"] ?? "—"}
@@ -211,9 +211,7 @@ export function JobEditDialog({ job, onClose }: { job: Job; onClose: () => void 
                 onChange={(e) => setServiceId(e.target.value)}
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               >
-                <option value="" disabled>
-                  — Select service —
-                </option>
+                <option value="">— No service —</option>
                 {(servicesQ.data?.services ?? []).map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name || s.code || s.id}
