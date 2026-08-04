@@ -983,7 +983,7 @@ function LeadHistory({ leadId }: { leadId: string }) {
 
 // Money fields are only shown once there is something to quote — Potential
 // leads with no quote yet don't need an empty wall of € inputs.
-const MONEY_RELEVANT_STAGES = new Set(["Quoted", "Active", "Parked", "Complete"]);
+const MONEY_RELEVANT_STAGES = new Set(["Quoted", "Active", "Delivered", "Parked", "Complete"]);
 
 const DEFAULT_NEW_JOB_FORM = {
   serviceId: "",
