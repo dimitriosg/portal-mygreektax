@@ -23,16 +23,25 @@
 -- rebuild that has not reached the 04 Aug migration. Ordering is otherwise
 -- unconstrained: it only has to run after the role exists.
 --
--- Production already satisfies this. pg_roles currently reports
--- rolbypassrls = false and rolcanlogin = true for n8n_readonly, so this
--- enforces a property that is presently true by accident of how the role was
--- typed into the SQL editor on 04/08/2026. The password is not touched.
+-- The attribute list is exhaustive on purpose. Convergence is only worth
+-- anything if it names every attribute that could have drifted, so leaving one
+-- out would be the same bug in miniature. noreplication is the easiest to
+-- overlook, because CREATE ROLE defaults to it and the 04 Aug file therefore
+-- never had to say it, but a role that already existed carries whatever it was
+-- given, and replication is a privileged attribute: it allows connecting in
+-- replication mode and creating or dropping replication slots.
+--
+-- Production already satisfies all of it. pg_roles currently reports rolsuper,
+-- rolcreatedb, rolcreaterole, rolinherit, rolreplication and rolbypassrls all
+-- false, with rolcanlogin true, so this enforces a state that is presently
+-- true by accident of how the role was typed into the SQL editor on
+-- 04/08/2026. The password is not touched.
 
 do $$
 begin
   if exists (select 1 from pg_roles where rolname = 'n8n_readonly') then
     alter role n8n_readonly
-      login nosuperuser nocreatedb nocreaterole noinherit nobypassrls;
+      login nosuperuser nocreatedb nocreaterole noinherit noreplication nobypassrls;
   end if;
 end
 $$;
