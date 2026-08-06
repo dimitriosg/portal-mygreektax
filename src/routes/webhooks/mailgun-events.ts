@@ -15,10 +15,29 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 // are tagged with the Mailgun variable src=portal so they are skipped here (see
 // the companion note). That is what prevents double-logging.
 //
+// It ALSO owns bounce and complaint handling. A permanent failure or a spam
+// complaint writes public.suppressed_emails, which is the single authority the
+// newsletter send query consults before mailing anyone. A temporary failure is
+// logged and never suppresses: soft-bouncing a working mailbox out of the list
+// is the classic way to lose a real subscriber.
+//
+// SECURITY: signature verification is MANDATORY. It used to be conditional on
+// the signing key being present, which meant an unset key silently turned this
+// into an open endpoint, and an open endpoint that writes suppressed_emails is
+// a way for anyone to unsubscribe any address. The timestamp is checked as well
+// as the signature, because Mailgun signs timestamp + token and an HMAC check
+// on its own passes forever on a captured payload.
+//
 // Env (Cloudflare Worker vars / secrets):
 //   SUPABASE_URL (or VITE_SUPABASE_URL), SUPABASE_SERVICE_ROLE_KEY  -> already set
 //   MAILGUN_API_KEY                 -> Mailgun private API key, used to fetch the stored message
-//   MAILGUN_WEBHOOK_SIGNING_KEY     -> optional; when set, incoming events are signature-verified
+//                                      and to send the complaint alert
+//   MAILGUN_WEBHOOK_SIGNING_KEY     -> REQUIRED. Mailgun's HTTP webhook signing key, which is a
+//                                      different secret from MAILGUN_API_KEY. Without it this
+//                                      route refuses every request rather than accepting unverified ones.
+//   MAILGUN_DOMAIN                  -> optional, defaults to mygreektax.eu. Same variable the
+//                                      other send routes use.
+//   MAILGUN_ALERT_TO                -> optional, defaults to jim@mygreektax.eu
 // -----------------------------------------------------------------------------
 
 let cachedClient: SupabaseClient | undefined;
@@ -108,7 +127,155 @@ async function verifyMailgunSignature(
   }
 }
 
-const FAILURE_EVENTS = new Set(["failed", "permanent_fail", "temporary_fail"]);
+// Mailgun replays are only possible inside this window, because the signature
+// covers the timestamp. Five minutes is Mailgun's own documented tolerance and
+// leaves room for clock skew without leaving a captured event useful for long.
+const MAX_SIGNATURE_AGE_SECONDS = 300;
+
+// The n8n send node records Mailgun's message id with angle brackets,
+// <2026...@mygreektax.eu>, while the webhook reports message.headers.message-id
+// without them. Comparing the two raw would silently never match and every
+// delivery update would quietly do nothing, so normalise both sides.
+function normalizeMessageId(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  const bare = trimmed.replace(/^<+/, "").replace(/>+$/, "");
+  return bare || undefined;
+}
+
+type EventOutcome = {
+  // Status written to email_send_log for this event.
+  logStatus?: "delivered" | "failed" | "bounced" | "complained";
+  // Reason written to suppressed_emails, when the address should never be mailed again.
+  suppressReason?: "bounce" | "complaint" | "unsubscribe";
+  // Whether this one is worth waking Jim for.
+  alert?: boolean;
+};
+
+// Classify a Mailgun event. The severity split is the important part: only a
+// PERMANENT failure suppresses. Mailgun reports both under event "failed" and
+// distinguishes them with severity, and also still emits the older
+// permanent_fail / temporary_fail event names, so both spellings are handled.
+function classifyEvent(event: string | undefined, severity: string | undefined): EventOutcome {
+  switch (event) {
+    case "delivered":
+      return { logStatus: "delivered" };
+    case "complained":
+      return { logStatus: "complained", suppressReason: "complaint", alert: true };
+    case "unsubscribed":
+      return { suppressReason: "unsubscribe" };
+    case "permanent_fail":
+      return { logStatus: "bounced", suppressReason: "bounce" };
+    case "temporary_fail":
+      return { logStatus: "failed" };
+    case "failed":
+      return severity === "permanent"
+        ? { logStatus: "bounced", suppressReason: "bounce" }
+        : { logStatus: "failed" };
+    default:
+      return {};
+  }
+}
+
+function redactEmail(email: string): string {
+  const [local, domain] = email.split("@");
+  if (!domain) return "***";
+  return `${local.slice(0, 1)}***@${domain}`;
+}
+
+// Alerts go through Mailgun's EU host, the same one the storage fetch uses.
+// Never throws into the request path; callers catch.
+async function sendAlert(subject: string, lines: string[]): Promise<void> {
+  const apiKey = process.env.MAILGUN_API_KEY;
+  if (!apiKey) {
+    console.error("[mailgun-events] MAILGUN_API_KEY not set; cannot send alert", { subject });
+    return;
+  }
+  const to = process.env.MAILGUN_ALERT_TO || "jim@mygreektax.eu";
+  // Same convention as send-approved, case-reply and partner-reply, rather than
+  // a hardcoded domain: all four send through the one variable so a domain
+  // change is a single edit instead of a hunt for the site that was missed.
+  const domain = process.env.MAILGUN_DOMAIN || "mygreektax.eu";
+
+  const form = new FormData();
+  form.append("from", "MyGreekTax portal <hello@mygreektax.eu>");
+  form.append("to", to);
+  form.append("subject", subject);
+  form.append("text", lines.join("\n"));
+
+  // Bounded, because this runs on the webhook request path. The suppression
+  // failure alert is awaited immediately before returning 500, so a stalled
+  // Mailgun API would otherwise hang the handler until Mailgun times the
+  // webhook out, and the retry would arrive having already committed writes.
+  const response = await fetch(`https://api.eu.mailgun.net/v3/${domain}/messages`, {
+    method: "POST",
+    headers: { Authorization: "Basic " + btoa("api:" + apiKey) },
+    body: form,
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!response.ok) {
+    console.error("[mailgun-events] alert send failed", { subject, status: response.status });
+  }
+}
+
+// A spam complaint is worth an interruption rather than a log line.
+//
+// complainantEmail, not "recipient": this file already uses `recipient` for the
+// Mailgun event's recipient field, and sendAlert has its own `to`, so a third
+// meaning of the same word here would be actively misleading.
+async function sendComplaintAlert(
+  complainantEmail: string,
+  event: string | undefined,
+  reason: string | undefined,
+): Promise<void> {
+  await sendAlert(`Spam complaint from ${complainantEmail}`, [
+    `${complainantEmail} marked a MyGreekTax email as spam.`,
+    "",
+    `Event: ${event ?? "complained"}`,
+    `Reason: ${reason ?? "not given"}`,
+    "",
+    "The address is now in suppressed_emails and will be excluded from every",
+    "future send. No action is required to stop mailing them.",
+    "",
+    "Worth a look at what was sent to them, since complaints are the metric",
+    "mailbox providers weigh most heavily.",
+  ]);
+}
+
+// A suppression that could not be written is the failure most likely to go
+// unnoticed. Answering 500 buys a Mailgun retry, but retries are finite: if
+// Supabase is down long enough, Mailgun gives up and the suppression is lost
+// with nothing to show for it but a Worker log nobody is reading. This is also
+// the only warning you would get for a code bug that throws on every
+// suppression, where the alternative is finding out when Mailgun disables the
+// endpoint.
+//
+// Deliberately not rate limited. During an outage every retry of every event
+// alerts, which is noisy, but the noise is proportional to how much is being
+// lost and under-reporting this failure is far worse than over-reporting it.
+async function sendSuppressionFailureAlert(
+  suppressedEmail: string,
+  suppressReason: string,
+  detail: string,
+): Promise<void> {
+  await sendAlert(`Suppression FAILED for ${suppressedEmail}`, [
+    `Could not write a suppression for ${suppressedEmail}.`,
+    "",
+    `Intended reason: ${suppressReason}`,
+    `Database error: ${detail}`,
+    "",
+    "This address should never be mailed again but is NOT currently suppressed,",
+    "so the next newsletter send would still include it.",
+    "",
+    "The route answered 500, so Mailgun will retry on a backoff and may still",
+    "succeed on its own. Mailgun does give up eventually, so if these keep",
+    "arriving the suppression needs writing by hand:",
+    "",
+    `  insert into public.suppressed_emails (email, reason)`,
+    `  values ('${suppressedEmail}', '${suppressReason}')`,
+    `  on conflict (email) do nothing;`,
+  ]);
+}
 
 export const Route = createFileRoute("/webhooks/mailgun-events")({
   server: {
@@ -124,16 +291,38 @@ export const Route = createFileRoute("/webhooks/mailgun-events")({
           return Response.json({ error: "Invalid JSON body" }, { status: 400 });
         }
 
-        // Optional signature verification. Enforced only when the signing key is set,
-        // so the route can ship before the key is configured.
+        // Signature verification, mandatory. A missing key is a configuration
+        // fault, not a reason to accept the request: this route can suppress an
+        // address, so failing open would let anyone unsubscribe anyone.
         const signingKey = process.env.MAILGUN_WEBHOOK_SIGNING_KEY;
-        if (signingKey) {
-          const ts = readString(get(body, "signature", "timestamp"), 64);
-          const tok = readString(get(body, "signature", "token"), 256);
-          const sig = readString(get(body, "signature", "signature"), 256);
-          if (!ts || !tok || !sig || !(await verifyMailgunSignature(signingKey, ts, tok, sig))) {
-            return Response.json({ error: "Bad signature" }, { status: 401 });
-          }
+        if (!signingKey) {
+          console.error("[mailgun-events] MAILGUN_WEBHOOK_SIGNING_KEY not configured");
+          return Response.json({ error: "Server configuration error" }, { status: 500 });
+        }
+
+        const ts = readString(get(body, "signature", "timestamp"), 64);
+        const tok = readString(get(body, "signature", "token"), 256);
+        const sig = readString(get(body, "signature", "signature"), 256);
+        if (!ts || !tok || !sig || !(await verifyMailgunSignature(signingKey, ts, tok, sig))) {
+          console.error("[mailgun-events] rejected: bad signature");
+          return Response.json({ error: "Bad signature" }, { status: 401 });
+        }
+
+        // Freshness. The signature covers timestamp + token and nothing else, so
+        // it stays valid forever on a captured payload. Without this check a
+        // single intercepted permanent-bounce event is a reusable suppression
+        // weapon against any address it names.
+        const signedAt = Number(ts);
+        if (!Number.isFinite(signedAt)) {
+          console.error("[mailgun-events] rejected: unparseable signature timestamp");
+          return Response.json({ error: "Bad signature" }, { status: 401 });
+        }
+        const ageSeconds = Math.abs(Date.now() / 1000 - signedAt);
+        if (ageSeconds > MAX_SIGNATURE_AGE_SECONDS) {
+          console.error("[mailgun-events] rejected: stale signature", {
+            age_seconds: Math.round(ageSeconds),
+          });
+          return Response.json({ error: "Stale signature" }, { status: 401 });
         }
 
         const ed = get(body, "event-data");
@@ -159,7 +348,11 @@ export const Route = createFileRoute("/webhooks/mailgun-events")({
             : readString(storageRaw, 2000);
         const headerSubject = readString(get(ed, "message", "headers", "subject"), 500);
         const occurredAt = mailgunTsToIso(get(ed, "timestamp"));
-        const severity = readString(get(ed, "severity"), 40);
+        // Lowercased for the same reason `event` is: classifyEvent compares
+        // severity to "permanent", and a capitalised "Permanent" would fall
+        // through to the temporary branch and skip the suppression entirely.
+        // The failure direction matters, it silently drops a real bounce.
+        const severity = readString(get(ed, "severity"), 40)?.toLowerCase();
         const reason =
           readString(get(ed, "reason"), 200) ??
           readString(get(ed, "delivery-status", "message"), 200);
@@ -179,27 +372,155 @@ export const Route = createFileRoute("/webhooks/mailgun-events")({
 
         try {
           // -------------------------------------------------------------------
-          // 1. Delivery status on email_send_log (best-effort, matches by message_id).
+          // 1. Delivery status on email_send_log, and suppression when the event
+          //    means this address must never be mailed again.
           // -------------------------------------------------------------------
-          if (messageId && event === "delivered") {
-            const { error } = await supabase
+          const outcome = classifyEvent(event, severity);
+          const detail = [severity, reason].filter(Boolean).join(" / ") || null;
+          result.classified = {
+            logStatus: outcome.logStatus ?? null,
+            suppressReason: outcome.suppressReason ?? null,
+          };
+
+          // Suppression first. It is the write that actually protects the list,
+          // so it must not be skipped if the status update below fails.
+          //
+          // ignoreDuplicates makes this an ON CONFLICT DO NOTHING, not the
+          // update an upsert normally implies. That is deliberate: the first
+          // reason an address was suppressed is the true one, and letting a
+          // later bounce overwrite it would erase the fact that someone
+          // reported spam, which is the more serious signal of the two.
+          if (outcome.suppressReason && recipient) {
+            const normalizedRecipient = recipient.toLowerCase();
+            const { error: suppressError } = await supabase.from("suppressed_emails").upsert(
+              {
+                email: normalizedRecipient,
+                reason: outcome.suppressReason,
+                metadata: {
+                  source: "mailgun-webhook",
+                  event: event ?? null,
+                  severity: severity ?? null,
+                  reason: reason ?? null,
+                  message_id: messageId ?? null,
+                },
+              },
+              { onConflict: "email", ignoreDuplicates: true },
+            );
+            if (suppressError) {
+              console.error("[mailgun-events] suppression write failed:", suppressError.message, {
+                email_redacted: redactEmail(normalizedRecipient),
+                reason: outcome.suppressReason,
+              });
+              // Ask Mailgun to retry. Everything else on this route answers 200
+              // even on failure, to avoid a retry storm over best-effort logging,
+              // but suppression is not best-effort: swallowing this would mean a
+              // transient database error silently leaves a bounced or complaining
+              // address on the list forever.
+              //
+              // IDEMPOTENCY IS LOAD BEARING IN TWO DIRECTIONS, AND THEY ARE THE
+              // SAME ARGUMENT. Retrying is safe only because these writes are
+              // idempotent: suppressed_emails.email is UNIQUE, setting a status
+              // to 'bounced' twice matches setting it once, and the conversation
+              // capture below dedupes on source_message_id. That same property is
+              // why there is no seen-token replay store here, because a replay
+              // can only repeat work that costs nothing to repeat.
+              //
+              // So if you ever make one of these writes non-idempotent, you
+              // invalidate BOTH decisions at once: retries start duplicating
+              // real effects, and replay protection stops being optional. Do not
+              // change one without revisiting the other.
+              result.suppressed = false;
+              result.suppressError = suppressError.message;
+
+              // Awaited, not fire-and-forget: the response is returned on the
+              // next line and the isolate may stop executing after that.
+              await sendSuppressionFailureAlert(
+                normalizedRecipient,
+                outcome.suppressReason,
+                suppressError.message,
+              ).catch((alertError: unknown) => {
+                console.error("[mailgun-events] suppression failure alert failed", {
+                  error: alertError,
+                });
+              });
+
+              return Response.json(result, { status: 500 });
+            } else {
+              console.log("[mailgun-events] suppressed", {
+                email_redacted: redactEmail(normalizedRecipient),
+                reason: outcome.suppressReason,
+              });
+              result.suppressed = true;
+            }
+          } else if (outcome.suppressReason) {
+            // An event that should suppress but names nobody. Rare and probably
+            // malformed, but it would otherwise skip the write, answer 200, and
+            // leave no trace that an address escaped suppression.
+            //
+            // Answers 200 rather than 500 on purpose. A retry cannot help: the
+            // event will arrive without a recipient every time, so asking
+            // Mailgun to resend it only burns its retry budget before it gives
+            // up. The alert is the useful action, not the retry.
+            console.error("[mailgun-events] suppression event carries no recipient", {
+              event: event ?? null,
+              reason: outcome.suppressReason,
+            });
+            result.suppressed = false;
+            result.suppressError = "no recipient on event";
+
+            await sendAlert("Suppression event with no recipient", [
+              "A Mailgun event that should have suppressed an address arrived",
+              "without a recipient, so nothing could be written.",
+              "",
+              `Event: ${event ?? "unknown"}`,
+              `Intended reason: ${outcome.suppressReason}`,
+              `Message id: ${messageId ?? "none"}`,
+              "",
+              "Not retried, because the event would arrive the same way again.",
+              "Worth checking the Mailgun logs for that message id to find out",
+              "which address it concerned.",
+            ]).catch((alertError: unknown) => {
+              console.error("[mailgun-events] no-recipient alert failed", { error: alertError });
+            });
+          }
+
+          // Status update. Matched on the normalised message id, because the
+          // sender stores it bracketed and the webhook reports it bare.
+          const normalizedMessageId = normalizeMessageId(messageId);
+          if (normalizedMessageId && outcome.logStatus) {
+            const patch: Record<string, unknown> = { status: outcome.logStatus };
+            if (outcome.logStatus !== "delivered") patch.error_message = detail;
+
+            // .in() rather than .or() with an interpolated value: message_id
+            // comes off the request body, and building a PostgREST filter string
+            // out of caller-supplied text is a filter-injection shape even behind
+            // a verified signature. .in() is escaped by the client.
+            const { data: updated, error } = await supabase
               .from("email_send_log")
-              .update({ status: "delivered" })
-              .eq("message_id", messageId);
-            if (error)
-              console.error("[mailgun-events] email_send_log delivered update:", error.message);
-            result.delivery = "delivered";
-          } else if (messageId && event && FAILURE_EVENTS.has(event)) {
-            const { error } = await supabase
-              .from("email_send_log")
-              .update({
-                status: "failed",
-                error_message: [severity, reason].filter(Boolean).join(" / ") || null,
-              })
-              .eq("message_id", messageId);
-            if (error)
-              console.error("[mailgun-events] email_send_log failed update:", error.message);
-            result.delivery = "failed";
+              .update(patch)
+              .in("message_id", [normalizedMessageId, `<${normalizedMessageId}>`])
+              .select("id");
+
+            if (error) {
+              console.error("[mailgun-events] email_send_log update:", error.message);
+            } else if (!updated || updated.length === 0) {
+              // Not an error: transactional mail and Gmail-alias sends are not
+              // all logged here. Recorded so a systematic mismatch is visible
+              // rather than silent.
+              console.log("[mailgun-events] no email_send_log row matched", {
+                status: outcome.logStatus,
+              });
+            }
+            result.delivery = outcome.logStatus;
+            result.logRowsUpdated = updated?.length ?? 0;
+          }
+
+          // A spam complaint against a list this small is worth interrupting for.
+          // Non-fatal: the suppression above is what matters, the alert is courtesy.
+          if (outcome.alert && recipient) {
+            await sendComplaintAlert(recipient, event, reason).catch((alertError: unknown) => {
+              console.error("[mailgun-events] complaint alert failed", { error: alertError });
+            });
           }
 
           // -------------------------------------------------------------------
@@ -220,9 +541,16 @@ export const Route = createFileRoute("/webhooks/mailgun-events")({
             }
 
             // Fetch the stored message (raw MIME parsed to JSON).
+            //
+            // Bounded for the same reason the alert send is. This one is
+            // pre-existing rather than new, but it is the same hang on the same
+            // request path, and fixing one of the two would leave the class only
+            // half closed. Longer than the alert timeout because it pulls a
+            // whole stored message rather than posting a short form.
             const auth = "Basic " + btoa("api:" + mailgunKey);
             const stored = await fetch(storageUrl as string, {
               headers: { Authorization: auth, Accept: "application/json" },
+              signal: AbortSignal.timeout(20_000),
             });
             if (!stored.ok) {
               console.error("[mailgun-events] storage fetch failed:", stored.status);
@@ -311,11 +639,39 @@ export const Route = createFileRoute("/webhooks/mailgun-events")({
           return Response.json(result);
         } catch (error) {
           console.error("[mailgun-events] processing error", { error });
-          // Still return 200 so Mailgun does not retry-storm; the error is logged.
-          return Response.json({
-            ok: false,
-            error: error instanceof Error ? error.message : String(error),
-          });
+          // 200 for anything that did not need to suppress, so a failure in the
+          // best-effort conversation capture does not provoke a retry storm.
+          //
+          // 500 when this event was supposed to suppress and we cannot prove it
+          // did, so Mailgun retries rather than dropping a bounce or a complaint
+          // on the floor. Erring towards a duplicate delivery is right here: the
+          // writes are idempotent, and the alternative is an address that should
+          // never be mailed again quietly staying on the list.
+          const classified = result.classified as { suppressReason?: string | null } | undefined;
+          const suppressReason = classified?.suppressReason;
+          const confirmedSuppressed = result.suppressed === true;
+          const lostSuppression = Boolean(suppressReason) && !confirmedSuppressed;
+          const message = error instanceof Error ? error.message : String(error);
+
+          // Same reasoning as the explicit failure path above: a suppression we
+          // cannot confirm is the one failure that must not stay quiet, whether
+          // it arrived as an error return or as a thrown exception.
+          if (lostSuppression && recipient) {
+            await sendSuppressionFailureAlert(
+              recipient.toLowerCase(),
+              suppressReason as string,
+              message,
+            ).catch((alertError: unknown) => {
+              console.error("[mailgun-events] suppression failure alert failed", {
+                error: alertError,
+              });
+            });
+          }
+
+          return Response.json(
+            { ok: false, error: message },
+            { status: lostSuppression ? 500 : 200 },
+          );
         }
       },
     },
