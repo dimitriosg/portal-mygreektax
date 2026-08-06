@@ -15,8 +15,18 @@
 -- granted on below. A file dated when it was copied here would sort after the
 -- grants and fix nothing.
 --
--- Keep the SQL identical in both repos. If it has to change, add a new
--- migration rather than editing this one.
+-- Keep the two copies interchangeable. They differ today by exactly one line:
+-- the notify at the end, which brain's copy predates. That is safe, because a
+-- notify is a signal rather than schema state, so whichever copy the ledger
+-- happens to run leaves the database in the same condition. Anything that DOES
+-- change schema state must be added as a new migration, never by editing this
+-- one in one repo only.
+--
+-- The notify matters little for n8n itself, which connects to Postgres
+-- directly as n8n_readonly and never reads through PostgREST, and the policy
+-- below is scoped to that role alone so no other role's access changes. It is
+-- here for the fresh-rebuild case and to match the convention of every other
+-- DDL migration in this directory.
 --
 -- HISTORY: this role was created manually in the SQL editor on 04/08/2026
 -- while wiring the n8n Morning digest workflow. This file records it so a
@@ -44,3 +54,5 @@ drop policy if exists n8n_readonly_select_clients on public.clients;
 
 create policy n8n_readonly_select_clients on public.clients
   for select to n8n_readonly using (true);
+
+notify pgrst, 'reload schema';
