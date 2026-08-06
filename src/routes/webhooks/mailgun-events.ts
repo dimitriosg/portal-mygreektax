@@ -354,8 +354,19 @@ export const Route = createFileRoute("/webhooks/mailgun-events")({
                 email_redacted: redactEmail(normalizedRecipient),
                 reason: outcome.suppressReason,
               });
+              // Ask Mailgun to retry. Everything else on this route answers 200
+              // even on failure, to avoid a retry storm over best-effort logging,
+              // but suppression is not best-effort: swallowing this would mean a
+              // transient database error silently leaves a bounced or complaining
+              // address on the list forever.
+              //
+              // Safe to retry. The suppression insert is guarded by a UNIQUE on
+              // email, the status update is idempotent, and the conversation
+              // capture below dedupes on source_message_id, so a replayed
+              // delivery repeats no work.
               result.suppressed = false;
               result.suppressError = suppressError.message;
+              return Response.json(result, { status: 500 });
             } else {
               console.log("[mailgun-events] suppressed", {
                 email_redacted: redactEmail(normalizedRecipient),
@@ -513,11 +524,26 @@ export const Route = createFileRoute("/webhooks/mailgun-events")({
           return Response.json(result);
         } catch (error) {
           console.error("[mailgun-events] processing error", { error });
-          // Still return 200 so Mailgun does not retry-storm; the error is logged.
-          return Response.json({
-            ok: false,
-            error: error instanceof Error ? error.message : String(error),
-          });
+          // 200 for anything that did not need to suppress, so a failure in the
+          // best-effort conversation capture does not provoke a retry storm.
+          //
+          // 500 when this event was supposed to suppress and we cannot prove it
+          // did, so Mailgun retries rather than dropping a bounce or a complaint
+          // on the floor. Erring towards a duplicate delivery is right here: the
+          // writes are idempotent, and the alternative is an address that should
+          // never be mailed again quietly staying on the list.
+          const needsSuppression = Boolean(
+            (result.classified as { suppressReason?: string | null } | undefined)?.suppressReason,
+          );
+          const confirmedSuppressed = result.suppressed === true;
+          const status = needsSuppression && !confirmedSuppressed ? 500 : 200;
+          return Response.json(
+            {
+              ok: false,
+              error: error instanceof Error ? error.message : String(error),
+            },
+            { status },
+          );
         }
       },
     },
