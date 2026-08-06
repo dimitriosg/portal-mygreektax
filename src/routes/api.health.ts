@@ -10,33 +10,30 @@ import { createFileRoute } from "@tanstack/react-router";
 // confirm MAILGUN_WEBHOOK_SIGNING_KEY existed, and /webhooks/mailgun-events
 // hard-500s without it.
 //
-// WHY IT IS GATED: the first cut of this route returned the full inventory to
-// anyone. That was a mistake and it was caught by using it. Fourteen secret
-// NAMES, plus which of them are currently unset, is a map: it took one
-// anonymous request to learn that MGT_WEBHOOK_SECRET was false, and a false in
-// that list points straight at the route whose guard is currently off. Values
-// were never exposed and are still not, but names plus status was already too
-// much.
+// WHY IT IS GATED: the first cut returned the full inventory to anyone. That
+// was a mistake and it was caught by using it. Fourteen names, plus which are
+// currently unset, is a map: one anonymous request was enough to learn that
+// MGT_WEBHOOK_SECRET was false, and a false in that list points straight at a
+// route whose guard is off. Values were never exposed and still are not, but
+// names plus status was already too much.
 //
 // So: a bare liveness answer to anyone, the inventory only to a caller holding
 // HEALTH_CHECK_SECRET, sent as x-health-check-secret. Same shape as the
-// x-lead-intake-secret convention this repo already uses on /webhooks/lead-intake.
+// x-lead-intake-secret convention on /webhooks/lead-intake.
 //
-// The one-time cost is that HEALTH_CHECK_SECRET itself has to be set from the
-// dashboard before any of this is readable, which is the very trip the endpoint
-// exists to avoid. That trip is now paid once rather than once per secret, and
-// there is no way around it: an endpoint that reveals the configuration to an
-// unauthenticated caller is the thing being fixed.
+// The one-time cost is that HEALTH_CHECK_SECRET must itself be set from the
+// dashboard, which is the trip this endpoint exists to avoid. Paid once rather
+// than once per secret, and unavoidable: an endpoint that hands its
+// configuration to an anonymous caller is the thing being fixed.
 //
-// PRESENCE ONLY, NEVER VALUES. Every secret is Boolean(). Do not be tempted to
-// echo a prefix "just to check the right one is set" — a prefix is enough to
-// confirm a guess. If you add a secret to this Worker, add it to secretPresence
-// below as a boolean.
+// PRESENCE ONLY, NEVER VALUES. Everything below is Boolean(). Do not be tempted
+// to echo a prefix "just to check the right one is set" — a prefix is enough to
+// confirm a guess.
 // -----------------------------------------------------------------------------
 
 // Length-independent comparison. The secret is high-entropy and this is over
-// the network, so a timing attack is not realistic, but the cost of not leaking
-// a comparison is five lines.
+// the network, so a timing attack is not realistic, but not leaking a
+// comparison costs five lines.
 function secretsMatch(provided: string, expected: string): boolean {
   if (provided.length !== expected.length) return false;
   let diff = 0;
@@ -46,16 +43,13 @@ function secretsMatch(provided: string, expected: string): boolean {
   return diff === 0;
 }
 
-// Grouped by what breaks without them, so a false reads as a consequence
-// rather than a name.
+// Actual credentials. Anything here leaking would be an incident.
 function secretPresence() {
   return {
-    // Database. Everything server-side fails without these.
-    SUPABASE_URL: Boolean(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL),
     SUPABASE_SERVICE_ROLE_KEY: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
 
-    // Mailgun. Two DIFFERENT credentials: the sending API key, and the webhook
-    // signing key used to verify inbound events. Confusing them is easy and the
+    // Two DIFFERENT Mailgun credentials: the sending API key, and the webhook
+    // signing key that verifies inbound events. Confusing them is easy and the
     // failure is silent, so both are listed.
     MAILGUN_API_KEY: Boolean(process.env.MAILGUN_API_KEY),
     MAILGUN_WEBHOOK_SIGNING_KEY: Boolean(process.env.MAILGUN_WEBHOOK_SIGNING_KEY),
@@ -66,13 +60,27 @@ function secretPresence() {
     BRAIN_WEBHOOK_SECRET: Boolean(process.env.BRAIN_WEBHOOK_SECRET),
     OPS_SNAPSHOT_KEY: Boolean(process.env.OPS_SNAPSHOT_KEY),
 
-    // Outbound integrations.
+    // Third-party API keys.
+    LOVABLE_API_KEY: Boolean(process.env.LOVABLE_API_KEY),
+    PLAUSIBLE_API_KEY: Boolean(process.env.PLAUSIBLE_API_KEY),
+
+    // This endpoint's own gate. Listed because its absence is meaningful: it is
+    // why a caller sees detail "unavailable" rather than an inventory.
+    HEALTH_CHECK_SECRET: Boolean(process.env.HEALTH_CHECK_SECRET),
+  };
+}
+
+// Required configuration that is NOT secret. Kept separate so the word "secret"
+// stays honest, but still reported: an unset BRAIN_ORCHESTRATE_URL breaks
+// draft generation just as surely as a missing key, and finding that out is the
+// whole point of this route.
+function configPresence() {
+  return {
+    SUPABASE_URL: Boolean(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL),
     BRAIN_ORCHESTRATE_URL: Boolean(process.env.BRAIN_ORCHESTRATE_URL),
     MAKE_PARTNER_SYNC_URL: Boolean(process.env.MAKE_PARTNER_SYNC_URL),
     MAKE_GMAIL_SYNC_WEBHOOK_URL: Boolean(process.env.MAKE_GMAIL_SYNC_WEBHOOK_URL),
-    LOVABLE_API_KEY: Boolean(process.env.LOVABLE_API_KEY),
     LOVABLE_SEND_URL: Boolean(process.env.LOVABLE_SEND_URL),
-    PLAUSIBLE_API_KEY: Boolean(process.env.PLAUSIBLE_API_KEY),
   };
 }
 
@@ -80,6 +88,12 @@ export const Route = createFileRoute("/api/health")({
   server: {
     handlers: {
       GET: async ({ request }) => {
+        // `ok` means LIVENESS, and only that: this Worker is running and
+        // serving. It is deliberately not a readiness aggregate, because the
+        // ungated response goes to anonymous callers and a false there would
+        // announce that something on this Worker is misconfigured, which is the
+        // leak the gate exists to prevent. Readiness is reported as `ready`,
+        // behind the gate, where the caller has already proved they may know.
         const bare = { ok: true, worker: "portal-mygreektax" };
         const noStore = { headers: { "cache-control": "no-store" } };
 
@@ -87,38 +101,59 @@ export const Route = createFileRoute("/api/health")({
         const provided = request.headers.get("x-health-check-secret");
 
         // No secret configured: liveness only, never the inventory. Fails
-        // closed, so forgetting to set HEALTH_CHECK_SECRET cannot reproduce the
+        // closed, so forgetting to set HEALTH_CHECK_SECRET cannot recreate the
         // open endpoint this gate was added to remove.
         if (!expected) {
           console.warn("[health] HEALTH_CHECK_SECRET not configured; detail withheld");
           return Response.json({ ...bare, detail: "unavailable" }, noStore);
         }
 
-        // Same answer for a missing header and a wrong one. 200 rather than
-        // 401, so an unauthenticated caller learns nothing about whether the
-        // gate exists or what it guards.
+        // Identical answer for a missing header and a wrong one, so an
+        // unauthenticated caller learns neither that a gate exists nor what it
+        // guards.
         if (!provided || !secretsMatch(provided, expected)) {
           return Response.json({ ...bare, detail: "unavailable" }, noStore);
         }
 
         const secrets = secretPresence();
+        const config = configPresence();
 
-        // The one route that refuses to run at all without its secret. Called
-        // out because a false here is not degraded service: it is every Mailgun
-        // event rejected, so no bounce suppression, no complaint alerts and no
-        // conversation capture.
-        const mailgunEventsReady = secrets.MAILGUN_WEBHOOK_SIGNING_KEY;
+        // Secrets whose absence stops a route dead rather than degrading it.
+        // Everything else can be missing without breaking a request path that
+        // is currently in use.
+        const required = {
+          SUPABASE_URL: config.SUPABASE_URL,
+          SUPABASE_SERVICE_ROLE_KEY: secrets.SUPABASE_SERVICE_ROLE_KEY,
+          MAILGUN_WEBHOOK_SIGNING_KEY: secrets.MAILGUN_WEBHOOK_SIGNING_KEY,
+          LEAD_INTAKE_SECRET: secrets.LEAD_INTAKE_SECRET,
+          MGT_WEBHOOK_SECRET: secrets.MGT_WEBHOOK_SECRET,
+        };
+        const missing = Object.entries(required)
+          .filter(([, present]) => !present)
+          .map(([name]) => name);
 
         return Response.json(
           {
             ...bare,
+            // The readiness answer `ok` deliberately is not. False means at
+            // least one hard requirement is unset; `missing` names which.
+            ready: missing.length === 0,
+            missing,
             secrets,
-            // Not secret, and useful to read back: these determine where alerts
-            // are sent from and to. Behind the gate anyway, since there is no
-            // reason to volunteer configuration to an anonymous caller.
+            config,
+            // Not secret, and useful to read back: these decide where alerts
+            // are sent from and to. Behind the gate regardless, since there is
+            // no reason to volunteer configuration to an anonymous caller.
             mailgunDomain: process.env.MAILGUN_DOMAIN || "mygreektax.eu",
             mailgunAlertTo: process.env.MAILGUN_ALERT_TO || "jim@mygreektax.eu",
-            routes: { mailgunEventsReady },
+            routes: {
+              // False means /webhooks/mailgun-events rejects everything: no
+              // bounce suppression, no complaint alerts, no conversation
+              // capture.
+              mailgunEventsReady: secrets.MAILGUN_WEBHOOK_SIGNING_KEY,
+              // False means /webhooks/conversation-log rejects everything.
+              conversationLogReady: secrets.MGT_WEBHOOK_SECRET,
+            },
           },
           noStore,
         );
