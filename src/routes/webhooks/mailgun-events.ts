@@ -35,6 +35,8 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 //   MAILGUN_WEBHOOK_SIGNING_KEY     -> REQUIRED. Mailgun's HTTP webhook signing key, which is a
 //                                      different secret from MAILGUN_API_KEY. Without it this
 //                                      route refuses every request rather than accepting unverified ones.
+//   MAILGUN_DOMAIN                  -> optional, defaults to mygreektax.eu. Same variable the
+//                                      other send routes use.
 //   MAILGUN_ALERT_TO                -> optional, defaults to jim@mygreektax.eu
 // -----------------------------------------------------------------------------
 
@@ -190,6 +192,10 @@ async function sendAlert(subject: string, lines: string[]): Promise<void> {
     return;
   }
   const to = process.env.MAILGUN_ALERT_TO || "jim@mygreektax.eu";
+  // Same convention as send-approved, case-reply and partner-reply, rather than
+  // a hardcoded domain: all four send through the one variable so a domain
+  // change is a single edit instead of a hunt for the site that was missed.
+  const domain = process.env.MAILGUN_DOMAIN || "mygreektax.eu";
 
   const form = new FormData();
   form.append("from", "MyGreekTax portal <hello@mygreektax.eu>");
@@ -201,7 +207,7 @@ async function sendAlert(subject: string, lines: string[]): Promise<void> {
   // failure alert is awaited immediately before returning 500, so a stalled
   // Mailgun API would otherwise hang the handler until Mailgun times the
   // webhook out, and the retry would arrive having already committed writes.
-  const response = await fetch("https://api.eu.mailgun.net/v3/mygreektax.eu/messages", {
+  const response = await fetch(`https://api.eu.mailgun.net/v3/${domain}/messages`, {
     method: "POST",
     headers: { Authorization: "Basic " + btoa("api:" + apiKey) },
     body: form,
