@@ -38,6 +38,18 @@ function readString(value: unknown, maxLength: number): string | undefined {
   return trimmed.slice(0, maxLength);
 }
 
+// Length-independent comparison. These secrets are high-entropy and this is
+// over the network, so a timing attack is not realistic, but not leaking a
+// comparison costs five lines.
+function secretsMatch(provided: string, expected: string): boolean {
+  if (provided.length !== expected.length) return false;
+  let diff = 0;
+  for (let i = 0; i < provided.length; i++) {
+    diff |= provided.charCodeAt(i) ^ expected.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
 // Turn whatever Make sends for sent_at into an ISO timestamp. Falls back to
 // null (endpoint then uses the DB default of now()) if it is unparseable.
 function parseSentAt(value: unknown): string | undefined {
@@ -68,16 +80,60 @@ export const Route = createFileRoute("/webhooks/conversation-log")({
         // identical guard on /webhooks/mailgun-events failed the same way and
         // was found the same day. Fail closed instead, so a missing secret is
         // loud and immediate rather than silent and indefinite.
-        const expectedSecret = process.env.MGT_WEBHOOK_SECRET;
-        if (!expectedSecret) {
-          console.error("[conversation-log] MGT_WEBHOOK_SECRET not configured");
+        // DUAL-ACCEPT, TEMPORARY. Two headers are accepted:
+        //
+        //   x-mgt-webhook-secret   checked against MGT_WEBHOOK_SECRET   (target)
+        //   x-lead-intake-secret   checked against LEAD_INTAKE_SECRET   (legacy)
+        //
+        // WHY: a sweep of the Make blueprints found SEVEN scenarios posting
+        // here, not one, and none of them send x-mgt-webhook-secret. Six send
+        // x-lead-intake-secret, which this route has been receiving and
+        // ignoring the whole time it was unauthenticated. Requiring only the
+        // target header would 401 all seven at once and take conversation
+        // capture down until every module had been edited.
+        //
+        // Accepting the header they already send closes the hole immediately at
+        // the cost of one secret temporarily authenticating two routes. That is
+        // weaker than distinct secrets per route and is not the end state, but
+        // it is enormously better than no authentication, which is what this
+        // route had.
+        //
+        // REMOVE THE LEGACY BRANCH once the Make modules send the target
+        // header. The log line below names which path authenticated, so
+        // migration progress is visible rather than guessed at: when
+        // "lead-intake-legacy" stops appearing, this block can go.
+        //
+        // The caller to watch is scenario 6289179, the one module whose header
+        // could not be read from the blueprint because it uses keychain 206586.
+        // The keychain is inferred to emit x-lead-intake-secret, since the same
+        // keychain authenticates /webhooks/lead-intake successfully, but that is
+        // an inference. If 6289179's error count jumps after this deploys, the
+        // inference was wrong for it and it needs its header set explicitly.
+        const mgtSecret = process.env.MGT_WEBHOOK_SECRET;
+        const leadSecret = process.env.LEAD_INTAKE_SECRET;
+
+        if (!mgtSecret && !leadSecret) {
+          console.error(
+            "[conversation-log] neither MGT_WEBHOOK_SECRET nor LEAD_INTAKE_SECRET configured",
+          );
           return Response.json({ error: "Server configuration error" }, { status: 500 });
         }
-        const provided = request.headers.get("x-mgt-webhook-secret");
-        if (!provided || provided !== expectedSecret) {
+
+        const mgtProvided = request.headers.get("x-mgt-webhook-secret");
+        const leadProvided = request.headers.get("x-lead-intake-secret");
+
+        let authenticatedVia: "mgt" | "lead-intake-legacy" | null = null;
+        if (mgtSecret && mgtProvided && secretsMatch(mgtProvided, mgtSecret)) {
+          authenticatedVia = "mgt";
+        } else if (leadSecret && leadProvided && secretsMatch(leadProvided, leadSecret)) {
+          authenticatedVia = "lead-intake-legacy";
+        }
+
+        if (!authenticatedVia) {
           console.error("[conversation-log] rejected: missing or invalid shared secret");
           return Response.json({ error: "Unauthorized" }, { status: 401 });
         }
+        console.log("[conversation-log] authenticated", { via: authenticatedVia });
 
         let body: unknown;
         try {
