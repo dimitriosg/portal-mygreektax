@@ -181,17 +181,12 @@ function redactEmail(email: string): string {
   return `${local.slice(0, 1)}***@${domain}`;
 }
 
-// A spam complaint is the one event worth an interruption rather than a log
-// line. Sent through Mailgun's EU host, the same one the storage fetch uses.
-// Never throws into the request path; the caller catches.
-async function sendComplaintAlert(
-  recipient: string,
-  event: string | undefined,
-  reason: string | undefined,
-): Promise<void> {
+// Alerts go through Mailgun's EU host, the same one the storage fetch uses.
+// Never throws into the request path; callers catch.
+async function sendAlert(subject: string, lines: string[]): Promise<void> {
   const apiKey = process.env.MAILGUN_API_KEY;
   if (!apiKey) {
-    console.error("[mailgun-events] MAILGUN_API_KEY not set; cannot send complaint alert");
+    console.error("[mailgun-events] MAILGUN_API_KEY not set; cannot send alert", { subject });
     return;
   }
   const to = process.env.MAILGUN_ALERT_TO || "jim@mygreektax.eu";
@@ -199,22 +194,8 @@ async function sendComplaintAlert(
   const form = new FormData();
   form.append("from", "MyGreekTax portal <hello@mygreektax.eu>");
   form.append("to", to);
-  form.append("subject", `Spam complaint from ${recipient}`);
-  form.append(
-    "text",
-    [
-      `${recipient} marked a MyGreekTax email as spam.`,
-      "",
-      `Event: ${event ?? "complained"}`,
-      `Reason: ${reason ?? "not given"}`,
-      "",
-      "The address is now in suppressed_emails and will be excluded from every",
-      "future send. No action is required to stop mailing them.",
-      "",
-      "Worth a look at what was sent to them, since complaints are the metric",
-      "mailbox providers weigh most heavily.",
-    ].join("\n"),
-  );
+  form.append("subject", subject);
+  form.append("text", lines.join("\n"));
 
   const response = await fetch("https://api.eu.mailgun.net/v3/mygreektax.eu/messages", {
     method: "POST",
@@ -222,8 +203,63 @@ async function sendComplaintAlert(
     body: form,
   });
   if (!response.ok) {
-    console.error("[mailgun-events] complaint alert send failed", { status: response.status });
+    console.error("[mailgun-events] alert send failed", { subject, status: response.status });
   }
+}
+
+// A spam complaint is worth an interruption rather than a log line.
+async function sendComplaintAlert(
+  recipient: string,
+  event: string | undefined,
+  reason: string | undefined,
+): Promise<void> {
+  await sendAlert(`Spam complaint from ${recipient}`, [
+    `${recipient} marked a MyGreekTax email as spam.`,
+    "",
+    `Event: ${event ?? "complained"}`,
+    `Reason: ${reason ?? "not given"}`,
+    "",
+    "The address is now in suppressed_emails and will be excluded from every",
+    "future send. No action is required to stop mailing them.",
+    "",
+    "Worth a look at what was sent to them, since complaints are the metric",
+    "mailbox providers weigh most heavily.",
+  ]);
+}
+
+// A suppression that could not be written is the failure most likely to go
+// unnoticed. Answering 500 buys a Mailgun retry, but retries are finite: if
+// Supabase is down long enough, Mailgun gives up and the suppression is lost
+// with nothing to show for it but a Worker log nobody is reading. This is also
+// the only warning you would get for a code bug that throws on every
+// suppression, where the alternative is finding out when Mailgun disables the
+// endpoint.
+//
+// Deliberately not rate limited. During an outage every retry of every event
+// alerts, which is noisy, but the noise is proportional to how much is being
+// lost and under-reporting this failure is far worse than over-reporting it.
+async function sendSuppressionFailureAlert(
+  recipient: string,
+  suppressReason: string,
+  detail: string,
+): Promise<void> {
+  await sendAlert(`Suppression FAILED for ${recipient}`, [
+    `Could not write a suppression for ${recipient}.`,
+    "",
+    `Intended reason: ${suppressReason}`,
+    `Database error: ${detail}`,
+    "",
+    "This address should never be mailed again but is NOT currently suppressed,",
+    "so the next newsletter send would still include it.",
+    "",
+    "The route answered 500, so Mailgun will retry on a backoff and may still",
+    "succeed on its own. Mailgun does give up eventually, so if these keep",
+    "arriving the suppression needs writing by hand:",
+    "",
+    `  insert into public.suppressed_emails (email, reason)`,
+    `  values ('${recipient}', '${suppressReason}')`,
+    `  on conflict (email) do nothing;`,
+  ]);
 }
 
 export const Route = createFileRoute("/webhooks/mailgun-events")({
@@ -360,12 +396,33 @@ export const Route = createFileRoute("/webhooks/mailgun-events")({
               // transient database error silently leaves a bounced or complaining
               // address on the list forever.
               //
-              // Safe to retry. The suppression insert is guarded by a UNIQUE on
-              // email, the status update is idempotent, and the conversation
-              // capture below dedupes on source_message_id, so a replayed
-              // delivery repeats no work.
+              // IDEMPOTENCY IS LOAD BEARING IN TWO DIRECTIONS, AND THEY ARE THE
+              // SAME ARGUMENT. Retrying is safe only because these writes are
+              // idempotent: suppressed_emails.email is UNIQUE, setting a status
+              // to 'bounced' twice matches setting it once, and the conversation
+              // capture below dedupes on source_message_id. That same property is
+              // why there is no seen-token replay store here, because a replay
+              // can only repeat work that costs nothing to repeat.
+              //
+              // So if you ever make one of these writes non-idempotent, you
+              // invalidate BOTH decisions at once: retries start duplicating
+              // real effects, and replay protection stops being optional. Do not
+              // change one without revisiting the other.
               result.suppressed = false;
               result.suppressError = suppressError.message;
+
+              // Awaited, not fire-and-forget: the response is returned on the
+              // next line and the isolate may stop executing after that.
+              await sendSuppressionFailureAlert(
+                normalizedRecipient,
+                outcome.suppressReason,
+                suppressError.message,
+              ).catch((alertError: unknown) => {
+                console.error("[mailgun-events] suppression failure alert failed", {
+                  error: alertError,
+                });
+              });
+
               return Response.json(result, { status: 500 });
             } else {
               console.log("[mailgun-events] suppressed", {
@@ -532,17 +589,30 @@ export const Route = createFileRoute("/webhooks/mailgun-events")({
           // on the floor. Erring towards a duplicate delivery is right here: the
           // writes are idempotent, and the alternative is an address that should
           // never be mailed again quietly staying on the list.
-          const needsSuppression = Boolean(
-            (result.classified as { suppressReason?: string | null } | undefined)?.suppressReason,
-          );
+          const classified = result.classified as { suppressReason?: string | null } | undefined;
+          const suppressReason = classified?.suppressReason;
           const confirmedSuppressed = result.suppressed === true;
-          const status = needsSuppression && !confirmedSuppressed ? 500 : 200;
+          const lostSuppression = Boolean(suppressReason) && !confirmedSuppressed;
+          const message = error instanceof Error ? error.message : String(error);
+
+          // Same reasoning as the explicit failure path above: a suppression we
+          // cannot confirm is the one failure that must not stay quiet, whether
+          // it arrived as an error return or as a thrown exception.
+          if (lostSuppression && recipient) {
+            await sendSuppressionFailureAlert(
+              recipient.toLowerCase(),
+              suppressReason as string,
+              message,
+            ).catch((alertError: unknown) => {
+              console.error("[mailgun-events] suppression failure alert failed", {
+                error: alertError,
+              });
+            });
+          }
+
           return Response.json(
-            {
-              ok: false,
-              error: error instanceof Error ? error.message : String(error),
-            },
-            { status },
+            { ok: false, error: message },
+            { status: lostSuppression ? 500 : 200 },
           );
         }
       },
