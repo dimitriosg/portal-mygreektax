@@ -38,6 +38,7 @@ import { Route as ReviewCaseIdRouteImport } from './routes/review.$caseId'
 import { Route as JobsJobIdRouteImport } from './routes/jobs.$jobId'
 import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as EmailUnsubscribeRouteImport } from './routes/email/unsubscribe'
+import { Route as ApiHealthRouteImport } from './routes/api.health'
 import { Route as AdminTrackingLinksRouteImport } from './routes/admin.tracking-links'
 import { Route as AdminSecureKeysRouteImport } from './routes/admin.secure-keys'
 import { Route as AdminSecureInboxRouteImport } from './routes/admin.secure-inbox'
@@ -195,6 +196,11 @@ const EmailUnsubscribeRoute = EmailUnsubscribeRouteImport.update({
   path: '/email/unsubscribe',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiHealthRoute = ApiHealthRouteImport.update({
+  id: '/api/health',
+  path: '/api/health',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminTrackingLinksRoute = AdminTrackingLinksRouteImport.update({
   id: '/tracking-links',
   path: '/tracking-links',
@@ -262,6 +268,7 @@ export interface FileRoutesByFullPath {
   '/admin/secure-inbox': typeof AdminSecureInboxRoute
   '/admin/secure-keys': typeof AdminSecureKeysRoute
   '/admin/tracking-links': typeof AdminTrackingLinksRoute
+  '/api/health': typeof ApiHealthRoute
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
   '/invite/$token': typeof InviteTokenRoute
   '/jobs/$jobId': typeof JobsJobIdRoute
@@ -302,6 +309,7 @@ export interface FileRoutesByTo {
   '/admin/secure-inbox': typeof AdminSecureInboxRoute
   '/admin/secure-keys': typeof AdminSecureKeysRoute
   '/admin/tracking-links': typeof AdminTrackingLinksRoute
+  '/api/health': typeof ApiHealthRoute
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
   '/invite/$token': typeof InviteTokenRoute
   '/jobs/$jobId': typeof JobsJobIdRoute
@@ -344,6 +352,7 @@ export interface FileRoutesById {
   '/admin/secure-inbox': typeof AdminSecureInboxRoute
   '/admin/secure-keys': typeof AdminSecureKeysRoute
   '/admin/tracking-links': typeof AdminTrackingLinksRoute
+  '/api/health': typeof ApiHealthRoute
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
   '/invite/$token': typeof InviteTokenRoute
   '/jobs/$jobId': typeof JobsJobIdRoute
@@ -387,6 +396,7 @@ export interface FileRouteTypes {
     | '/admin/secure-inbox'
     | '/admin/secure-keys'
     | '/admin/tracking-links'
+    | '/api/health'
     | '/email/unsubscribe'
     | '/invite/$token'
     | '/jobs/$jobId'
@@ -427,6 +437,7 @@ export interface FileRouteTypes {
     | '/admin/secure-inbox'
     | '/admin/secure-keys'
     | '/admin/tracking-links'
+    | '/api/health'
     | '/email/unsubscribe'
     | '/invite/$token'
     | '/jobs/$jobId'
@@ -468,6 +479,7 @@ export interface FileRouteTypes {
     | '/admin/secure-inbox'
     | '/admin/secure-keys'
     | '/admin/tracking-links'
+    | '/api/health'
     | '/email/unsubscribe'
     | '/invite/$token'
     | '/jobs/$jobId'
@@ -506,6 +518,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   UnsubscribeRoute: typeof UnsubscribeRoute
+  ApiHealthRoute: typeof ApiHealthRoute
   EmailUnsubscribeRoute: typeof EmailUnsubscribeRoute
   InviteTokenRoute: typeof InviteTokenRoute
   JobsJobIdRoute: typeof JobsJobIdRoute
@@ -739,6 +752,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof EmailUnsubscribeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/health': {
+      id: '/api/health'
+      path: '/api/health'
+      fullPath: '/api/health'
+      preLoaderRoute: typeof ApiHealthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin/tracking-links': {
       id: '/admin/tracking-links'
       path: '/tracking-links'
@@ -839,6 +859,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   UnsubscribeRoute: UnsubscribeRoute,
+  ApiHealthRoute: ApiHealthRoute,
   EmailUnsubscribeRoute: EmailUnsubscribeRoute,
   InviteTokenRoute: InviteTokenRoute,
   JobsJobIdRoute: JobsJobIdRoute,
