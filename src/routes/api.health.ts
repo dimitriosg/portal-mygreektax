@@ -118,6 +118,21 @@ export const Route = createFileRoute("/api/health")({
         const secrets = secretPresence();
         const config = configPresence();
 
+        // /webhooks/conversation-log accepts EITHER shared secret during the
+        // Make migration, so it is protected as long as one of them exists.
+        // Requiring MGT_WEBHOOK_SECRET specifically would report the route dark
+        // while it is in fact authenticating every caller, which is the worst
+        // possible first impression for an observability tool: a false alarm on
+        // the thing it was built to watch.
+        const conversationLogReady = secrets.MGT_WEBHOOK_SECRET || secrets.LEAD_INTAKE_SECRET;
+        const conversationLogAuth = secrets.MGT_WEBHOOK_SECRET
+          ? secrets.LEAD_INTAKE_SECRET
+            ? "both"
+            : "mgt"
+          : secrets.LEAD_INTAKE_SECRET
+            ? "lead-intake-legacy"
+            : "none";
+
         // Secrets whose absence stops a route dead rather than degrading it.
         // Everything else can be missing without breaking a request path that
         // is currently in use.
@@ -126,7 +141,8 @@ export const Route = createFileRoute("/api/health")({
           SUPABASE_SERVICE_ROLE_KEY: secrets.SUPABASE_SERVICE_ROLE_KEY,
           MAILGUN_WEBHOOK_SIGNING_KEY: secrets.MAILGUN_WEBHOOK_SIGNING_KEY,
           LEAD_INTAKE_SECRET: secrets.LEAD_INTAKE_SECRET,
-          MGT_WEBHOOK_SECRET: secrets.MGT_WEBHOOK_SECRET,
+          // Not MGT_WEBHOOK_SECRET on its own, for the reason above.
+          CONVERSATION_LOG_AUTH: conversationLogReady,
         };
         const missing = Object.entries(required)
           .filter(([, present]) => !present)
@@ -152,7 +168,13 @@ export const Route = createFileRoute("/api/health")({
               // capture.
               mailgunEventsReady: secrets.MAILGUN_WEBHOOK_SIGNING_KEY,
               // False means /webhooks/conversation-log rejects everything.
-              conversationLogReady: secrets.MGT_WEBHOOK_SECRET,
+              // True on EITHER secret, because that route dual-accepts during
+              // the Make migration. conversationLogAuth names which is doing
+              // the work: "lead-intake-legacy" means the migration is still
+              // outstanding, "mgt" means it is finished and the legacy branch
+              // in that route can be deleted.
+              conversationLogReady,
+              conversationLogAuth,
             },
           },
           noStore,
