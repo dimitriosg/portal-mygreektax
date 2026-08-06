@@ -52,15 +52,31 @@ export const Route = createFileRoute("/webhooks/conversation-log")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        // Optional shared secret. Enforced only when MGT_WEBHOOK_SECRET is
-        // set on the Worker, so this file can be deployed first and the
-        // secret added to Cloudflare and Make later without breaking runs.
+        // Shared secret, MANDATORY.
+        //
+        // This guard used to read `if (expectedSecret)`, enforced only when the
+        // secret happened to be set, so the file could ship first and the
+        // secret be added to Cloudflare and Make afterwards. The secret was
+        // never added. The route then spent months accepting unauthenticated
+        // POSTs and writing them into the case spine that both the portal and
+        // the Brain read, which means anyone who found the path could inject
+        // fabricated client correspondence.
+        //
+        // The deploy-first-secure-later pattern is not the problem on its own.
+        // The problem is that it leaves no trace when the second half never
+        // happens: everything keeps working, so nothing prompts anyone. The
+        // identical guard on /webhooks/mailgun-events failed the same way and
+        // was found the same day. Fail closed instead, so a missing secret is
+        // loud and immediate rather than silent and indefinite.
         const expectedSecret = process.env.MGT_WEBHOOK_SECRET;
-        if (expectedSecret) {
-          const provided = request.headers.get("x-mgt-webhook-secret");
-          if (provided !== expectedSecret) {
-            return Response.json({ error: "Unauthorized" }, { status: 401 });
-          }
+        if (!expectedSecret) {
+          console.error("[conversation-log] MGT_WEBHOOK_SECRET not configured");
+          return Response.json({ error: "Server configuration error" }, { status: 500 });
+        }
+        const provided = request.headers.get("x-mgt-webhook-secret");
+        if (!provided || provided !== expectedSecret) {
+          console.error("[conversation-log] rejected: missing or invalid shared secret");
+          return Response.json({ error: "Unauthorized" }, { status: 401 });
         }
 
         let body: unknown;
