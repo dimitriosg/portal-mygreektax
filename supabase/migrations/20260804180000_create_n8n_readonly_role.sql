@@ -28,6 +28,22 @@
 -- here for the fresh-rebuild case and to match the convention of every other
 -- DDL migration in this directory.
 --
+-- IF YOU EVER MOVE THIS PROJECT TO CLI-MANAGED PUSHES, READ THIS FIRST. The
+-- version here is older than versions already recorded in the remote ledger,
+-- and the Supabase CLI refuses that: FindPendingMigrations raises
+-- ErrMissingRemote when a local file sorts before the last applied remote
+-- migration. The remedy for this file is to mark it applied without running
+-- it, which is truthful because the role already exists:
+--
+--   supabase migration repair --status applied 20260804180000
+--
+-- That is not a special burden created by this file. The ledger holds 15 rows
+-- against 59 migration files across the two repos, and only 4 of those files
+-- have a version the ledger knows about, so `supabase db push` cannot run
+-- here today regardless. Migrations are applied through the SQL editor and
+-- these files are the record. Reconciling the ledger with the files is a
+-- separate and much larger job than this migration.
+--
 -- HISTORY: this role was created manually in the SQL editor on 04/08/2026
 -- while wiring the n8n Morning digest workflow. This file records it so a
 -- fresh database rebuild recreates it. It is fully guarded, so replaying it
