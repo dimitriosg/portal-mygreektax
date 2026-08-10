@@ -123,11 +123,19 @@ export const AiReviewDesk: React.FC<AiReviewDeskProps> = ({ jobId }) => {
         data: { session },
       } = await supabase.auth.getSession();
 
+      // /webhooks/send-approved now requires an admin session, so a missing
+      // token is a dead request. Say so plainly instead of sending it anyway
+      // and reporting the 401 as "Send failed (401)".
+      if (!session?.access_token) {
+        setStatus({ kind: "error", detail: "Your session expired. Sign in again." });
+        return;
+      }
+
       const response = await fetch("/webhooks/send-approved", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+          Authorization: `Bearer ${session.access_token}`,
         },
         // Only send subject when one was typed; blank means "use the default",
         // which the server applies.

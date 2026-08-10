@@ -99,9 +99,17 @@ export const Route = createFileRoute("/webhooks/conversation-log")({
         // route had.
         //
         // REMOVE THE LEGACY BRANCH once the Make modules send the target
-        // header. The log line below names which path authenticated, so
-        // migration progress is visible rather than guessed at: when
-        // "lead-intake-legacy" stops appearing, this block can go.
+        // header. Which path authenticated is both logged and written onto
+        // every event this route inserts (metadata.authenticated_via), so
+        // migration progress is queryable rather than guessed at: when no new
+        // row carries "lead-intake-legacy", this block can go.
+        //
+        // /api/health cannot answer that question and is not a substitute. Its
+        // conversationLogAuth field is computed from Boolean(process.env.X): it
+        // reports which secrets are CONFIGURED, which is a property of the
+        // Worker, not of the callers. It reads "both" from the moment the
+        // target secret exists, whether seven scenarios still send the legacy
+        // header or none do. Only the events record what was actually used.
         //
         // The caller to watch is scenario 6289179, the one module whose header
         // could not be read from the blueprint because it uses keychain 206586.
@@ -285,6 +293,24 @@ export const Route = createFileRoute("/webhooks/conversation-log")({
             // Backfilled messages must land at their real send time, not now(),
             // or the case history reads out of order.
             if (sentAt) row.occurred_at = sentAt;
+
+            // Which header authenticated this write, kept with the write.
+            // Until now it existed only as a console line, which answers
+            // "did a legacy caller post in the window I happen to be reading?"
+            // and nothing else. Stored here it answers the question that
+            // actually retires the dual-accept block above:
+            //
+            //   select metadata->>'authenticated_via', count(*), max(created_at)
+            //     from brain_events
+            //    where metadata ? 'authenticated_via'
+            //    group by 1;
+            //
+            // When "lead-intake-legacy" stops gaining rows, every Make module
+            // has been migrated and the legacy branch can be deleted. Note
+            // this marks events, so a caller that posts only unmatched or
+            // text-free payloads leaves no mark; the console line still covers
+            // those.
+            row.metadata = { authenticated_via: authenticatedVia };
 
             const { error: eventError } = await supabase.from("brain_events").insert(row);
 
