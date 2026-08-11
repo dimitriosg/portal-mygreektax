@@ -16,13 +16,16 @@ import { refuseOutboundEmail } from "./outbound-email.server";
 // a silent problem for a worse loud one. Whether those call sites should
 // surface it is a decision about the change-request flow, not about email.
 //
+// NAMED dispatch*, NOT enqueue*: there is no queue any more, and the old name
+// described a mechanism that no longer exists.
+//
 // REMOVED WITH THE ENQUEUE, recoverable from git when n8n takes this over: the
 // React Email render of both templates (email-templates/change-request.tsx,
 // which is still present and still the source of the wording) and the
 // pending-then-enqueue write. Rendering a document that cannot be sent is waste
 // on every call, so the refusal happens before it rather than after.
 
-export async function enqueueChangeRequestAdminEmail(params: {
+export async function dispatchChangeRequestAdminEmail(_params: {
   jobCode: string;
   jobId: string;
   partnerName: string;
@@ -31,18 +34,26 @@ export async function enqueueChangeRequestAdminEmail(params: {
   requestedValue: string;
   reason: string | null;
 }): Promise<never> {
-  void params;
   // Resolved so the refusal records who it would have reached. One row for the
   // whole notification rather than one per admin: the throw ends it either way,
   // and the addresses are the useful part.
-  const recipients = await listAdminEmails();
+  //
+  // The lookup must not be able to pre-empt the refusal. If it threw, the
+  // caller would see an unrelated database error, no audit row would be
+  // written, and the actual reason -- that there is no sender -- would never be
+  // recorded. A failed lookup degrades to an empty list instead.
+  const recipients = await listAdminEmails().catch((error) => {
+    console.error("[change-request-email] admin lookup failed before refusal", { error });
+    return [] as string[];
+  });
+
   return refuseOutboundEmail({
     templateName: "change-request-admin",
     recipientEmail: recipients.length ? recipients.join(", ") : "(no admin recipients resolved)",
   });
 }
 
-export async function enqueueChangeRequestDecisionEmail(params: {
+export async function dispatchChangeRequestDecisionEmail(params: {
   to: string;
   partnerName: string;
   jobCode: string;

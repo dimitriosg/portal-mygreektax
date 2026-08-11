@@ -185,45 +185,43 @@ export async function buildSummary(period: SummaryPeriod) {
 // src/lib/outbound-email.server.ts for the full reason, including why this is
 // not being repointed at Mailgun in the portal.
 //
-// LOUDEST IN PRINCIPLE, QUIETEST IN PRACTICE. sendSummaryToAdmins below is the
-// only caller of this, and it has no callers of its own anywhere in the repo:
-// no route, no server function, no scheduled trigger, nothing in SQL. The
-// activity summary cannot currently be triggered at all, which is consistent
-// with the queue holding three partner invites and nothing else. Refusing here
-// changes the behaviour of a path nobody can reach today; it is done so that
-// whoever wires a trigger finds a refusal rather than a silent enqueue.
+// LOUDEST IN PRINCIPLE, QUIETEST IN PRACTICE. This function has no callers
+// anywhere in the repo: no route, no server function, no scheduled trigger,
+// nothing in SQL. The activity summary cannot currently be triggered at all,
+// which is consistent with the queue holding three partner invites and nothing
+// else. Refusing here changes the behaviour of a path nobody can reach today;
+// it is done so that whoever wires a trigger finds a refusal rather than a
+// silent enqueue.
 //
-// REMOVED WITH THE ENQUEUE, recoverable from git when n8n takes this over: the
-// suppressed_emails check, the get-or-create of the unsubscribe token, and the
-// React Email render (email-templates/activity-summary.tsx is still present and
-// still the source of the wording). buildSummary above is untouched -- it reads
+// REFUSES ONCE, BEFORE ANY WORK. The previous shape looped over admins calling
+// a per-recipient send. Once that send always throws, the first iteration ends
+// the loop and the aggregation after it is unreachable -- its result type
+// collapses to Record<string, never>. Unreachable code that looks like it
+// reports per-recipient results is worse than no code, so the loop and the
+// per-recipient function are gone. This also covers the empty-admins case,
+// which under the loop would have returned success having sent nothing.
+//
+// buildSummary above is deliberately untouched and still exported: it reads
 // activity_events and composes the digest, which is the part worth keeping and
 // the part n8n will want handed to it.
-async function enqueueOne(
-  recipient: string,
-  summary: Awaited<ReturnType<typeof buildSummary>>,
-): Promise<never> {
-  void summary;
+//
+// REMOVED WITH THE ENQUEUE, recoverable from git: the suppressed_emails check,
+// the get-or-create of the unsubscribe token, and the React Email render
+// (email-templates/activity-summary.tsx is still present and still the source
+// of the wording).
+export async function sendSummaryToAdmins(_period: SummaryPeriod): Promise<never> {
+  // Resolved so the refusal records who it would have reached, and degraded to
+  // an empty list on failure so a lookup error cannot pre-empt the refusal and
+  // hide the real reason. Same reasoning as change-request-email.server.ts.
+  const admins = await listAdminEmails().catch((error) => {
+    console.error("[activity-summary] admin lookup failed before refusal", { error });
+    return [] as string[];
+  });
+
   return refuseOutboundEmail({
     templateName: "activity-summary",
-    recipientEmail: recipient,
+    recipientEmail: admins.length ? admins.join(", ") : "(no admin recipients resolved)",
   });
-}
-
-export async function sendSummaryToAdmins(period: SummaryPeriod) {
-  const summary = await buildSummary(period);
-  const admins = await listAdminEmails();
-  const results: Record<string, Awaited<ReturnType<typeof enqueueOne>>> = {};
-  for (const email of admins) {
-    results[email] = await enqueueOne(email, summary);
-  }
-  return {
-    period,
-    range: summary.rangeLabel,
-    totalEvents: summary.totalEvents,
-    recipients: admins.length,
-    results,
-  };
 }
 
 /** Returns true if the current Athens local time matches `hour` (and optional weekday). */

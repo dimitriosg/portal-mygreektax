@@ -22,9 +22,9 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 // sent' until someone thinks to ask how old the oldest one is.
 //
 // So: refuse, in the open. No queue write, no 'pending' row that will never
-// change, one 'failed' row for the audit trail, and a thrown error carrying the
-// reason. Whether that error reaches a human depends on the caller, and the
-// three differ -- see the note at each call site.
+// change, one 'failed' row for the audit trail, and a thrown error. Whether
+// that error reaches a human depends on the caller, and the three differ -- see
+// the note at each call site.
 //
 // NOT REPOINTED AT MAILGUN HERE, DELIBERATELY. The portal does send mail
 // directly elsewhere (case-reply, send-approved, partner-reply all POST to
@@ -36,19 +36,33 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 // would be work thrown away next week.
 //
 // WHEN THAT LANDS: this module is the only thing to replace. Each caller
-// already renders its template and holds a recipient; swap refuseOutboundEmail
-// for the n8n dispatch and the flows come back with no other change.
+// already holds a recipient; swap refuseOutboundEmail for the n8n dispatch and
+// the flows come back with no other change.
 // -----------------------------------------------------------------------------
 
-export const NO_OUTBOUND_SENDER =
-  "The portal has no transactional email sender. This message was not sent and was not queued: " +
-  "outbound transactional email is being moved to n8n. See src/lib/outbound-email.server.ts.";
+// TWO MESSAGES, ON PURPOSE.
+//
+// The thrown one can reach an admin's screen: the partner-invite caller does
+// not catch, so this lands in the portal UI. It says what happened and what to
+// do, and nothing else. An operator does not need our migration plan or a
+// source path to understand that the invite did not go out, and putting either
+// in front of them is leaking internals into a user-facing error.
+//
+// The recorded one goes to email_send_log.error_message, which is read by
+// whoever is diagnosing, and carries the detail.
+const REFUSED_USER_MESSAGE =
+  "This email could not be sent: the portal has no email sender configured. Nothing was queued, " +
+  "so it will not arrive later. Contact the administrator.";
+
+const REFUSED_AUDIT_REASON =
+  "Refused by outbound-email.server.ts: the portal has no transactional sender. Not queued. " +
+  "Outbound transactional email is being consolidated onto n8n.";
 
 /**
  * Record the refusal and throw. Never returns.
  *
- * The email_send_log row is written before the throw and its failure is
- * swallowed, because losing the audit line must not mask the real error, which
+ * The email_send_log write is best effort and its failure is reported but not
+ * propagated, because losing the audit line must not mask the real error, which
  * is the one the caller needs to see.
  */
 export async function refuseOutboundEmail(params: {
@@ -57,19 +71,41 @@ export async function refuseOutboundEmail(params: {
   messageId?: string;
 }): Promise<never> {
   const { templateName, recipientEmail, messageId } = params;
+  const id = messageId ?? crypto.randomUUID();
 
   try {
-    await supabaseAdmin.from("email_send_log").insert({
-      message_id: messageId ?? crypto.randomUUID(),
+    // supabase-js resolves with { error } rather than rejecting, so a
+    // constraint or PostgREST failure here would otherwise pass silently and
+    // leave no audit row at all -- the exact class of quiet failure this
+    // module was written to stop. The catch below is still required: it covers
+    // the client throwing outright, which it does when Supabase env is unset.
+    const { error } = await supabaseAdmin.from("email_send_log").insert({
+      message_id: id,
       template_name: templateName,
       recipient_email: recipientEmail,
       status: "failed",
-      error_message: NO_OUTBOUND_SENDER,
+      error_message: REFUSED_AUDIT_REASON,
     });
+    if (error) {
+      console.error("[outbound-email] could not record the refusal", {
+        templateName,
+        messageId: id,
+        error: error.message,
+      });
+    }
   } catch (error) {
-    console.error("[outbound-email] could not write the refusal to email_send_log", { error });
+    console.error("[outbound-email] could not record the refusal", {
+      templateName,
+      messageId: id,
+      error,
+    });
   }
 
-  console.error("[outbound-email] refused to send", { templateName, recipientEmail });
-  throw new Error(NO_OUTBOUND_SENDER);
+  // No recipient in the log line. It is a user identifier, it is already in
+  // email_send_log.recipient_email where it belongs, and for the change-request
+  // notification the value is every admin address at once -- one line would
+  // publish the whole list. Correlate through message_id instead.
+  console.error("[outbound-email] refused to send", { templateName, messageId: id });
+
+  throw new Error(REFUSED_USER_MESSAGE);
 }
