@@ -1,6 +1,3 @@
-import { render } from "@react-email/components";
-import * as React from "react";
-import { template as activitySummaryTemplate } from "./email-templates/activity-summary";
 import type {
   ActivitySummarySection,
   ActivitySummaryRow,
@@ -8,22 +5,12 @@ import type {
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
 import { listAdminEmails } from "./access-context.server";
+import { refuseOutboundEmail } from "./outbound-email.server";
 
-const SENDER_DOMAIN = "notify.portal.mygreektax.eu";
-const FROM_DOMAIN = "portal.mygreektax.eu";
-const SITE_NAME = "My Greek Tax";
 const TZ = "Europe/Athens";
 
 type ActivityEventRow = Database["public"]["Tables"]["activity_events"]["Row"];
 type ActivityEventMetadata = Record<string, string | number | null | undefined>;
-
-function genToken(): string {
-  const bytes = new Uint8Array(32);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes)
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
 
 function formatAthens(date: Date, opts: Intl.DateTimeFormatOptions): string {
   return new Intl.DateTimeFormat("en-GB", { timeZone: TZ, ...opts }).format(date);
@@ -194,105 +181,47 @@ export async function buildSummary(period: SummaryPeriod) {
   return { period, rangeLabel: label, totals, sections, totalEvents: (events ?? []).length };
 }
 
-async function enqueueOne(recipient: string, summary: Awaited<ReturnType<typeof buildSummary>>) {
-  const normalized = recipient.toLowerCase();
-  const { data: suppressed } = await supabaseAdmin
-    .from("suppressed_emails")
-    .select("id")
-    .eq("email", normalized)
-    .maybeSingle();
-  if (suppressed) return { skipped: true, reason: "suppressed" };
-
-  // Get/create unsubscribe token.
-  let unsubscribeToken: string | null = null;
-  const { data: existing } = await supabaseAdmin
-    .from("email_unsubscribe_tokens")
-    .select("token, used_at")
-    .eq("email", normalized)
-    .maybeSingle();
-  if (existing && !existing.used_at) {
-    unsubscribeToken = existing.token;
-  } else if (!existing) {
-    unsubscribeToken = genToken();
-    await supabaseAdmin.from("email_unsubscribe_tokens").upsert(
-      { token: unsubscribeToken, email: normalized },
-      {
-        onConflict: "email",
-        ignoreDuplicates: true,
-      },
-    );
-  }
-
-  const props = {
-    period: summary.period,
-    rangeLabel: summary.rangeLabel,
-    totals: summary.totals,
-    sections: summary.sections,
-  };
-  const element = React.createElement(activitySummaryTemplate.component, props as never);
-  const html = await render(element);
-  const text = await render(element, { plainText: true });
-
-  const subject =
-    typeof activitySummaryTemplate.subject === "function"
-      ? activitySummaryTemplate.subject(props)
-      : activitySummaryTemplate.subject;
-
-  const messageId = crypto.randomUUID();
-  const idem = `activity-summary-${summary.period}-${summary.rangeLabel}-${normalized}`;
-
-  await supabaseAdmin.from("email_send_log").insert({
-    message_id: messageId,
-    template_name: "activity-summary",
-    recipient_email: recipient,
-    status: "pending",
+// Refuses. The portal has no transactional sender -- see
+// src/lib/outbound-email.server.ts for the full reason, including why this is
+// not being repointed at Mailgun in the portal.
+//
+// LOUDEST IN PRINCIPLE, QUIETEST IN PRACTICE. This function has no callers
+// anywhere in the repo: no route, no server function, no scheduled trigger,
+// nothing in SQL. The activity summary cannot currently be triggered at all,
+// which is consistent with the queue holding three partner invites and nothing
+// else. Refusing here changes the behaviour of a path nobody can reach today;
+// it is done so that whoever wires a trigger finds a refusal rather than a
+// silent enqueue.
+//
+// REFUSES ONCE, BEFORE ANY WORK. The previous shape looped over admins calling
+// a per-recipient send. Once that send always throws, the first iteration ends
+// the loop and the aggregation after it is unreachable -- its result type
+// collapses to Record<string, never>. Unreachable code that looks like it
+// reports per-recipient results is worse than no code, so the loop and the
+// per-recipient function are gone. This also covers the empty-admins case,
+// which under the loop would have returned success having sent nothing.
+//
+// buildSummary above is deliberately untouched and still exported: it reads
+// activity_events and composes the digest, which is the part worth keeping and
+// the part n8n will want handed to it.
+//
+// REMOVED WITH THE ENQUEUE, recoverable from git: the suppressed_emails check,
+// the get-or-create of the unsubscribe token, and the React Email render
+// (email-templates/activity-summary.tsx is still present and still the source
+// of the wording).
+export async function sendSummaryToAdmins(_period: SummaryPeriod): Promise<never> {
+  // Resolved so the refusal records who it would have reached, and degraded to
+  // an empty list on failure so a lookup error cannot pre-empt the refusal and
+  // hide the real reason. Same reasoning as change-request-email.server.ts.
+  const admins = await listAdminEmails().catch((error) => {
+    console.error("[activity-summary] admin lookup failed before refusal", { error });
+    return [] as string[];
   });
 
-  const { error: enqueueError } = await supabaseAdmin.rpc("enqueue_email", {
-    queue_name: "transactional_emails",
-    payload: {
-      message_id: messageId,
-      to: recipient,
-      from: `${SITE_NAME} <noreply@${FROM_DOMAIN}>`,
-      sender_domain: SENDER_DOMAIN,
-      subject,
-      html,
-      text,
-      purpose: "transactional",
-      label: "activity-summary",
-      idempotency_key: idem,
-      unsubscribe_token: unsubscribeToken,
-      queued_at: new Date().toISOString(),
-    },
+  return refuseOutboundEmail({
+    templateName: "activity-summary",
+    recipientEmail: admins.length ? admins.join(", ") : "(no admin recipients resolved)",
   });
-
-  if (enqueueError) {
-    await supabaseAdmin.from("email_send_log").insert({
-      message_id: messageId,
-      template_name: "activity-summary",
-      recipient_email: recipient,
-      status: "failed",
-      error_message: "Failed to enqueue activity summary",
-    });
-    return { skipped: false, error: enqueueError.message };
-  }
-  return { skipped: false };
-}
-
-export async function sendSummaryToAdmins(period: SummaryPeriod) {
-  const summary = await buildSummary(period);
-  const admins = await listAdminEmails();
-  const results: Record<string, Awaited<ReturnType<typeof enqueueOne>>> = {};
-  for (const email of admins) {
-    results[email] = await enqueueOne(email, summary);
-  }
-  return {
-    period,
-    range: summary.rangeLabel,
-    totalEvents: summary.totalEvents,
-    recipients: admins.length,
-    results,
-  };
 }
 
 /** Returns true if the current Athens local time matches `hour` (and optional weekday). */

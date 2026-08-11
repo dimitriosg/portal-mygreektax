@@ -1,50 +1,31 @@
-import { render } from "@react-email/components";
-import * as React from "react";
-import { adminTemplate, decisionTemplate } from "./email-templates/change-request";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { listAdminEmails } from "./access-context.server";
+import { refuseOutboundEmail } from "./outbound-email.server";
 
-const SENDER_DOMAIN = "notify.portal.mygreektax.eu";
-const FROM_DOMAIN = "portal.mygreektax.eu";
-const SITE_NAME = "My Greek Tax";
-const SITE_URL = "https://portal.mygreektax.eu";
+// Change-request notifications: the admin alert when a partner raises one, and
+// the decision notice back to the partner.
+//
+// Both refuse. The portal has no transactional sender -- see
+// src/lib/outbound-email.server.ts for the full reason, including why these are
+// not being repointed at Mailgun in the portal.
+//
+// LOUDNESS, HONESTLY: both call sites in jobs.functions.ts wrap these in
+// try/catch and log, marked "Fire-and-forget", so the throw lands in the Worker
+// log rather than in front of a person. That is deliberate and left alone. By
+// the time these run the change request itself is already recorded, and making
+// a partner's submission fail because a notification cannot be sent would trade
+// a silent problem for a worse loud one. Whether those call sites should
+// surface it is a decision about the change-request flow, not about email.
+//
+// NAMED dispatch*, NOT enqueue*: there is no queue any more, and the old name
+// described a mechanism that no longer exists.
+//
+// REMOVED WITH THE ENQUEUE, recoverable from git when n8n takes this over: the
+// React Email render of both templates (email-templates/change-request.tsx,
+// which is still present and still the source of the wording) and the
+// pending-then-enqueue write. Rendering a document that cannot be sent is waste
+// on every call, so the refusal happens before it rather than after.
 
-async function enqueue(opts: {
-  to: string;
-  subject: string;
-  html: string;
-  text: string;
-  templateName: string;
-}) {
-  const messageId = crypto.randomUUID();
-  await supabaseAdmin.from("email_send_log").insert({
-    message_id: messageId,
-    template_name: opts.templateName,
-    recipient_email: opts.to,
-    status: "pending",
-  });
-  const { error } = await supabaseAdmin.rpc("enqueue_email", {
-    queue_name: "transactional_emails",
-    payload: {
-      message_id: messageId,
-      to: opts.to,
-      from: `${SITE_NAME} <noreply@${FROM_DOMAIN}>`,
-      sender_domain: SENDER_DOMAIN,
-      subject: opts.subject,
-      html: opts.html,
-      text: opts.text,
-      purpose: "transactional",
-      label: opts.templateName,
-      idempotency_key: messageId,
-      queued_at: new Date().toISOString(),
-    },
-  });
-  if (error) {
-    console.error("[change-request-email] enqueue failed", error);
-  }
-}
-
-export async function enqueueChangeRequestAdminEmail(params: {
+export async function dispatchChangeRequestAdminEmail(_params: {
   jobCode: string;
   jobId: string;
   partnerName: string;
@@ -52,25 +33,27 @@ export async function enqueueChangeRequestAdminEmail(params: {
   currentValue: string;
   requestedValue: string;
   reason: string | null;
-}) {
-  const reviewUrl = `${SITE_URL}/admin/change-requests`;
-  const props = { ...params, reviewUrl };
-  const element = React.createElement(adminTemplate.component, props as never);
-  const html = await render(element);
-  const text = await render(element, { plainText: true });
-  const subject =
-    typeof adminTemplate.subject === "function"
-      ? adminTemplate.subject(props)
-      : adminTemplate.subject;
-  const recipients = await listAdminEmails();
-  await Promise.all(
-    recipients.map((to) =>
-      enqueue({ to, subject, html, text, templateName: "change-request-admin" }),
-    ),
-  );
+}): Promise<never> {
+  // Resolved so the refusal records who it would have reached. One row for the
+  // whole notification rather than one per admin: the throw ends it either way,
+  // and the addresses are the useful part.
+  //
+  // The lookup must not be able to pre-empt the refusal. If it threw, the
+  // caller would see an unrelated database error, no audit row would be
+  // written, and the actual reason -- that there is no sender -- would never be
+  // recorded. A failed lookup degrades to an empty list instead.
+  const recipients = await listAdminEmails().catch((error) => {
+    console.error("[change-request-email] admin lookup failed before refusal", { error });
+    return [] as string[];
+  });
+
+  return refuseOutboundEmail({
+    templateName: "change-request-admin",
+    recipientEmail: recipients.length ? recipients.join(", ") : "(no admin recipients resolved)",
+  });
 }
 
-export async function enqueueChangeRequestDecisionEmail(params: {
+export async function dispatchChangeRequestDecisionEmail(params: {
   to: string;
   partnerName: string;
   jobCode: string;
@@ -78,20 +61,9 @@ export async function enqueueChangeRequestDecisionEmail(params: {
   requestedValue: string;
   decision: "approved" | "rejected";
   decisionNote: string | null;
-}) {
-  const props = { ...params, jobUrl: `${SITE_URL}/dashboard` };
-  const element = React.createElement(decisionTemplate.component, props as never);
-  const html = await render(element);
-  const text = await render(element, { plainText: true });
-  const subject =
-    typeof decisionTemplate.subject === "function"
-      ? decisionTemplate.subject(props)
-      : decisionTemplate.subject;
-  await enqueue({
-    to: params.to,
-    subject,
-    html,
-    text,
+}): Promise<never> {
+  return refuseOutboundEmail({
     templateName: "change-request-decision",
+    recipientEmail: params.to,
   });
 }

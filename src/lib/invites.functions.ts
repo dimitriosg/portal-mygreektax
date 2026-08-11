@@ -4,7 +4,7 @@ import { createHash, randomBytes } from "crypto";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { enqueuePartnerInviteEmail } from "./invite-email.server";
+import { dispatchPartnerInviteEmail } from "./invite-email.server";
 import { requireAdminAccess } from "./access-context.server";
 
 function hashToken(token: string) {
@@ -118,7 +118,7 @@ export const sendPartnerInviteEmail = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await assertAdmin(context.userId, context.claims.email as string | undefined);
-    await enqueuePartnerInviteEmail(data);
+    await dispatchPartnerInviteEmail(data);
     return { ok: true };
   });
 
