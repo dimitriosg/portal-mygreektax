@@ -11,6 +11,9 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 // afterwards, so a Mailgun failure inside Make surfaced as a success here. One
 // path and one set of credentials now.
 //
+// Auth: admin session required, as a Bearer access token. The desk is the only
+// caller and it already holds one. See the block in the handler.
+//
 // Env: SUPABASE_*, MAILGUN_API_KEY, MAILGUN_DOMAIN (defaults to mygreektax.eu)
 
 const DEFAULT_SUBJECT = "Update on your MyGreekTax request";
@@ -46,6 +49,51 @@ export const Route = createFileRoute("/webhooks/send-approved")({
   server: {
     handlers: {
       POST: async ({ request }) => {
+        // Admin session required.
+        //
+        // This route shipped with no guard at all: an anonymous POST carrying
+        // a case id and final_text marked a draft approved and sent it to that
+        // case's client as hello@mygreektax.eu. The recipient is resolved
+        // server side, so it could not be pointed at an arbitrary address, but
+        // the body could be anything and the send was real.
+        //
+        // A USER JWT, NOT A SHARED SECRET. The only caller is the browser
+        // (AiReviewDesk.tsx), which already sends the signed-in user's
+        // Supabase access token. A shared secret would have to ship inside
+        // client JS to be usable from there, which is worse than none.
+        //
+        // The check runs before the MAILGUN_API_KEY read below so an
+        // unauthenticated caller cannot use the 500 to learn whether the key
+        // is configured.
+        const authHeader = request.headers.get("authorization") ?? "";
+        const token = authHeader.toLowerCase().startsWith("bearer ")
+          ? authHeader.slice(7).trim()
+          : "";
+        if (!token) {
+          return Response.json({ error: "Unauthorized" }, { status: 401 });
+        }
+        const { data: userData, error: userError } = await supabaseAdmin.auth.getUser(token);
+        if (userError || !userData?.user) {
+          return Response.json({ error: "Unauthorized" }, { status: 401 });
+        }
+        // getUser() authenticates the caller; it does not authorize them. A
+        // partner account holds a valid session and must not be able to send
+        // client mail, so the admin role is checked explicitly, same as
+        // /webhooks/case-action and /webhooks/partner-reply.
+        const { data: roleRow, error: roleError } = await supabaseAdmin
+          .from("user_roles")
+          .select("role")
+          .eq("user_id", userData.user.id)
+          .eq("role", "admin")
+          .limit(1);
+        if (roleError) {
+          console.error("[send-approved] role check failed:", roleError.message);
+          return Response.json({ error: "Authorization check failed" }, { status: 500 });
+        }
+        if (!roleRow || roleRow.length === 0) {
+          return Response.json({ error: "Not authorized (admin role required)" }, { status: 403 });
+        }
+
         const mailgunKey = process.env.MAILGUN_API_KEY;
         if (!mailgunKey) {
           return Response.json(

@@ -107,21 +107,21 @@ docs/
 
 ## Webhook endpoints
 
-These are called by Make.com scenarios and other services, not by the browser. Most verify a shared secret.
+Everything under `/webhooks/` lives here, but the callers are not all the same and neither is the guard. Machine callers authenticate with a credential in a header: Make and n8n send their documented shared secret, while Mailgun signs each request and the route verifies the HMAC. Browser callers authenticate with the signed-in user's Supabase access token as `Authorization: Bearer`, and a shared secret must never be used for those: it would have to ship inside client JS to work, which looks like authentication while being readable by anyone who opens devtools.
 
-| Route                          | Purpose                                                         |
-| ------------------------------ | -------------------------------------------------------------- |
-| `webhooks/lead-intake.ts`      | Inbound lead or reply, calls `resolve_case_for_inbound()`      |
-| `webhooks/case-create.ts`      | Create a case                                                  |
-| `webhooks/case-reply.ts`       | Attach an inbound reply to a case                              |
-| `webhooks/case-action.ts`      | Case state actions                                             |
-| `webhooks/conversation-log.ts` | Log inbound and outbound messages to the case timeline         |
-| `webhooks/generate-draft.ts`   | Admin only, calls the Brain to draft a reply                   |
-| `webhooks/send-approved.ts`    | Send an approved draft through Mailgun                         |
-| `webhooks/mailgun-events.ts`   | Log Mailgun delivery events into `email_send_log`              |
-| `webhooks/summarize-case.ts`   | Generate a case summary                                        |
-| `webhooks/gmail-sync.ts`       | Gmail inbox sync                                               |
-| `webhooks/ops-snapshot.ts`     | Operations snapshot for the Make ops scenario                 |
+| Route                          | Caller  | Auth                                             | Purpose                                                   |
+| ------------------------------ | ------- | ------------------------------------------------ | --------------------------------------------------------- |
+| `webhooks/lead-intake.ts`      | machine | `x-lead-intake-secret`                           | Inbound lead or reply, calls `resolve_case_for_inbound()` |
+| `webhooks/conversation-log.ts` | machine | `x-mgt-webhook-secret` or `x-lead-intake-secret` | Log inbound and outbound messages to the case timeline    |
+| `webhooks/mailgun-events.ts`   | machine | Mailgun HMAC signature                           | Log Mailgun delivery events into `email_send_log`         |
+| `webhooks/ops-snapshot.ts`     | machine | `x-ops-key`                                      | Operations snapshot for the Make ops scenario             |
+| `webhooks/case-create.ts`      | browser | Bearer token, admin role                         | Create a case                                             |
+| `webhooks/case-reply.ts`       | browser | Bearer token, admin role                         | Send a reply to the client and log it on the case         |
+| `webhooks/case-action.ts`      | browser | Bearer token, admin role                         | Case state actions                                        |
+| `webhooks/send-approved.ts`    | browser | Bearer token, admin role                         | Send an approved draft through Mailgun                    |
+| `webhooks/gmail-sync.ts`       | browser | Bearer token, admin role                         | Gmail inbox sync                                          |
+| `webhooks/generate-draft.ts`   | browser | Bearer token                                     | Calls the Brain to draft a reply                          |
+| `webhooks/summarize-case.ts`   | browser | Bearer token                                     | Generate a case summary                                   |
 
 ---
 

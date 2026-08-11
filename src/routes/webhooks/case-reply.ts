@@ -16,6 +16,11 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 // fallback is kept for any legacy caller: that path still escapes and appends
 // the standing signature.
 //
+// Auth: the browser sends the caller's Supabase access token as a Bearer
+// header. The route verifies it and requires the 'admin' role, same as
+// case-create.ts and partner-reply.ts. See the block in the handler for why it
+// is a user JWT and not a shared secret.
+//
 // Env (already present):
 //   SUPABASE_URL (or VITE_SUPABASE_URL), SUPABASE_SERVICE_ROLE_KEY
 //   MAILGUN_API_KEY, MAILGUN_DOMAIN (optional, defaults to mygreektax.eu)
@@ -86,7 +91,53 @@ export const Route = createFileRoute("/webhooks/case-reply")({
         }
         const supabase = supa.client;
 
-        // 1. Read and validate input.
+        // 1. Authenticate and authorise the caller.
+        //
+        // This route shipped with NO guard of any kind. It takes the
+        // recipient, the subject and raw HTML straight from the request body
+        // and sends them through Mailgun as hello@mygreektax.eu, so an
+        // anonymous POST was a send-anything-as-us primitive. The only check
+        // was that conversationId looked like a UUID, and nothing confirmed
+        // the UUID belonged to a case, so any random v4 sent mail.
+        //
+        // A USER JWT, NOT A SHARED SECRET. The only caller is the browser
+        // (case-reply-box.tsx), which already sends the signed-in user's
+        // Supabase access token. A shared secret would have to be shipped
+        // inside client JS to work from there, which is worse than no secret:
+        // it looks like authentication while being readable by anyone who
+        // opens devtools. Machine callers get secrets (see conversation-log.ts
+        // and lead-intake.ts); browser callers get the session they already
+        // hold.
+        const authHeader = request.headers.get("authorization") || "";
+        const token = authHeader.toLowerCase().startsWith("bearer ")
+          ? authHeader.slice(7).trim()
+          : "";
+        if (!token) return Response.json({ error: "Not authenticated" }, { status: 401 });
+
+        const { data: userData, error: authErr } = await supabase.auth.getUser(token);
+        if (authErr || !userData?.user) {
+          return Response.json({ error: "Invalid session" }, { status: 401 });
+        }
+
+        // getUser() authenticates the caller; it does not authorise them.
+        // Sending client correspondence as the business is admin work, and a
+        // partner account holds a perfectly valid session, so the role is
+        // checked explicitly. Same query as case-create.ts and partner-reply.ts.
+        const { data: roleRows, error: roleErr } = await supabase
+          .from("user_roles")
+          .select("role")
+          .eq("user_id", userData.user.id)
+          .eq("role", "admin")
+          .limit(1);
+        if (roleErr) {
+          console.error("[case-reply] role check failed:", roleErr.message);
+          return Response.json({ error: "Authorization check failed" }, { status: 500 });
+        }
+        if (!roleRows || roleRows.length === 0) {
+          return Response.json({ error: "Not authorized (admin role required)" }, { status: 403 });
+        }
+
+        // 2. Read and validate input.
         let raw: unknown;
         try {
           raw = await request.json();
@@ -112,6 +163,73 @@ export const Route = createFileRoute("/webhooks/case-reply")({
         }
         if (!bodyHtmlInput && !bodyTextInput) {
           return Response.json({ error: "Message body required" }, { status: 400 });
+        }
+
+        // 3. Bind the recipient to the case.
+        //
+        // The UUID test above proves only that conversationId is well formed.
+        // Without a lookup the case is never confirmed to exist and the
+        // recipient is free text, so an admin session (or a stolen one) could
+        // mail any address in the world from hello@mygreektax.eu with a
+        // made-up case id attached. Resolving the row and matching the address
+        // against it means this endpoint can only write to a real case, and
+        // only to the client that case belongs to.
+        //
+        // Both sides of the address the UI shows are accepted: review.$caseId
+        // passes `client?.email || conversation?.customer_email`, so accepting
+        // either keeps the reply box working when the two have drifted apart.
+        const { data: convRow, error: convErr } = await supabase
+          .from("brain_conversations")
+          .select("id, customer_email, client_id")
+          .eq("id", conversationId)
+          .maybeSingle();
+        if (convErr) {
+          console.error("[case-reply] conversation lookup failed:", convErr.message);
+          return Response.json(
+            { error: "Lookup failed", detail: convErr.message },
+            { status: 500 },
+          );
+        }
+        if (!convRow) {
+          return Response.json({ error: "Case not found" }, { status: 404 });
+        }
+
+        const allowedRecipients = new Set<string>();
+        if (typeof convRow.customer_email === "string" && convRow.customer_email) {
+          allowedRecipients.add(convRow.customer_email.toLowerCase());
+        }
+        if (typeof convRow.client_id === "string" && convRow.client_id) {
+          // The error MUST be handled, not discarded. Dropping it would let a
+          // transient failure on this lookup shrink allowedRecipients, and the
+          // check below would then reject a perfectly legitimate reply as
+          // "Recipient does not belong to this case" -- a server fault reported
+          // as an authorization decision, which is both wrong and the kind of
+          // thing that gets debugged in the wrong place for an hour. Fail loud
+          // with a 500, same as the conversation lookup above.
+          const { data: clientRow, error: clientErr } = await supabase
+            .from("clients")
+            .select("email")
+            .eq("id", convRow.client_id)
+            .maybeSingle();
+          if (clientErr) {
+            console.error("[case-reply] client lookup failed:", clientErr.message);
+            return Response.json(
+              { error: "Lookup failed", detail: clientErr.message },
+              { status: 500 },
+            );
+          }
+          if (typeof clientRow?.email === "string" && clientRow.email) {
+            allowedRecipients.add(clientRow.email.toLowerCase());
+          }
+        }
+        if (!allowedRecipients.has(toEmail.toLowerCase())) {
+          console.error("[case-reply] recipient does not belong to conversation", {
+            conversationId,
+          });
+          return Response.json(
+            { error: "Recipient does not belong to this case" },
+            { status: 403 },
+          );
         }
 
         const domain = process.env.MAILGUN_DOMAIN || "mygreektax.eu";
@@ -148,7 +266,7 @@ export const Route = createFileRoute("/webhooks/case-reply")({
         }
 
         try {
-          // 2. Send via Mailgun (EU).
+          // 4. Send via Mailgun (EU).
           const form = new URLSearchParams();
           form.set("from", "MyGreekTax <hello@mygreektax.eu>");
           form.set("to", toEmail);
@@ -177,7 +295,7 @@ export const Route = createFileRoute("/webhooks/case-reply")({
             /* ignore */
           }
 
-          // 3. Log into brain_events so it shows in the case conversation.
+          // 5. Log into brain_events so it shows in the case conversation.
           const externalEventId = mgId || `portal-reply-${crypto.randomUUID()}`;
           const { error: insErr } = await supabase.from("brain_events").insert({
             conversation_id: conversationId,
