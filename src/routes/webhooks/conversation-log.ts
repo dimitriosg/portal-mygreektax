@@ -305,11 +305,22 @@ export const Route = createFileRoute("/webhooks/conversation-log")({
             //    where metadata ? 'authenticated_via'
             //    group by 1;
             //
-            // When "lead-intake-legacy" stops gaining rows, every Make module
-            // has been migrated and the legacy branch can be deleted. Note
-            // this marks events, so a caller that posts only unmatched or
-            // text-free payloads leaves no mark; the console line still covers
-            // those.
+            // KNOW THE BLIND SPOT BEFORE TRUSTING THIS. It marks events, and
+            // three paths return before an event is ever written: no matching
+            // conversation, no text_content, and a duplicate source_message_id.
+            // A caller that only ever hits those leaves no row here, so
+            // "lead-intake-legacy" gaining no rows is evidence that legacy
+            // callers have migrated, NOT proof. The duplicate path matters
+            // most: an overlapping re-sync is a normal, repeatable shape for
+            // these callers, so a scenario could be live and invisible to the
+            // query above.
+            //
+            // The console line a few lines up fires on every authenticated
+            // request, whatever happens afterwards, so it is the complete
+            // record and this is the durable, queryable one. Confirm against
+            // the logs before deleting the legacy branch. A dedicated audit
+            // table would close the gap properly, but it buys an extra write on
+            // every request to retire a block that is meant to be temporary.
             row.metadata = { authenticated_via: authenticatedVia };
 
             const { error: eventError } = await supabase.from("brain_events").insert(row);

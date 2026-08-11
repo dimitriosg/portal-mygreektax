@@ -199,11 +199,25 @@ export const Route = createFileRoute("/webhooks/case-reply")({
           allowedRecipients.add(convRow.customer_email.toLowerCase());
         }
         if (typeof convRow.client_id === "string" && convRow.client_id) {
-          const { data: clientRow } = await supabase
+          // The error MUST be handled, not discarded. Dropping it would let a
+          // transient failure on this lookup shrink allowedRecipients, and the
+          // check below would then reject a perfectly legitimate reply as
+          // "Recipient does not belong to this case" -- a server fault reported
+          // as an authorization decision, which is both wrong and the kind of
+          // thing that gets debugged in the wrong place for an hour. Fail loud
+          // with a 500, same as the conversation lookup above.
+          const { data: clientRow, error: clientErr } = await supabase
             .from("clients")
             .select("email")
             .eq("id", convRow.client_id)
             .maybeSingle();
+          if (clientErr) {
+            console.error("[case-reply] client lookup failed:", clientErr.message);
+            return Response.json(
+              { error: "Lookup failed", detail: clientErr.message },
+              { status: 500 },
+            );
+          }
           if (typeof clientRow?.email === "string" && clientRow.email) {
             allowedRecipients.add(clientRow.email.toLowerCase());
           }

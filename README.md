@@ -107,7 +107,7 @@ docs/
 
 ## Webhook endpoints
 
-Everything under `/webhooks/` lives here, but the callers are not all the same and neither is the guard. Machine callers (Make, n8n, Mailgun) authenticate with a shared secret in a header. Browser callers authenticate with the signed-in user's Supabase access token as `Authorization: Bearer`, and a shared secret must never be used for those: it would have to ship inside client JS to work, which looks like authentication while being readable by anyone who opens devtools.
+Everything under `/webhooks/` lives here, but the callers are not all the same and neither is the guard. Machine callers authenticate with a credential in a header: Make and n8n send their documented shared secret, while Mailgun signs each request and the route verifies the HMAC. Browser callers authenticate with the signed-in user's Supabase access token as `Authorization: Bearer`, and a shared secret must never be used for those: it would have to ship inside client JS to work, which looks like authentication while being readable by anyone who opens devtools.
 
 | Route                          | Caller  | Auth                                             | Purpose                                                   |
 | ------------------------------ | ------- | ------------------------------------------------ | --------------------------------------------------------- |
