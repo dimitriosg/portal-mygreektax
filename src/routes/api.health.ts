@@ -61,7 +61,6 @@ function secretPresence() {
     OPS_SNAPSHOT_KEY: Boolean(process.env.OPS_SNAPSHOT_KEY),
 
     // Third-party API keys.
-    LOVABLE_API_KEY: Boolean(process.env.LOVABLE_API_KEY),
     PLAUSIBLE_API_KEY: Boolean(process.env.PLAUSIBLE_API_KEY),
 
     // This endpoint's own gate. Listed because its absence is meaningful: it is
@@ -80,7 +79,6 @@ function configPresence() {
     BRAIN_ORCHESTRATE_URL: Boolean(process.env.BRAIN_ORCHESTRATE_URL),
     MAKE_PARTNER_SYNC_URL: Boolean(process.env.MAKE_PARTNER_SYNC_URL),
     MAKE_GMAIL_SYNC_WEBHOOK_URL: Boolean(process.env.MAKE_GMAIL_SYNC_WEBHOOK_URL),
-    LOVABLE_SEND_URL: Boolean(process.env.LOVABLE_SEND_URL),
   };
 }
 

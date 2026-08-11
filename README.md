@@ -76,7 +76,6 @@ src/
     unsubscribe.tsx  email/unsubscribe.ts
     admin.tsx  admin.index.tsx  admin.change-requests.tsx  admin.tracking-links.tsx
     webhooks/                 Machine to machine endpoints (see table below)
-    lovable/email/            Transactional email subsystem (auth, queue, suppression, send)
   components/
     AiReviewDesk.tsx          Draft edit, approve, send
     RichTextEditor.tsx        TipTap editor
