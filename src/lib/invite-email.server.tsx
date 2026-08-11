@@ -1,111 +1,38 @@
-import { render } from "@react-email/components";
-import * as React from "react";
-import { template as partnerInviteTemplate } from "./email-templates/partner-invite";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { refuseOutboundEmail } from "./outbound-email.server";
 
-const SENDER_DOMAIN = "notify.portal.mygreektax.eu";
-const FROM_DOMAIN = "portal.mygreektax.eu";
-const SITE_NAME = "My Greek Tax";
-
-function generateToken(): string {
-  const bytes = new Uint8Array(32);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes)
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
+// Partner invite email.
+//
+// This refuses. The portal has no transactional sender -- see
+// src/lib/outbound-email.server.ts for the full reason, including why it is not
+// being repointed at Mailgun in the portal.
+//
+// This is the one of the three producers where the refusal is genuinely loud.
+// Its only caller, sendPartnerInviteEmail in invites.functions.ts, exists for
+// no other purpose than to send this email and does not catch, so the throw
+// reaches the admin who pressed the button. That is the correct outcome: the
+// invite has not gone out, and until now they were told it had. The invite
+// RECORD is created by a different server function and is unaffected -- what
+// fails is the notification, which is what actually failed.
+//
+// REMOVED WITH THE ENQUEUE, all recoverable from git when n8n takes this over:
+//
+//   - the suppressed_emails check
+//   - get-or-create of the email_unsubscribe_tokens row
+//   - the React Email render (email-templates/partner-invite.tsx is still
+//     present and still the source of the wording)
+//
+// Those ran BEFORE the enqueue, which meant every call minted an unsubscribe
+// token for an address that was never going to be emailed. Refusing at the top
+// leaves no rows behind. Suppression belongs with the sender in any case, and
+// the sender is going to be n8n, where suppression already lives.
 
 export async function enqueuePartnerInviteEmail(params: {
   email: string;
   firstName: string;
   inviteUrl: string;
-}) {
-  const { email, firstName, inviteUrl } = params;
-  const normalized = email.toLowerCase();
-
-  // Refuse if email is suppressed.
-  const { data: suppressed } = await supabaseAdmin
-    .from("suppressed_emails")
-    .select("id")
-    .eq("email", normalized)
-    .maybeSingle();
-  if (suppressed) {
-    throw new Error("This email address has unsubscribed or bounced and cannot be emailed.");
-  }
-
-  // Get or create unsubscribe token (one per address).
-  let unsubscribeToken: string | null = null;
-  const { data: existing } = await supabaseAdmin
-    .from("email_unsubscribe_tokens")
-    .select("token, used_at")
-    .eq("email", normalized)
-    .maybeSingle();
-  if (existing && !existing.used_at) {
-    unsubscribeToken = existing.token;
-  } else if (!existing) {
-    unsubscribeToken = generateToken();
-    await supabaseAdmin.from("email_unsubscribe_tokens").upsert(
-      { token: unsubscribeToken, email: normalized },
-      {
-        onConflict: "email",
-        ignoreDuplicates: true,
-      },
-    );
-    const { data: stored } = await supabaseAdmin
-      .from("email_unsubscribe_tokens")
-      .select("token")
-      .eq("email", normalized)
-      .maybeSingle();
-    unsubscribeToken = stored?.token ?? unsubscribeToken;
-  }
-
-  // Render the template.
-  const element = React.createElement(partnerInviteTemplate.component, {
-    firstName,
-    inviteUrl,
-  } as never);
-  const html = await render(element);
-  const text = await render(element, { plainText: true });
-
-  const messageId = crypto.randomUUID();
-
-  // Append pending log row.
-  await supabaseAdmin.from("email_send_log").insert({
-    message_id: messageId,
-    template_name: "partner-invite",
-    recipient_email: email,
-    status: "pending",
+}): Promise<never> {
+  return refuseOutboundEmail({
+    templateName: "partner-invite",
+    recipientEmail: params.email,
   });
-
-  const subject = partnerInviteTemplate.subject;
-  const { error: enqueueError } = await supabaseAdmin.rpc("enqueue_email", {
-    queue_name: "transactional_emails",
-    payload: {
-      message_id: messageId,
-      to: email,
-      from: `${SITE_NAME} <noreply@${FROM_DOMAIN}>`,
-      sender_domain: SENDER_DOMAIN,
-      subject,
-      html,
-      text,
-      purpose: "transactional",
-      label: "partner-invite",
-      idempotency_key: messageId,
-      unsubscribe_token: unsubscribeToken,
-      queued_at: new Date().toISOString(),
-    },
-  });
-
-  if (enqueueError) {
-    await supabaseAdmin.from("email_send_log").insert({
-      message_id: messageId,
-      template_name: "partner-invite",
-      recipient_email: email,
-      status: "failed",
-      error_message: "Failed to enqueue invite email",
-    });
-    throw new Error("Could not queue the invite email. Please try again.");
-  }
-
-  return { ok: true };
 }
