@@ -45,9 +45,28 @@
 
 const MAX_DETAIL = 500;
 
+/** Bound an upstream body before it goes in a log line or a JSON response. */
 function trim(body: string): string {
   const t = body.trim();
   return t.length > MAX_DETAIL ? `${t.slice(0, MAX_DETAIL)}...` : t;
+}
+
+/**
+ * Sanitise Mailgun's Retry-After before echoing it.
+ *
+ * The value is upstream input, and it is going into a response header. A stray
+ * newline or control character in there throws while constructing the Response,
+ * which would turn a rate-limit into an unhandled exception raised by the error
+ * handler itself -- the same shape of fault this whole file exists to remove.
+ *
+ * Retry-After is either delay-seconds or an HTTP-date. Only the numeric form is
+ * accepted: it is what Mailgun sends, and anything else is dropped rather than
+ * guessed at, since omitting the header is harmless and a bad one is not.
+ */
+function safeRetryAfter(value: string | null | undefined): string | undefined {
+  if (!value) return undefined;
+  const t = value.trim();
+  return /^\d{1,6}$/.test(t) ? t : undefined;
 }
 
 /**
@@ -81,13 +100,39 @@ export function mailgunFailureResponse(
   }
 
   if (status === 429) {
+    const retry = safeRetryAfter(retryAfter);
     return Response.json(
       {
         error: "Email provider is rate limiting us",
         detail: "Mailgun returned 429. The message was not sent. Try again shortly.",
         upstreamStatus: status,
       },
-      { status: 503, headers: retryAfter ? { "retry-after": retryAfter } : undefined },
+      { status: 503, headers: retry ? { "Retry-After": retry } : undefined },
+    );
+  }
+
+  // 404 is OURS, not the caller's. This endpoint is
+  // /v3/<MAILGUN_DOMAIN>/messages, so a 404 means Mailgun has no such domain:
+  // MAILGUN_DOMAIN is wrong, not verified in this account, or the request went
+  // to the wrong regional API. None of that is anything the sender can fix by
+  // editing their message, so grouping it with the 4xx below would repeat the
+  // exact mistake this file corrects -- pointing the reader at the wrong system.
+  //
+  // Worth its own branch because it is a live possibility rather than a
+  // hypothetical: a key that is valid for one account against a domain owned by
+  // another fails around here, and that is one of the candidate explanations
+  // for the outage on 12/08/2026.
+  if (status === 404) {
+    return Response.json(
+      {
+        error: "Email provider does not recognise our sending domain",
+        detail:
+          "Mailgun returned 404 for this domain. MAILGUN_DOMAIN on this Worker is wrong, is not " +
+          "verified in the Mailgun account that MAILGUN_API_KEY belongs to, or the request went " +
+          "to the wrong regional API. The message was NOT sent. Retrying will not help.",
+        upstreamStatus: status,
+      },
+      { status: 500 },
     );
   }
 
