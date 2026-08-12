@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { mailgunFailureResponse } from "@/lib/mailgun-error.server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 // -----------------------------------------------------------------------------
@@ -231,8 +232,12 @@ export const Route = createFileRoute("/webhooks/partner-reply")({
           }
           const mgText = await mgRes.text();
           if (!mgRes.ok) {
-            console.error("[partner-reply] mailgun send failed:", mgRes.status, mgText);
-            return Response.json({ error: "Send failed", detail: mgText }, { status: 502 });
+            return mailgunFailureResponse(
+              "partner-reply",
+              mgRes.status,
+              mgText,
+              mgRes.headers.get("retry-after"),
+            );
           }
           let mgId: string | undefined;
           try {

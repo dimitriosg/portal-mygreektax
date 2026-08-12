@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { mailgunFailureResponse } from "@/lib/mailgun-error.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 // POST /webhooks/send-approved
@@ -254,8 +255,12 @@ export const Route = createFileRoute("/webhooks/send-approved")({
           const mgText = await mgRes.text();
 
           if (!mgRes.ok) {
-            console.error("[send-approved] mailgun send failed:", mgRes.status, mgText);
-            return Response.json({ error: "Send failed", detail: mgText }, { status: 502 });
+            return mailgunFailureResponse(
+              "send-approved",
+              mgRes.status,
+              mgText,
+              mgRes.headers.get("retry-after"),
+            );
           }
 
           let mgId: string | undefined;
