@@ -18,6 +18,13 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 const DEFAULT_SUBJECT = "Update on your MyGreekTax request";
 
+// Returned as `logError` when the mail went out but the case log write did
+// not. Fixed text on purpose: the caller needs to know the log is missing,
+// not which table refused the row. The database's own message is written to
+// console.error and goes no further.
+const LOG_FAILURE_MESSAGE =
+  "The email was sent, but it could not be written to the case. The reason is in the server log.";
+
 function readString(value: unknown, maxLength: number): string | undefined {
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
@@ -295,6 +302,11 @@ export const Route = createFileRoute("/webhooks/send-approved")({
           //
           // So the request still succeeds, and it now says whether the case
           // was updated. The desk surfaces it.
+          //
+          // What comes back is the OUTCOME, never the database's words. The
+          // raw PostgREST message names tables, columns and constraints, and
+          // it would land in a browser to say nothing the reader can act on.
+          // It goes to console.error and stays there.
           let logged = true;
           let logError: string | null = null;
 
@@ -336,7 +348,7 @@ export const Route = createFileRoute("/webhooks/send-approved")({
                 eventError,
               );
               logged = false;
-              logError = eventError.message;
+              logError = LOG_FAILURE_MESSAGE;
             }
           } else {
             const { error: timelineError } = await supabaseAdmin.from("case_timeline").insert({
@@ -353,7 +365,7 @@ export const Route = createFileRoute("/webhooks/send-approved")({
                 timelineError,
               );
               logged = false;
-              logError = timelineError.message;
+              logError = LOG_FAILURE_MESSAGE;
             }
           }
 

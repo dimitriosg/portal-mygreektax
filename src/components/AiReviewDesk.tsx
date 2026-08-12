@@ -18,8 +18,16 @@ interface AiReviewDeskProps {
   jobId: string;
 }
 
+// "sent-unlogged" is deliberately NOT a variant of "sent". The mail is gone
+// and cannot be unsent, but the case has no record of it, and the one button
+// on this card would send a SECOND email while doing nothing about the log.
+// Its own state keeps it out of the green "all done" path and lets the button
+// be held until the operator says they mean it.
 type SendStatus =
-  { kind: "idle" } | { kind: "sent"; detail: string } | { kind: "error"; detail: string };
+  | { kind: "idle" }
+  | { kind: "sent"; detail: string }
+  | { kind: "sent-unlogged"; detail: string }
+  | { kind: "error"; detail: string };
 
 // Shown as the Subject placeholder and used when the field is left blank. Must
 // match the fallback in send-approved.ts (DEFAULT_SUBJECT). If you change one,
@@ -58,6 +66,9 @@ export const AiReviewDesk: React.FC<AiReviewDeskProps> = ({ jobId }) => {
   const [loading, setLoading] = useState<boolean>(true);
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [status, setStatus] = useState<SendStatus>({ kind: "idle" });
+  // Only consulted in the "sent-unlogged" state: the operator has read the
+  // warning and still wants to send the client another email.
+  const [resendConfirmed, setResendConfirmed] = useState<boolean>(false);
 
   // Load the draft once on mount. Regeneration remounts this component (the
   // parent keys it on the draft timestamp), so both fields reset to a clean
@@ -101,6 +112,7 @@ export const AiReviewDesk: React.FC<AiReviewDeskProps> = ({ jobId }) => {
   const handleApproveAndSend = async () => {
     setSubmitting(true);
     setStatus({ kind: "idle" });
+    setResendConfirmed(false);
     try {
       // Stitch body + a spacer + signature into one document, then sanitize
       // the whole thing once.
@@ -160,13 +172,14 @@ export const AiReviewDesk: React.FC<AiReviewDeskProps> = ({ jobId }) => {
       // "Sent to ...". If the mail went but the case was not updated, say so:
       // a message the client has and the case has no record of is worse than a
       // failed send, because nothing prompts anyone to look.
-      setStatus({
-        kind: "sent",
-        detail:
-          result.logged === false
-            ? `Sent to ${result.sent_to || "the client"}, but it could NOT be logged on this case. The client has it; the case timeline does not.`
-            : `Sent to ${result.sent_to || "the client"}.`,
-      });
+      if (result.logged === false) {
+        setStatus({
+          kind: "sent-unlogged",
+          detail: `Email accepted by Mailgun for ${result.sent_to || "the client"}, but case logging failed. Nothing on this case will show that it went out, so record it by hand.`,
+        });
+        return;
+      }
+      setStatus({ kind: "sent", detail: `Sent to ${result.sent_to || "the client"}.` });
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       setStatus({ kind: "error", detail: err?.message || "Network error while sending." });
@@ -189,8 +202,19 @@ export const AiReviewDesk: React.FC<AiReviewDeskProps> = ({ jobId }) => {
         </div>
       );
     }
+    if (status.kind === "sent-unlogged") {
+      return (
+        <div className="p-4 border border-amber-300 rounded-xl bg-amber-50 text-amber-900 text-sm">
+          {status.detail}
+        </div>
+      );
+    }
     return null;
   }
+
+  // Held until confirmed: in this state the button would send a second email
+  // to the client, and would not repair the missing case log.
+  const resendBlocked = status.kind === "sent-unlogged" && !resendConfirmed;
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-6 border rounded-xl bg-slate-50/50 shadow-inner animate-in fade-in slide-in-from-top-4 duration-300">
@@ -256,12 +280,33 @@ export const AiReviewDesk: React.FC<AiReviewDeskProps> = ({ jobId }) => {
 
           <Button
             onClick={handleApproveAndSend}
-            disabled={submitting}
+            disabled={submitting || resendBlocked}
             className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium transition-all shadow-md py-5"
           >
-            {submitting ? "Sending..." : isApproved ? "Send again" : "Approve and send"}
+            {submitting
+              ? "Sending..."
+              : resendBlocked
+                ? "Already sent to the client"
+                : isApproved
+                  ? "Send again"
+                  : "Approve and send"}
           </Button>
           {status.kind === "sent" && <p className="text-sm text-emerald-700">{status.detail}</p>}
+          {status.kind === "sent-unlogged" && (
+            <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+              <p className="font-medium">Sent, but not logged on this case.</p>
+              <p className="mt-1">{status.detail}</p>
+              {resendBlocked && (
+                <button
+                  type="button"
+                  onClick={() => setResendConfirmed(true)}
+                  className="mt-2 underline underline-offset-2 hover:no-underline"
+                >
+                  Send the client another email anyway
+                </button>
+              )}
+            </div>
+          )}
           {status.kind === "error" && (
             <p className="text-sm text-red-600">Not sent: {status.detail}</p>
           )}
