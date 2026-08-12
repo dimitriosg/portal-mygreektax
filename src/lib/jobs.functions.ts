@@ -1434,8 +1434,8 @@ export const requestJobChange = createServerFn({ method: "POST" })
 
     // Fire-and-forget admin notification email.
     try {
-      const { enqueueChangeRequestAdminEmail } = await import("./change-request-email.server");
-      await enqueueChangeRequestAdminEmail({
+      const { dispatchChangeRequestAdminEmail } = await import("./change-request-email.server");
+      await dispatchChangeRequestAdminEmail({
         jobCode: job.fields["Job Code"] ?? data.jobId,
         jobId: data.jobId,
         partnerName: actor.name ?? actor.email ?? "A partner",
@@ -1553,9 +1553,9 @@ export const decideChangeRequest = createServerFn({ method: "POST" })
 
     // Fire-and-forget partner notification email.
     try {
-      const { enqueueChangeRequestDecisionEmail } = await import("./change-request-email.server");
+      const { dispatchChangeRequestDecisionEmail } = await import("./change-request-email.server");
       if (r.requester_email) {
-        await enqueueChangeRequestDecisionEmail({
+        await dispatchChangeRequestDecisionEmail({
           to: r.requester_email,
           partnerName: r.requester_name ?? r.requester_email,
           jobCode: r.job_code ?? r.airtable_job_id,
