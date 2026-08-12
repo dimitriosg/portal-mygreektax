@@ -6,13 +6,13 @@
 //
 //     return Response.json({ error: "Send failed", detail: mgText }, { status: 502 });
 //
-// On 12/08/2026 the Worker's MAILGUN_API_KEY stopped being accepted. Mailgun
+// On 2026-08-12 the Worker's MAILGUN_API_KEY stopped being accepted. Mailgun
 // answered 401 with the body "Forbidden". The route turned that into 502 Bad
 // Gateway and passed "Forbidden" through to the desk, so the portal reported a
 // gateway fault and the word Forbidden for what was actually our own expired
 // credential. Two people spent an afternoon reading it as an authentication
 // rejection of the CALLER, and as a crash, because both are what those words
-// normally mean. The send had been failing since 27/07 and nobody knew.
+// normally mean. The send had been failing since 2026-07-27 and nobody knew.
 //
 // A wrong status is not cosmetic. It aims the person reading it at the wrong
 // system: 502 says "the thing upstream is broken", when the thing that was
@@ -121,7 +121,7 @@ export function mailgunFailureResponse(
   // Worth its own branch because it is a live possibility rather than a
   // hypothetical: a key that is valid for one account against a domain owned by
   // another fails around here, and that is one of the candidate explanations
-  // for the outage on 12/08/2026.
+  // for the outage on 2026-08-12.
   if (status === 404) {
     return Response.json(
       {
@@ -129,7 +129,8 @@ export function mailgunFailureResponse(
         detail:
           "Mailgun returned 404 for this domain. MAILGUN_DOMAIN on this Worker is wrong, is not " +
           "verified in the Mailgun account that MAILGUN_API_KEY belongs to, or the request went " +
-          "to the wrong regional API. The message was NOT sent. Retrying will not help.",
+          "to the wrong regional API. The message was NOT sent and was not queued. Retrying will " +
+          "not help.",
         upstreamStatus: status,
       },
       { status: 500 },
