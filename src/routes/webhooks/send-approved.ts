@@ -284,12 +284,42 @@ export const Route = createFileRoute("/webhooks/send-approved")({
           }
 
           // 6. Log it onto the case.
+          //
+          // The outcome is TRACKED and returned. Both branches below swallow
+          // their error deliberately -- the mail has gone, and failing the
+          // request would tell the sender nothing was sent when something was.
+          // But swallowing it silently is how the constraint violation above
+          // survived unnoticed for the life of this route: the desk said
+          // "Sent to ..." and the case stayed empty, and nothing anywhere said
+          // otherwise except a console line nobody had reason to read.
+          //
+          // So the request still succeeds, and it now says whether the case
+          // was updated. The desk surfaces it.
+          let logged = true;
+          let logError: string | null = null;
+
           if (isNewSpine) {
             const { error: eventError } = await supabaseAdmin.from("brain_events").insert({
               conversation_id: caseId,
               external_event_id: mgId || `sent:${caseId}:${Date.now()}`,
               event_type: "customer_email_sent",
-              actor: "internal",
+              // MUST be "dimitris", not "internal".
+              //
+              // brain_events_actor_check allows exactly
+              // customer | partner | dimitris | system. "internal" is not in
+              // it, so every insert this route attempted was rejected by the
+              // constraint -- and the error is swallowed below, because the
+              // mail has already gone and failing the request would be worse.
+              //
+              // The result was that this route sent correctly and logged
+              // nothing, for its entire life: 0 rows via portal_desk against
+              // 10 from case-reply.ts, which uses "dimitris" and works. Every
+              // approved draft reached the client and left no trace on the
+              // case.
+              //
+              // "internal" is a valid DIRECTION, which is most likely how it
+              // got here. It has never been a valid actor.
+              actor: "dimitris",
               direction: "outbound",
               provider: "mailgun",
               provider_message_id: mgId || null,
@@ -305,6 +335,8 @@ export const Route = createFileRoute("/webhooks/send-approved")({
                 "[send-approved] brain_events log failed (mail already sent):",
                 eventError,
               );
+              logged = false;
+              logError = eventError.message;
             }
           } else {
             const { error: timelineError } = await supabaseAdmin.from("case_timeline").insert({
@@ -320,6 +352,8 @@ export const Route = createFileRoute("/webhooks/send-approved")({
                 "[send-approved] timeline log failed (mail already sent):",
                 timelineError,
               );
+              logged = false;
+              logError = timelineError.message;
             }
           }
 
@@ -329,6 +363,8 @@ export const Route = createFileRoute("/webhooks/send-approved")({
             sent_to: clientRow.email,
             client_name: clientRow.full_name ?? "",
             messageId: mgId ?? null,
+            logged,
+            logError,
           });
         } catch (error) {
           console.error("[send-approved] failed", { error });

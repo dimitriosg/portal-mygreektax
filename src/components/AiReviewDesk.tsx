@@ -155,7 +155,18 @@ export const AiReviewDesk: React.FC<AiReviewDeskProps> = ({ jobId }) => {
       }
 
       setIsApproved(true);
-      setStatus({ kind: "sent", detail: `Sent to ${result.sent_to || "the client"}.` });
+      // The send and the case log are separate outcomes, and for the whole life
+      // of this route the second one silently failed while this box said
+      // "Sent to ...". If the mail went but the case was not updated, say so:
+      // a message the client has and the case has no record of is worse than a
+      // failed send, because nothing prompts anyone to look.
+      setStatus({
+        kind: "sent",
+        detail:
+          result.logged === false
+            ? `Sent to ${result.sent_to || "the client"}, but it could NOT be logged on this case. The client has it; the case timeline does not.`
+            : `Sent to ${result.sent_to || "the client"}.`,
+      });
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       setStatus({ kind: "error", detail: err?.message || "Network error while sending." });
