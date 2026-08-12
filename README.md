@@ -134,7 +134,7 @@ Everything under `/webhooks/` lives here, but the callers are not all the same a
 
 ### Local development
 
-```
+```bash
 npm ci
 npm run dev
 ```
