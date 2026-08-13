@@ -1972,8 +1972,10 @@ export type Database = {
           notes: string | null;
           partner_user_id: string | null;
           price_unit: Database["public"]["Enums"]["price_unit"] | null;
+          price_unit_el: string | null;
           service_code: string | null;
           service_name: string | null;
+          service_name_el: string | null;
           sla_days: string | null;
           status: Database["public"]["Enums"]["rate_status"] | null;
           wholesale_price: number | null;
