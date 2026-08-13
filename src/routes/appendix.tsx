@@ -1,5 +1,5 @@
-import { createFileRoute, Link, redirect, useRouter } from "@tanstack/react-router";
-import { useMemo } from "react";
+import { createFileRoute, Link, redirect, useNavigate, useRouter } from "@tanstack/react-router";
+import { ChevronDown } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { getErrorMessage, isAuthSessionError } from "@/lib/auth-errors";
@@ -8,7 +8,8 @@ import {
   APPENDIX_FORBIDDEN_MESSAGE,
   type AppendixRow,
 } from "@/lib/appendix.functions";
-import { formatDate } from "@/lib/utils";
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // The data loads in the route loader, not in the component after render. On a
 // document request the loader runs during SSR, where getAppendix's auth
@@ -19,10 +20,24 @@ import { formatDate } from "@/lib/utils";
 // loader runs before render with the signed-in session token attached, and a
 // signed-in caller who is neither admin nor active partner gets the 403 from
 // the server function, rendered by the error component below.
+//
+// ?partner=<uuid> selects which card an admin is looking at. It is a hint, not
+// an authorisation: get_partner_appendix ignores it for a partner and forces
+// their own id, and the server function only honours ids that are in the
+// caller's own active-partner list.
 export const Route = createFileRoute("/appendix")({
-  loader: async () => {
+  validateSearch: (search: Record<string, unknown>): { partner?: string } => {
+    const partner = search.partner;
+    // A malformed id is dropped rather than passed on, so a hand-edited URL
+    // falls back to the default card instead of erroring.
+    return typeof partner === "string" && UUID_PATTERN.test(partner) ? { partner } : {};
+  },
+  loaderDeps: ({ search }) => ({ partner: search.partner }),
+  loader: async ({ deps }) => {
     try {
-      return await getAppendix();
+      return await getAppendix({
+        data: deps.partner ? { partnerUserId: deps.partner } : {},
+      });
     } catch (error) {
       if (isUnauthorizedRequest(error)) throw redirect({ to: "/login", replace: true });
       throw error;
@@ -95,6 +110,19 @@ function AppendixLine({ row }: { row: AppendixRow }) {
     .filter((part): part is string => !!part)
     .join(" / ");
 
+  // has_line false means the catalogue lists the service but this partner has
+  // no agreed line for it. The service still appears, so the card reads as the
+  // full list of services, but there is no price, SLA or note to show.
+  if (!row.has_line) {
+    return (
+      <div className="py-3">
+        <p className="text-sm font-semibold text-foreground">{primaryName}</p>
+        {secondary && <p className="mt-0.5 text-xs text-muted-foreground">({secondary})</p>}
+        <p className="mt-1 text-sm text-muted-foreground">Δεν έχει συμφωνηθεί</p>
+      </div>
+    );
+  }
+
   return (
     <div className="py-3">
       <p className="text-sm font-semibold text-foreground">{primaryName}</p>
@@ -115,15 +143,11 @@ function PartnerAppendixDocument({
   rows: AppendixRow[];
   partnerName: string | null;
 }) {
+  // Unagreed services (has_line false) carry no status, so they stay in their
+  // category alongside the agreed lines rather than in the pending block, which
+  // is reserved for lines that exist but are not yet confirmed.
   const agreedRows = rows.filter((row) => row.status !== "pending");
   const pendingRows = rows.filter((row) => row.status === "pending");
-  const effectiveFrom = useMemo(() => {
-    const dates = agreedRows
-      .map((row) => row.effective_from)
-      .filter((value): value is string => !!value)
-      .sort();
-    return dates.length > 0 ? dates[dates.length - 1] : null;
-  }, [agreedRows]);
 
   const sections = SECTIONS.map((section) => ({
     ...section,
@@ -140,11 +164,6 @@ function PartnerAppendixDocument({
           Παράρτημα Α: Τιμοκατάλογος Υπηρεσιών
         </h2>
         {partnerName && <p className="mt-2 text-sm text-muted-foreground">{partnerName}</p>}
-        {effectiveFrom && (
-          <p className="mt-1 text-xs text-muted-foreground">
-            Σε ισχύ από {formatDate(effectiveFrom)}
-          </p>
-        )}
       </header>
 
       {sections.length === 0 && pendingRows.length === 0 && (
@@ -265,47 +284,62 @@ function AppendixErrorComponent({ error, reset }: { error: unknown; reset: () =>
 
 function AppendixPage() {
   const data = Route.useLoaderData();
+  const navigate = useNavigate();
 
-  const partnerDocuments = useMemo(() => {
-    const byPartner = new Map<string, AppendixRow[]>();
-    for (const row of data.rows) {
-      if (!row.partner_user_id) continue;
-      const existing = byPartner.get(row.partner_user_id);
-      if (existing) existing.push(row);
-      else byPartner.set(row.partner_user_id, [row]);
-    }
-    return [...byPartner.entries()]
-      .map(([partnerUserId, partnerRows]) => ({
-        partnerUserId,
-        partnerName: data.partnerNames[partnerUserId] ?? null,
-        rows: partnerRows,
-      }))
-      .sort((a, b) => (a.partnerName ?? "").localeCompare(b.partnerName ?? "", "el"));
-  }, [data]);
+  // One card at a time. A partner has no choice to make, so the selector is
+  // admin only; changing it re-runs the loader with the new id, so the swap
+  // happens on the server and no other partner's figures reach the browser.
+  const showSelector = data.isAdmin && data.partners.length > 0;
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
       {data.isAdmin && (
-        <p className="mb-4 text-sm text-muted-foreground">
-          Προβολή διαχείρισης: εμφανίζονται τα παραρτήματα όλων των συνεργατών.
-        </p>
+        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">
+              Προβολή διαχείρισης
+            </p>
+            <p className="mt-1 text-sm text-foreground">
+              Παράρτημα του συνεργάτη:{" "}
+              <span className="font-medium">{data.partnerName ?? "Χωρίς όνομα"}</span>
+            </p>
+          </div>
+          {showSelector && (
+            <div className="relative">
+              <label htmlFor="appendix-partner" className="sr-only">
+                Επιλογή συνεργάτη
+              </label>
+              <select
+                id="appendix-partner"
+                value={data.selectedPartnerId ?? ""}
+                onChange={(event) =>
+                  navigate({
+                    to: "/appendix",
+                    search: { partner: event.target.value },
+                    replace: true,
+                  })
+                }
+                className="h-9 min-w-56 appearance-none rounded-md border border-input bg-background px-3 pr-8 text-sm"
+              >
+                {data.partners.map((partner) => (
+                  <option key={partner.userId} value={partner.userId}>
+                    {partner.fullName ?? partner.userId}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            </div>
+          )}
+        </div>
       )}
-      {partnerDocuments.length === 0 ? (
+      {data.isAdmin && data.partners.length === 0 ? (
         <Card>
           <CardContent className="py-6 text-sm text-muted-foreground">
-            Δεν υπάρχουν ακόμη γραμμές τιμοκαταλόγου.
+            Δεν υπάρχουν ενεργοί συνεργάτες.
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-8">
-          {partnerDocuments.map((document) => (
-            <PartnerAppendixDocument
-              key={document.partnerUserId}
-              rows={document.rows}
-              partnerName={document.partnerName}
-            />
-          ))}
-        </div>
+        <PartnerAppendixDocument rows={data.rows} partnerName={data.partnerName} />
       )}
     </div>
   );
