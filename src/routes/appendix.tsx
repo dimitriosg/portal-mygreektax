@@ -76,7 +76,12 @@ function sectionForCategory(category: string | null): SectionKey {
 }
 
 function priceLabel(row: AppendixRow) {
-  if (row.wholesale_price === null) return "Κατά περίπτωση";
+  // A case_by_case line never shows a firm price, even when a figure is stored:
+  // that figure is a starting point rather than an agreed rate, and the italic
+  // note under the line carries the detail.
+  if (row.wholesale_price === null || row.status === "case_by_case") {
+    return "Κατά περίπτωση";
+  }
   const amount = `${amountFormatter.format(row.wholesale_price)} €`;
   return row.price_unit_el ? `${amount} / ${row.price_unit_el}` : amount;
 }
