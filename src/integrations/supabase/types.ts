@@ -2040,6 +2040,24 @@ export type Database = {
         Args: { payload: Json; queue_name: string };
         Returns: number;
       };
+      get_partner_appendix: {
+        Args: { p_partner_user_id?: string };
+        Returns: {
+          partner_user_id: string | null;
+          partner_name: string | null;
+          category: string | null;
+          service_code: string | null;
+          service_name_el: string | null;
+          service_name: string | null;
+          wholesale_price: number | null;
+          price_unit: Database["public"]["Enums"]["price_unit"] | null;
+          price_unit_el: string | null;
+          sla_days: string | null;
+          status: Database["public"]["Enums"]["rate_status"] | null;
+          notes: string | null;
+          has_line: boolean | null;
+        }[];
+      };
       get_partner_last_seen: {
         Args: { _user_ids: string[] };
         Returns: {
