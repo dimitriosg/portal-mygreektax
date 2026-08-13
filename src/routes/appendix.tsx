@@ -1,8 +1,11 @@
 import { createFileRoute, Link, redirect, useNavigate, useRouter } from "@tanstack/react-router";
+import { useEffect, useRef } from "react";
 import { ChevronDown } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/lib/auth-context";
 import { getErrorMessage, isAuthSessionError } from "@/lib/auth-errors";
+import { getStoredImpersonationId } from "@/lib/impersonation";
 import {
   getAppendix,
   APPENDIX_FORBIDDEN_MESSAGE,
@@ -34,9 +37,18 @@ export const Route = createFileRoute("/appendix")({
   },
   loaderDeps: ({ search }) => ({ partner: search.partner }),
   loader: async ({ deps }) => {
+    // Impersonation lives in sessionStorage, not in the URL, so it is read here
+    // rather than coming through loaderDeps. It is not a router dependency, so
+    // the component invalidates the route when the auth context's value drifts
+    // from the one this load used, which is what makes "Exit impersonation"
+    // refresh the page instead of leaving a stale card on screen.
+    const impersonatingAccountantId = getStoredImpersonationId() ?? undefined;
     try {
       return await getAppendix({
-        data: deps.partner ? { partnerUserId: deps.partner } : {},
+        data: {
+          ...(deps.partner ? { partnerUserId: deps.partner } : {}),
+          ...(impersonatingAccountantId ? { impersonatingAccountantId } : {}),
+        },
       });
     } catch (error) {
       if (isUnauthorizedRequest(error)) throw redirect({ to: "/login", replace: true });
@@ -236,7 +248,20 @@ function AppendixPendingComponent() {
 
 function AppendixErrorComponent({ error, reset }: { error: unknown; reset: () => void }) {
   const router = useRouter();
+  const { impersonatingId } = useAuth();
   const isForbidden = getErrorMessage(error) === APPENDIX_FORBIDDEN_MESSAGE;
+
+  // Impersonating a disabled or unprofiled partner lands here rather than in
+  // AppendixPage, so the invalidate-on-change in that component never runs and
+  // the access-denied card would survive "Exit impersonation". Reload on the
+  // same condition here, resetting the boundary so the retry is a fresh load.
+  const impersonationAtRender = useRef(impersonatingId ?? null);
+  useEffect(() => {
+    if (impersonationAtRender.current === (impersonatingId ?? null)) return;
+    impersonationAtRender.current = impersonatingId ?? null;
+    router.invalidate();
+    reset();
+  }, [impersonatingId, reset, router]);
 
   if (isForbidden) {
     return (
@@ -285,6 +310,18 @@ function AppendixErrorComponent({ error, reset }: { error: unknown; reset: () =>
 function AppendixPage() {
   const data = Route.useLoaderData();
   const navigate = useNavigate();
+  const router = useRouter();
+  const { impersonatingId } = useAuth();
+
+  // Starting or exiting impersonation changes what this page should show, but
+  // it happens outside the router (the banner in the root layout), so nothing
+  // would otherwise re-run the loader. Reload when the two disagree.
+  const loadedImpersonationId = data.impersonatedAccountantId ?? null;
+  useEffect(() => {
+    if ((impersonatingId ?? null) !== loadedImpersonationId) {
+      router.invalidate();
+    }
+  }, [impersonatingId, loadedImpersonationId, router]);
 
   // One card at a time. A partner has no choice to make, so the selector is
   // admin only; changing it re-runs the loader with the new id, so the swap
