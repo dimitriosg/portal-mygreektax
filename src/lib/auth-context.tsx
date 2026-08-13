@@ -15,6 +15,7 @@ import { getErrorMessage } from "@/lib/auth-errors";
 import { recordPartnerLogin } from "@/lib/activity.functions";
 import { track } from "@/lib/analytics";
 import { debugError, debugLog } from "@/lib/debug";
+import { IMPERSONATION_ID_KEY, IMPERSONATION_NAME_KEY } from "@/lib/impersonation";
 import { toast } from "sonner";
 
 type AccessType = "admin" | "partner" | "unauthorized";
@@ -53,8 +54,8 @@ type Ctx = {
 
 const AuthCtx = createContext<Ctx | undefined>(undefined);
 
-const IMP_ID_KEY = "mgt:impersonateId";
-const IMP_NAME_KEY = "mgt:impersonateName";
+const IMP_ID_KEY = IMPERSONATION_ID_KEY;
+const IMP_NAME_KEY = IMPERSONATION_NAME_KEY;
 const MAX_TOKEN_POLL_ATTEMPTS = 8;
 const TOKEN_POLL_DELAY_MS = 200;
 
