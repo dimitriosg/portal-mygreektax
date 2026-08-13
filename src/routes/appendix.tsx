@@ -1,5 +1,5 @@
 import { createFileRoute, Link, redirect, useNavigate, useRouter } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { ChevronDown } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -248,7 +248,20 @@ function AppendixPendingComponent() {
 
 function AppendixErrorComponent({ error, reset }: { error: unknown; reset: () => void }) {
   const router = useRouter();
+  const { impersonatingId } = useAuth();
   const isForbidden = getErrorMessage(error) === APPENDIX_FORBIDDEN_MESSAGE;
+
+  // Impersonating a disabled or unprofiled partner lands here rather than in
+  // AppendixPage, so the invalidate-on-change in that component never runs and
+  // the access-denied card would survive "Exit impersonation". Reload on the
+  // same condition here, resetting the boundary so the retry is a fresh load.
+  const impersonationAtRender = useRef(impersonatingId ?? null);
+  useEffect(() => {
+    if (impersonationAtRender.current === (impersonatingId ?? null)) return;
+    impersonationAtRender.current = impersonatingId ?? null;
+    router.invalidate();
+    reset();
+  }, [impersonatingId, reset, router]);
 
   if (isForbidden) {
     return (
