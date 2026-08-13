@@ -490,6 +490,13 @@ function Dashboard() {
                       ? "Your account is not linked to an admin or accountant profile yet"
                       : "Checking your portal access"}
           </p>
+          {hasPortalAccess && (
+            <div className="mt-3">
+              <Button asChild variant="outline" size="sm">
+                <Link to="/appendix">Παράρτημα Α</Link>
+              </Button>
+            </div>
+          )}
         </div>
         {hasPortalAccess && (
           <div className="flex w-full flex-col gap-3 sm:w-auto">
