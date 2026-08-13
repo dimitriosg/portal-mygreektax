@@ -62,19 +62,12 @@ const CATEGORY_TO_SECTION: Record<string, SectionKey> = {
   "D - Freelancers": "A4",
 };
 
-const PRICE_UNIT_LABELS: Record<string, string> = {
-  per_job: "ανά εργασία",
-  per_month: "ανά μήνα",
-  per_year: "ανά έτος",
-  per_person: "ανά άτομο",
-  per_line: "ανά γραμμή",
-  per_extra_year: "ανά επιπλέον έτος",
-  per_treaty: "ανά σύμβαση (ΣΑΔΦ)",
-};
-
-const euroFormatter = new Intl.NumberFormat("el-GR", {
-  style: "currency",
-  currency: "EUR",
+// Greek decimal convention: comma for the decimal separator, dot for thousands,
+// and the euro sign after the amount. The unit that follows comes from the view
+// (price_unit_el), not from a label map here, so the wording stays with the data.
+const amountFormatter = new Intl.NumberFormat("el-GR", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
 });
 
 function sectionForCategory(category: string | null): SectionKey {
@@ -83,30 +76,29 @@ function sectionForCategory(category: string | null): SectionKey {
 }
 
 function priceLabel(row: AppendixRow) {
-  if (row.wholesale_price === null || row.status === "case_by_case") {
-    return "Κατά περίπτωση";
-  }
-  const unit = row.price_unit ? (PRICE_UNIT_LABELS[row.price_unit] ?? row.price_unit) : null;
-  const amount = euroFormatter.format(row.wholesale_price);
-  return unit ? `${amount} ${unit}` : amount;
+  if (row.wholesale_price === null) return "Κατά περίπτωση";
+  const amount = `${amountFormatter.format(row.wholesale_price)} €`;
+  return row.price_unit_el ? `${amount} / ${row.price_unit_el}` : amount;
 }
 
 function AppendixLine({ row }: { row: AppendixRow }) {
+  // Greek name leads. The English name and the service code sit underneath in
+  // parentheses; when a line has no Greek name the English one is promoted to
+  // the lead so the parenthetical never repeats what is already above it.
+  const primaryName = row.service_name_el ?? row.service_name ?? row.service_code ?? "Υπηρεσία";
+  const secondary = [row.service_name_el ? row.service_name : null, row.service_code]
+    .filter((part): part is string => !!part)
+    .join(" / ");
+
   return (
-    <div className="flex flex-col gap-1 py-3 sm:flex-row sm:items-baseline sm:justify-between">
-      <div className="min-w-0">
-        <p className="text-sm text-foreground">
-          {row.service_name ?? row.service_code ?? "Υπηρεσία"}
-          {row.service_code && (
-            <span className="ml-2 text-xs text-muted-foreground">{row.service_code}</span>
-          )}
-        </p>
-        {row.notes && <p className="mt-0.5 text-xs text-muted-foreground">{row.notes}</p>}
-      </div>
-      <div className="shrink-0 text-left sm:text-right">
-        <p className="text-sm font-medium text-foreground">{priceLabel(row)}</p>
-        {row.sla_days && <p className="text-xs text-muted-foreground">SLA: {row.sla_days}</p>}
-      </div>
+    <div className="py-3">
+      <p className="text-sm font-semibold text-foreground">{primaryName}</p>
+      {secondary && <p className="mt-0.5 text-xs text-muted-foreground">({secondary})</p>}
+      <p className="mt-1 text-sm text-foreground">{priceLabel(row)}</p>
+      {row.sla_days && (
+        <p className="mt-0.5 text-xs text-muted-foreground">Εκτιμώμενος Χρόνος: {row.sla_days}</p>
+      )}
+      {row.notes && <p className="mt-0.5 text-xs italic text-muted-foreground">{row.notes}</p>}
     </div>
   );
 }
