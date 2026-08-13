@@ -331,12 +331,13 @@ export const requireSupabaseAuth = createMiddleware({ type: "function" }).server
       projectHost,
     });
 
-    if (!SUPABASE_URL || (!SUPABASE_PUBLISHABLE_KEY && !SUPABASE_SERVICE_ROLE_KEY)) {
+    // The user-scoped client must be created with the publishable key, never
+    // the service-role key: RLS-as-user has to fail closed on configuration,
+    // not depend on the Authorization override below staying in place.
+    if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
       const missing = [
         ...(!SUPABASE_URL ? ["SUPABASE_URL"] : []),
-        ...(!SUPABASE_PUBLISHABLE_KEY && !SUPABASE_SERVICE_ROLE_KEY
-          ? ["SUPABASE_PUBLISHABLE_KEY or SUPABASE_SERVICE_ROLE_KEY"]
-          : []),
+        ...(!SUPABASE_PUBLISHABLE_KEY ? ["SUPABASE_PUBLISHABLE_KEY"] : []),
       ];
       console.error("[Supabase] missing environment variable(s)", {
         missing,
@@ -416,8 +417,11 @@ export const requireSupabaseAuth = createMiddleware({ type: "function" }).server
       },
     } as const;
 
-    const authApiKey = SUPABASE_PUBLISHABLE_KEY ?? SUPABASE_SERVICE_ROLE_KEY;
-    const supabase = createClient<Database>(SUPABASE_URL, authApiKey!, authClientOptions);
+    const supabase = createClient<Database>(
+      SUPABASE_URL,
+      SUPABASE_PUBLISHABLE_KEY,
+      authClientOptions,
+    );
 
     const validationAttempts: AuthValidationAttempt[] = [];
     let validatedUser: AuthenticatedUser | null = null;
