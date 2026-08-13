@@ -1,10 +1,7 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
-import { useServerFn } from "@tanstack/react-start";
-import { useEffect, useMemo } from "react";
+import { createFileRoute, Link, redirect, useRouter } from "@tanstack/react-router";
+import { useMemo } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { useAuth } from "@/lib/auth-context";
 import { getErrorMessage, isAuthSessionError } from "@/lib/auth-errors";
 import {
   getAppendix,
@@ -13,9 +10,36 @@ import {
 } from "@/lib/appendix.functions";
 import { formatDate } from "@/lib/utils";
 
+// The data loads in the route loader, not in the component after render. On a
+// document request the loader runs during SSR, where getAppendix's auth
+// middleware finds no session token on the request and throws 401; the catch
+// below turns that into an HTTP redirect to /login before any query runs, so
+// an unauthenticated visitor (including anyone hitting a public workers.dev
+// preview URL) gets a 302, never a page shell. On client-side navigation the
+// loader runs before render with the signed-in session token attached, and a
+// signed-in caller who is neither admin nor active partner gets the 403 from
+// the server function, rendered by the error component below.
 export const Route = createFileRoute("/appendix")({
+  loader: async () => {
+    try {
+      return await getAppendix();
+    } catch (error) {
+      if (isUnauthorizedRequest(error)) throw redirect({ to: "/login", replace: true });
+      throw error;
+    }
+  },
   component: AppendixPage,
+  pendingComponent: AppendixPendingComponent,
+  errorComponent: AppendixErrorComponent,
 });
+
+function isUnauthorizedRequest(error: unknown) {
+  // Server pass: requireSupabaseAuth throws a 401 Response. Client pass:
+  // attachSupabaseAuth throws its no-session/invalid-token errors, and the
+  // middleware's 401 arrives as an error whose message is the response text.
+  if (isAuthSessionError(error)) return true;
+  return getErrorMessage(error).startsWith("Unauthorized:");
+}
 
 // The appendix reads as the signed agreement (Παράρτημα Α), so its sections are
 // fixed contract headings, not the service_catalog categories. The catalog's
@@ -173,63 +197,24 @@ function PartnerAppendixDocument({
   );
 }
 
-function AppendixPage() {
-  const { user, loading, sessionReady, accessStatus } = useAuth();
-  const navigate = useNavigate();
-  const fetchAppendix = useServerFn(getAppendix);
-
-  useEffect(() => {
-    if (loading) return;
-    if (!user) navigate({ to: "/login", replace: true });
-  }, [loading, user, navigate]);
-
-  const query = useQuery({
-    queryKey: ["appendix", user?.id],
-    queryFn: () => fetchAppendix(),
-    enabled: !loading && !!user && sessionReady && accessStatus === "resolved",
-    throwOnError: false,
-    retry: (failureCount, error) =>
-      getErrorMessage(error) !== APPENDIX_FORBIDDEN_MESSAGE && failureCount < 2,
-  });
-
-  useEffect(() => {
-    if (query.error && isAuthSessionError(query.error)) {
-      navigate({ to: "/login", replace: true });
-    }
-  }, [query.error, navigate]);
-
-  const isForbidden =
-    (!!query.error && getErrorMessage(query.error) === APPENDIX_FORBIDDEN_MESSAGE) ||
-    accessStatus === "unauthorized";
-
-  const partnerDocuments = useMemo(() => {
-    const rows = query.data?.rows ?? [];
-    const names = query.data?.partnerNames ?? {};
-    const byPartner = new Map<string, AppendixRow[]>();
-    for (const row of rows) {
-      if (!row.partner_user_id) continue;
-      const existing = byPartner.get(row.partner_user_id);
-      if (existing) existing.push(row);
-      else byPartner.set(row.partner_user_id, [row]);
-    }
-    return [...byPartner.entries()]
-      .map(([partnerUserId, partnerRows]) => ({
-        partnerUserId,
-        partnerName: names[partnerUserId] ?? null,
-        rows: partnerRows,
-      }))
-      .sort((a, b) => (a.partnerName ?? "").localeCompare(b.partnerName ?? "", "el"));
-  }, [query.data]);
-
-  if (loading || (!!user && !sessionReady)) {
-    return (
-      <div className="mx-auto max-w-3xl px-4 py-8 text-sm text-muted-foreground">
-        Φόρτωση του Παραρτήματος Α…
+function AppendixPendingComponent() {
+  return (
+    <div className="mx-auto max-w-3xl px-4 py-8">
+      <div className="rounded-xl border bg-card px-10 py-8">
+        <div className="mx-auto h-4 w-1/3 animate-shimmer rounded bg-muted" />
+        <div className="mt-6 space-y-3">
+          {Array.from({ length: 6 }).map((_, index) => (
+            <div key={index} className="h-3 w-full animate-shimmer rounded bg-muted/50" />
+          ))}
+        </div>
       </div>
-    );
-  }
+    </div>
+  );
+}
 
-  if (!user) return null;
+function AppendixErrorComponent({ error, reset }: { error: unknown; reset: () => void }) {
+  const router = useRouter();
+  const isForbidden = getErrorMessage(error) === APPENDIX_FORBIDDEN_MESSAGE;
 
   if (isForbidden) {
     return (
@@ -241,25 +226,8 @@ function AppendixPage() {
               Το Παράρτημα Α είναι διαθέσιμο μόνο σε ενεργούς συνεργάτες και στη διαχείριση. Αν
               πιστεύετε ότι πρόκειται για λάθος, επικοινωνήστε με τον διαχειριστή.
             </p>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  if (query.error && !isAuthSessionError(query.error)) {
-    return (
-      <div className="mx-auto max-w-3xl px-4 py-8">
-        <Card>
-          <CardContent className="py-6">
-            <h1 className="text-xl font-semibold tracking-tight">
-              Το Παράρτημα Α δεν είναι διαθέσιμο
-            </h1>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Δεν ήταν δυνατή η φόρτωση του τιμοκαταλόγου. Δοκιμάστε ξανά.
-            </p>
-            <Button className="mt-4" onClick={() => query.refetch()}>
-              Δοκιμή ξανά
+            <Button asChild className="mt-4" variant="outline">
+              <Link to="/dashboard">Επιστροφή στον πίνακα εργασιών</Link>
             </Button>
           </CardContent>
         </Card>
@@ -267,24 +235,54 @@ function AppendixPage() {
     );
   }
 
-  if (query.isLoading || !query.data) {
-    return (
-      <div className="mx-auto max-w-3xl px-4 py-8">
-        <div className="rounded-xl border bg-card px-10 py-8">
-          <div className="mx-auto h-4 w-1/3 animate-shimmer rounded bg-muted" />
-          <div className="mt-6 space-y-3">
-            {Array.from({ length: 6 }).map((_, index) => (
-              <div key={index} className="h-3 w-full animate-shimmer rounded bg-muted/50" />
-            ))}
-          </div>
-        </div>
-      </div>
-    );
-  }
+  return (
+    <div className="mx-auto max-w-3xl px-4 py-8">
+      <Card>
+        <CardContent className="py-6">
+          <h1 className="text-xl font-semibold tracking-tight">
+            Το Παράρτημα Α δεν είναι διαθέσιμο
+          </h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Δεν ήταν δυνατή η φόρτωση του τιμοκαταλόγου. Δοκιμάστε ξανά.
+          </p>
+          <Button
+            className="mt-4"
+            onClick={() => {
+              router.invalidate();
+              reset();
+            }}
+          >
+            Δοκιμή ξανά
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function AppendixPage() {
+  const data = Route.useLoaderData();
+
+  const partnerDocuments = useMemo(() => {
+    const byPartner = new Map<string, AppendixRow[]>();
+    for (const row of data.rows) {
+      if (!row.partner_user_id) continue;
+      const existing = byPartner.get(row.partner_user_id);
+      if (existing) existing.push(row);
+      else byPartner.set(row.partner_user_id, [row]);
+    }
+    return [...byPartner.entries()]
+      .map(([partnerUserId, partnerRows]) => ({
+        partnerUserId,
+        partnerName: data.partnerNames[partnerUserId] ?? null,
+        rows: partnerRows,
+      }))
+      .sort((a, b) => (a.partnerName ?? "").localeCompare(b.partnerName ?? "", "el"));
+  }, [data]);
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
-      {query.data.isAdmin && (
+      {data.isAdmin && (
         <p className="mb-4 text-sm text-muted-foreground">
           Προβολή διαχείρισης: εμφανίζονται τα παραρτήματα όλων των συνεργατών.
         </p>
