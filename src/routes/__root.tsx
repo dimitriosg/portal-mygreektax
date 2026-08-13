@@ -417,6 +417,11 @@ function AppShell() {
                       )}
                   </span>
                 </Link>
+                {accessStatus === "resolved" && (isAdmin || isPartner) && (
+                  <Link to="/appendix" activeProps={{ className: "font-semibold" }}>
+                    Παράρτημα Α
+                  </Link>
+                )}
                 {isAdmin && (
                   <Link to="/admin" activeProps={{ className: "font-semibold" }}>
                     Admin

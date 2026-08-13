@@ -15,6 +15,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as LeadsRouteImport } from './routes/leads'
 import { Route as DraftsRouteImport } from './routes/drafts'
 import { Route as DashboardRouteImport } from './routes/dashboard'
+import { Route as AppendixRouteImport } from './routes/appendix'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
@@ -72,6 +73,11 @@ const DraftsRoute = DraftsRouteImport.update({
 const DashboardRoute = DashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AppendixRoute = AppendixRouteImport.update({
+  id: '/appendix',
+  path: '/appendix',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminRoute = AdminRouteImport.update({
@@ -219,6 +225,7 @@ const AdminChangeRequestsRoute = AdminChangeRequestsRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
+  '/appendix': typeof AppendixRoute
   '/dashboard': typeof DashboardRoute
   '/drafts': typeof DraftsRoute
   '/leads': typeof LeadsRoute
@@ -254,6 +261,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/appendix': typeof AppendixRoute
   '/dashboard': typeof DashboardRoute
   '/drafts': typeof DraftsRoute
   '/leads': typeof LeadsRoute
@@ -291,6 +299,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
+  '/appendix': typeof AppendixRoute
   '/dashboard': typeof DashboardRoute
   '/drafts': typeof DraftsRoute
   '/leads': typeof LeadsRoute
@@ -329,6 +338,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/admin'
+    | '/appendix'
     | '/dashboard'
     | '/drafts'
     | '/leads'
@@ -364,6 +374,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/appendix'
     | '/dashboard'
     | '/drafts'
     | '/leads'
@@ -400,6 +411,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/admin'
+    | '/appendix'
     | '/dashboard'
     | '/drafts'
     | '/leads'
@@ -437,6 +449,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRouteWithChildren
+  AppendixRoute: typeof AppendixRoute
   DashboardRoute: typeof DashboardRoute
   DraftsRoute: typeof DraftsRoute
   LeadsRoute: typeof LeadsRoute
@@ -508,6 +521,13 @@ declare module '@tanstack/react-router' {
       path: '/dashboard'
       fullPath: '/dashboard'
       preLoaderRoute: typeof DashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/appendix': {
+      id: '/appendix'
+      path: '/appendix'
+      fullPath: '/appendix'
+      preLoaderRoute: typeof AppendixRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin': {
@@ -730,6 +750,7 @@ const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRouteWithChildren,
+  AppendixRoute: AppendixRoute,
   DashboardRoute: DashboardRoute,
   DraftsRoute: DraftsRoute,
   LeadsRoute: LeadsRoute,

@@ -1682,6 +1682,106 @@ export type Database = {
         };
         Relationships: [];
       };
+      partner_rate_cards: {
+        Row: {
+          created_at: string;
+          effective_from: string;
+          effective_to: string | null;
+          id: string;
+          notes: string | null;
+          partner_user_id: string;
+          price_unit: Database["public"]["Enums"]["price_unit"];
+          service_id: string;
+          sla_days: string | null;
+          status: Database["public"]["Enums"]["rate_status"];
+          updated_at: string;
+          wholesale_price: number | null;
+        };
+        Insert: {
+          created_at?: string;
+          effective_from?: string;
+          effective_to?: string | null;
+          id?: string;
+          notes?: string | null;
+          partner_user_id: string;
+          price_unit?: Database["public"]["Enums"]["price_unit"];
+          service_id: string;
+          sla_days?: string | null;
+          status?: Database["public"]["Enums"]["rate_status"];
+          updated_at?: string;
+          wholesale_price?: number | null;
+        };
+        Update: {
+          created_at?: string;
+          effective_from?: string;
+          effective_to?: string | null;
+          id?: string;
+          notes?: string | null;
+          partner_user_id?: string;
+          price_unit?: Database["public"]["Enums"]["price_unit"];
+          service_id?: string;
+          sla_days?: string | null;
+          status?: Database["public"]["Enums"]["rate_status"];
+          updated_at?: string;
+          wholesale_price?: number | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "partner_rate_cards_service_id_fkey";
+            columns: ["service_id"];
+            isOneToOne: false;
+            referencedRelation: "service_catalog";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      retail_prices: {
+        Row: {
+          created_at: string;
+          effective_from: string;
+          effective_to: string | null;
+          id: string;
+          notes: string | null;
+          price_unit: Database["public"]["Enums"]["price_unit"];
+          retail_price: number | null;
+          service_id: string;
+          status: Database["public"]["Enums"]["rate_status"];
+          updated_at: string;
+        };
+        Insert: {
+          created_at?: string;
+          effective_from?: string;
+          effective_to?: string | null;
+          id?: string;
+          notes?: string | null;
+          price_unit?: Database["public"]["Enums"]["price_unit"];
+          retail_price?: number | null;
+          service_id: string;
+          status?: Database["public"]["Enums"]["rate_status"];
+          updated_at?: string;
+        };
+        Update: {
+          created_at?: string;
+          effective_from?: string;
+          effective_to?: string | null;
+          id?: string;
+          notes?: string | null;
+          price_unit?: Database["public"]["Enums"]["price_unit"];
+          retail_price?: number | null;
+          service_id?: string;
+          status?: Database["public"]["Enums"]["rate_status"];
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "retail_prices_service_id_fkey";
+            columns: ["service_id"];
+            isOneToOne: false;
+            referencedRelation: "service_catalog";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       service_catalog: {
         Row: {
           airtable_id: string | null;
@@ -1865,6 +1965,42 @@ export type Database = {
           },
         ];
       };
+      v_partner_appendix: {
+        Row: {
+          category: string | null;
+          effective_from: string | null;
+          notes: string | null;
+          partner_user_id: string | null;
+          price_unit: Database["public"]["Enums"]["price_unit"] | null;
+          service_code: string | null;
+          service_name: string | null;
+          sla_days: string | null;
+          status: Database["public"]["Enums"]["rate_status"] | null;
+          wholesale_price: number | null;
+        };
+        Relationships: [];
+      };
+      v_rate_card_admin: {
+        Row: {
+          category: string | null;
+          margin_eur: number | null;
+          margin_pct: number | null;
+          partner_name: string | null;
+          partner_user_id: string | null;
+          portal_at_or_below_wholesale: boolean | null;
+          portal_live_price: number | null;
+          portal_mismatch: boolean | null;
+          price_unit: Database["public"]["Enums"]["price_unit"] | null;
+          retail_price: number | null;
+          service_code: string | null;
+          service_name: string | null;
+          sla_days: string | null;
+          wholesale_notes: string | null;
+          wholesale_price: number | null;
+          wholesale_status: Database["public"]["Enums"]["rate_status"] | null;
+        };
+        Relationships: [];
+      };
     };
     Functions: {
       archive_case: { Args: { p_conversation_id: string }; Returns: undefined };
@@ -1976,6 +2112,15 @@ export type Database = {
     };
     Enums: {
       app_role: "admin" | "partner";
+      price_unit:
+        | "per_job"
+        | "per_month"
+        | "per_year"
+        | "per_person"
+        | "per_line"
+        | "per_extra_year"
+        | "per_treaty";
+      rate_status: "confirmed" | "pending" | "case_by_case";
     };
     CompositeTypes: {
       [_ in never]: never;
@@ -2098,6 +2243,16 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["admin", "partner"],
+      price_unit: [
+        "per_job",
+        "per_month",
+        "per_year",
+        "per_person",
+        "per_line",
+        "per_extra_year",
+        "per_treaty",
+      ],
+      rate_status: ["confirmed", "pending", "case_by_case"],
     },
   },
 } as const;
