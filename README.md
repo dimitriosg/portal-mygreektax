@@ -55,7 +55,7 @@ Everything runs as a single TanStack Start application deployed to a Cloudflare 
 | Validation     | Zod                                                                        |
 | Analytics      | Plausible                                                                  |
 | Runtime        | Cloudflare Workers via the Cloudflare Vite plugin and `wrangler.jsonc`     |
-| Package manager | Bun locally (`bun.lock`). CI runs on npm and Node 20.                     |
+| Package manager | npm (`package-lock.json`), Node 20. One lockfile everywhere.              |
 
 ---
 
@@ -128,18 +128,23 @@ Everything under `/webhooks/` lives here, but the callers are not all the same a
 
 ### Prerequisites
 
-- Bun (local package manager and dev server)
+- Node 20 and npm
 - Wrangler CLI and a Cloudflare account with Workers enabled
 - A Supabase project (this repo shares one database with `brain-mygreektax`)
 
 ### Local development
 
-```
-bun install
-bun run dev
+```bash
+npm ci
+npm run dev
 ```
 
-Other scripts: `bun run build`, `bun run preview`, `bun run lint`, `bun run typecheck`, `bun run format`.
+Other scripts: `npm run build`, `npm run preview`, `npm run lint`, `npm run typecheck`, `npm run format`.
+
+Install with `npm ci`, not `bun install`. CI and the Cloudflare build both read
+`package-lock.json`; installing with anything else leaves it untouched while the
+dependency actually changes, which is how the entire TipTap tree came to be
+missing from it.
 
 ### Environment variables
 
@@ -223,7 +228,7 @@ If the user does not already exist in Supabase Auth, the script exits with an er
 
 ## Smoke testing
 
-Run the manual critical path checklist in [`docs/smoke-test-checklist.md`](https://github.com/dimitriosg/portal-mygreektax/blob/main/docs/smoke-test-checklist.md) after any change to auth, access control, workflow, or tracking. Helper: `bun run smoke:manual`.
+Run the manual critical path checklist in [`docs/smoke-test-checklist.md`](https://github.com/dimitriosg/portal-mygreektax/blob/main/docs/smoke-test-checklist.md) after any change to auth, access control, workflow, or tracking. Helper: `npm run smoke:manual`.
 
 ---
 

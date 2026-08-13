@@ -22,8 +22,12 @@ jobs:
         with:
           node-version: 20
 
+      # npm ci, not npm install. install quietly resolves anything the lockfile
+      # is missing and writes the result into the runner's copy, which is how
+      # the whole tiptap tree stayed absent from package-lock.json while CI
+      # went green. ci fails instead, so the lockfile cannot drift unnoticed.
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Run build
         run: npm run build
