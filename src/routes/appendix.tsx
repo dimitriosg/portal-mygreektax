@@ -162,8 +162,11 @@ function PartnerAppendixDocument({
             {section.title}
           </h3>
           <div className="mt-1 divide-y divide-border/60">
-            {section.rows.map((row) => (
-              <AppendixLine key={`${row.partner_user_id}-${row.service_code}`} row={row} />
+            {section.rows.map((row, index) => (
+              <AppendixLine
+                key={`${row.partner_user_id}-${row.service_code ?? "no-code"}-${index}`}
+                row={row}
+              />
             ))}
           </div>
         </section>
@@ -179,8 +182,11 @@ function PartnerAppendixDocument({
             συμφωνίας.
           </p>
           <div className="mt-2 divide-y divide-amber-200 dark:divide-amber-800">
-            {pendingRows.map((row) => (
-              <AppendixLine key={`${row.partner_user_id}-${row.service_code}`} row={row} />
+            {pendingRows.map((row, index) => (
+              <AppendixLine
+                key={`${row.partner_user_id}-${row.service_code ?? "no-code"}-${index}`}
+                row={row}
+              />
             ))}
           </div>
         </section>

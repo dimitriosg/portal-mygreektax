@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { setResponseStatus } from "@tanstack/react-start/server";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import type { Database } from "@/integrations/supabase/types";
@@ -48,8 +49,14 @@ export const getAppendix = createServerFn({ method: "GET" })
     const isActivePartner =
       roles.includes("partner") && !!profileRes.data && profileRes.data.disabled_at === null;
 
+    // Thrown as an Error, not a Response: TanStack Start hands a thrown
+    // Response back to the caller as a successful raw result, so the loader
+    // would never see it as a failure. The Error's message survives
+    // serialization and is what the route's error component matches on;
+    // setResponseStatus keeps the actual HTTP status a 403.
     if (!isAdmin && !isActivePartner) {
-      throw new Response(APPENDIX_FORBIDDEN_MESSAGE, { status: 403 });
+      setResponseStatus(403);
+      throw new Error(APPENDIX_FORBIDDEN_MESSAGE);
     }
 
     const { data, error } = await supabase
