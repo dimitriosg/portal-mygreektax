@@ -36,6 +36,8 @@ import { Route as WebhooksCaseActionRouteImport } from './routes/webhooks/case-a
 import { Route as TrackTokenRouteImport } from './routes/track.$token'
 import { Route as SecureFormTokenRouteImport } from './routes/secure-form.$token'
 import { Route as ReviewCaseIdRouteImport } from './routes/review.$caseId'
+import { Route as PaySignalRouteImport } from './routes/pay.signal'
+import { Route as PayTokenRouteImport } from './routes/pay.$token'
 import { Route as JobsJobIdRouteImport } from './routes/jobs.$jobId'
 import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as EmailUnsubscribeRouteImport } from './routes/email/unsubscribe'
@@ -43,6 +45,7 @@ import { Route as ApiHealthRouteImport } from './routes/api.health'
 import { Route as AdminTrackingLinksRouteImport } from './routes/admin.tracking-links'
 import { Route as AdminSecureKeysRouteImport } from './routes/admin.secure-keys'
 import { Route as AdminSecureInboxRouteImport } from './routes/admin.secure-inbox'
+import { Route as AdminPaymentsRouteImport } from './routes/admin.payments'
 import { Route as AdminChangeRequestsRouteImport } from './routes/admin.change-requests'
 
 const UnsubscribeRoute = UnsubscribeRouteImport.update({
@@ -181,6 +184,16 @@ const ReviewCaseIdRoute = ReviewCaseIdRouteImport.update({
   path: '/review/$caseId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PaySignalRoute = PaySignalRouteImport.update({
+  id: '/pay/signal',
+  path: '/pay/signal',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PayTokenRoute = PayTokenRouteImport.update({
+  id: '/pay/$token',
+  path: '/pay/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const JobsJobIdRoute = JobsJobIdRouteImport.update({
   id: '/jobs/$jobId',
   path: '/jobs/$jobId',
@@ -216,6 +229,11 @@ const AdminSecureInboxRoute = AdminSecureInboxRouteImport.update({
   path: '/secure-inbox',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminPaymentsRoute = AdminPaymentsRouteImport.update({
+  id: '/payments',
+  path: '/payments',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminChangeRequestsRoute = AdminChangeRequestsRouteImport.update({
   id: '/change-requests',
   path: '/change-requests',
@@ -233,6 +251,7 @@ export interface FileRoutesByFullPath {
   '/reset-password': typeof ResetPasswordRoute
   '/unsubscribe': typeof UnsubscribeRoute
   '/admin/change-requests': typeof AdminChangeRequestsRoute
+  '/admin/payments': typeof AdminPaymentsRoute
   '/admin/secure-inbox': typeof AdminSecureInboxRoute
   '/admin/secure-keys': typeof AdminSecureKeysRoute
   '/admin/tracking-links': typeof AdminTrackingLinksRoute
@@ -240,6 +259,8 @@ export interface FileRoutesByFullPath {
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
   '/invite/$token': typeof InviteTokenRoute
   '/jobs/$jobId': typeof JobsJobIdRoute
+  '/pay/$token': typeof PayTokenRoute
+  '/pay/signal': typeof PaySignalRoute
   '/review/$caseId': typeof ReviewCaseIdRoute
   '/secure-form/$token': typeof SecureFormTokenRoute
   '/track/$token': typeof TrackTokenRoute
@@ -269,6 +290,7 @@ export interface FileRoutesByTo {
   '/reset-password': typeof ResetPasswordRoute
   '/unsubscribe': typeof UnsubscribeRoute
   '/admin/change-requests': typeof AdminChangeRequestsRoute
+  '/admin/payments': typeof AdminPaymentsRoute
   '/admin/secure-inbox': typeof AdminSecureInboxRoute
   '/admin/secure-keys': typeof AdminSecureKeysRoute
   '/admin/tracking-links': typeof AdminTrackingLinksRoute
@@ -276,6 +298,8 @@ export interface FileRoutesByTo {
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
   '/invite/$token': typeof InviteTokenRoute
   '/jobs/$jobId': typeof JobsJobIdRoute
+  '/pay/$token': typeof PayTokenRoute
+  '/pay/signal': typeof PaySignalRoute
   '/review/$caseId': typeof ReviewCaseIdRoute
   '/secure-form/$token': typeof SecureFormTokenRoute
   '/track/$token': typeof TrackTokenRoute
@@ -307,6 +331,7 @@ export interface FileRoutesById {
   '/reset-password': typeof ResetPasswordRoute
   '/unsubscribe': typeof UnsubscribeRoute
   '/admin/change-requests': typeof AdminChangeRequestsRoute
+  '/admin/payments': typeof AdminPaymentsRoute
   '/admin/secure-inbox': typeof AdminSecureInboxRoute
   '/admin/secure-keys': typeof AdminSecureKeysRoute
   '/admin/tracking-links': typeof AdminTrackingLinksRoute
@@ -314,6 +339,8 @@ export interface FileRoutesById {
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
   '/invite/$token': typeof InviteTokenRoute
   '/jobs/$jobId': typeof JobsJobIdRoute
+  '/pay/$token': typeof PayTokenRoute
+  '/pay/signal': typeof PaySignalRoute
   '/review/$caseId': typeof ReviewCaseIdRoute
   '/secure-form/$token': typeof SecureFormTokenRoute
   '/track/$token': typeof TrackTokenRoute
@@ -346,6 +373,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/unsubscribe'
     | '/admin/change-requests'
+    | '/admin/payments'
     | '/admin/secure-inbox'
     | '/admin/secure-keys'
     | '/admin/tracking-links'
@@ -353,6 +381,8 @@ export interface FileRouteTypes {
     | '/email/unsubscribe'
     | '/invite/$token'
     | '/jobs/$jobId'
+    | '/pay/$token'
+    | '/pay/signal'
     | '/review/$caseId'
     | '/secure-form/$token'
     | '/track/$token'
@@ -382,6 +412,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/unsubscribe'
     | '/admin/change-requests'
+    | '/admin/payments'
     | '/admin/secure-inbox'
     | '/admin/secure-keys'
     | '/admin/tracking-links'
@@ -389,6 +420,8 @@ export interface FileRouteTypes {
     | '/email/unsubscribe'
     | '/invite/$token'
     | '/jobs/$jobId'
+    | '/pay/$token'
+    | '/pay/signal'
     | '/review/$caseId'
     | '/secure-form/$token'
     | '/track/$token'
@@ -419,6 +452,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/unsubscribe'
     | '/admin/change-requests'
+    | '/admin/payments'
     | '/admin/secure-inbox'
     | '/admin/secure-keys'
     | '/admin/tracking-links'
@@ -426,6 +460,8 @@ export interface FileRouteTypes {
     | '/email/unsubscribe'
     | '/invite/$token'
     | '/jobs/$jobId'
+    | '/pay/$token'
+    | '/pay/signal'
     | '/review/$caseId'
     | '/secure-form/$token'
     | '/track/$token'
@@ -460,6 +496,8 @@ export interface RootRouteChildren {
   EmailUnsubscribeRoute: typeof EmailUnsubscribeRoute
   InviteTokenRoute: typeof InviteTokenRoute
   JobsJobIdRoute: typeof JobsJobIdRoute
+  PayTokenRoute: typeof PayTokenRoute
+  PaySignalRoute: typeof PaySignalRoute
   ReviewCaseIdRoute: typeof ReviewCaseIdRoute
   SecureFormTokenRoute: typeof SecureFormTokenRoute
   TrackTokenRoute: typeof TrackTokenRoute
@@ -670,6 +708,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ReviewCaseIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/pay/signal': {
+      id: '/pay/signal'
+      path: '/pay/signal'
+      fullPath: '/pay/signal'
+      preLoaderRoute: typeof PaySignalRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pay/$token': {
+      id: '/pay/$token'
+      path: '/pay/$token'
+      fullPath: '/pay/$token'
+      preLoaderRoute: typeof PayTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/jobs/$jobId': {
       id: '/jobs/$jobId'
       path: '/jobs/$jobId'
@@ -719,6 +771,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminSecureInboxRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/payments': {
+      id: '/admin/payments'
+      path: '/payments'
+      fullPath: '/admin/payments'
+      preLoaderRoute: typeof AdminPaymentsRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/change-requests': {
       id: '/admin/change-requests'
       path: '/change-requests'
@@ -731,6 +790,7 @@ declare module '@tanstack/react-router' {
 
 interface AdminRouteChildren {
   AdminChangeRequestsRoute: typeof AdminChangeRequestsRoute
+  AdminPaymentsRoute: typeof AdminPaymentsRoute
   AdminSecureInboxRoute: typeof AdminSecureInboxRoute
   AdminSecureKeysRoute: typeof AdminSecureKeysRoute
   AdminTrackingLinksRoute: typeof AdminTrackingLinksRoute
@@ -739,6 +799,7 @@ interface AdminRouteChildren {
 
 const AdminRouteChildren: AdminRouteChildren = {
   AdminChangeRequestsRoute: AdminChangeRequestsRoute,
+  AdminPaymentsRoute: AdminPaymentsRoute,
   AdminSecureInboxRoute: AdminSecureInboxRoute,
   AdminSecureKeysRoute: AdminSecureKeysRoute,
   AdminTrackingLinksRoute: AdminTrackingLinksRoute,
@@ -761,6 +822,8 @@ const rootRouteChildren: RootRouteChildren = {
   EmailUnsubscribeRoute: EmailUnsubscribeRoute,
   InviteTokenRoute: InviteTokenRoute,
   JobsJobIdRoute: JobsJobIdRoute,
+  PayTokenRoute: PayTokenRoute,
+  PaySignalRoute: PaySignalRoute,
   ReviewCaseIdRoute: ReviewCaseIdRoute,
   SecureFormTokenRoute: SecureFormTokenRoute,
   TrackTokenRoute: TrackTokenRoute,

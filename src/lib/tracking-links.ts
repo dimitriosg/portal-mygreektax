@@ -39,6 +39,10 @@ export function buildTrackingLink(token: string) {
   return `${getTrackingPortalOrigin()}/track/${token}`;
 }
 
+export function buildPaymentLink(token: string) {
+  return `${getTrackingPortalOrigin()}/pay/${token}`;
+}
+
 export function getPreviewTrackingTestLink(token: string) {
   if (typeof window === "undefined") return `${PRODUCTION_PORTAL_ORIGIN}/track/${token}`;
   return `${window.location.origin}/track/${token}`;

@@ -15,6 +15,41 @@ const PUBLIC_TRACKING_HEADERS = {
   "x-robots-tag": "noindex, nofollow, noarchive",
 } as const;
 
+// Public token-gated pages that render without the logged-in chrome and must
+// never be cached or indexed.
+const PUBLIC_TOKEN_PATH_PREFIXES = ["/track/", "/pay/"] as const;
+
+function getPublicTokenPathPrefix(pathname: string): string | null {
+  return PUBLIC_TOKEN_PATH_PREFIXES.find((prefix) => pathname.startsWith(prefix)) ?? null;
+}
+
+// Simple self-contained rate limit for /pay/* (page loads and signal beacons).
+// Per-isolate and in-memory by design: enough to blunt token scanning without
+// adding a dependency or a binding. Counts reset when the isolate recycles.
+const PAY_RATE_LIMIT = { windowMs: 60_000, maxRequests: 30, maxBuckets: 5_000 } as const;
+const payRateBuckets = new Map<string, { count: number; resetAt: number }>();
+
+function isPayRateLimited(request: Request, pathname: string): boolean {
+  if (!pathname.startsWith("/pay/")) return false;
+  const key = request.headers.get("cf-connecting-ip") ?? "unknown";
+  const now = Date.now();
+  const bucket = payRateBuckets.get(key);
+  if (!bucket || now >= bucket.resetAt) {
+    if (payRateBuckets.size >= PAY_RATE_LIMIT.maxBuckets) payRateBuckets.clear();
+    payRateBuckets.set(key, { count: 1, resetAt: now + PAY_RATE_LIMIT.windowMs });
+    return false;
+  }
+  bucket.count += 1;
+  return bucket.count > PAY_RATE_LIMIT.maxRequests;
+}
+
+function payRateLimitedResponse(): Response {
+  return new Response("Too many requests. Please try again in a minute.", {
+    status: 429,
+    headers: { "content-type": "text/plain; charset=utf-8", "retry-after": "60" },
+  });
+}
+
 async function getServerEntry(): Promise<ServerEntry> {
   if (!serverEntryPromise) {
     serverEntryPromise = import("@tanstack/react-start/server-entry").then(
@@ -33,11 +68,8 @@ function brandedErrorResponse(): Response {
 
 function normalizePublicTrackingRequest(request: Request): Response | null {
   const url = new URL(request.url);
-  if (
-    !url.pathname.startsWith("/track/") ||
-    url.pathname === "/track/" ||
-    !url.pathname.endsWith("/")
-  ) {
+  const prefix = getPublicTokenPathPrefix(url.pathname);
+  if (!prefix || url.pathname === prefix || !url.pathname.endsWith("/")) {
     return null;
   }
   url.pathname = url.pathname.slice(0, -1);
@@ -46,7 +78,7 @@ function normalizePublicTrackingRequest(request: Request): Response | null {
 
 function applyPublicTrackingHeaders(request: Request, response: Response): Response {
   const url = new URL(request.url);
-  if (!url.pathname.startsWith("/track/")) return response;
+  if (!getPublicTokenPathPrefix(url.pathname)) return response;
 
   const headers = new Headers(response.headers);
   for (const [key, value] of Object.entries(PUBLIC_TRACKING_HEADERS)) {
@@ -129,6 +161,10 @@ export default {
     try {
       const normalizedTrackingResponse = normalizePublicTrackingRequest(request);
       if (normalizedTrackingResponse) return normalizedTrackingResponse;
+
+      if (isPayRateLimited(request, new URL(request.url).pathname)) {
+        return applyPublicTrackingHeaders(request, payRateLimitedResponse());
+      }
 
       applyCloudflareEnvBindings(env);
       const handler = await getServerEntry();
