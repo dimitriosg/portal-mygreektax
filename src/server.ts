@@ -23,30 +23,38 @@ function getPublicTokenPathPrefix(pathname: string): string | null {
   return PUBLIC_TOKEN_PATH_PREFIXES.find((prefix) => pathname.startsWith(prefix)) ?? null;
 }
 
-// Simple self-contained rate limit for /pay/* (page loads and signal beacons).
-// Per-isolate and in-memory by design: enough to blunt token scanning without
-// adding a dependency or a binding. Counts reset when the isolate recycles.
-const PAY_RATE_LIMIT = { windowMs: 60_000, maxRequests: 30, maxBuckets: 5_000 } as const;
-const payRateBuckets = new Map<string, { count: number; resetAt: number }>();
+// Rate limit for the signal beacon only. The payment page itself is a cheap
+// read behind an unguessable token, and clients behind carrier-grade NAT share
+// an IP with strangers — being rate-limited out of paying is a worse outcome
+// than the token scanning a limit would deter. /pay/signal is the endpoint
+// worth protecting, since it is the one that fans out to n8n and Telegram.
+//
+// Per-isolate and in-memory by design: no dependency, no binding. It is
+// therefore approximate — each isolate keeps its own counts and they reset
+// whenever an isolate recycles. Good enough to blunt a flood, not a quota.
+const SIGNAL_RATE_LIMIT = { windowMs: 60_000, maxRequests: 30, maxBuckets: 5_000 } as const;
+const signalRateBuckets = new Map<string, { count: number; resetAt: number }>();
 
-function isPayRateLimited(request: Request, pathname: string): boolean {
-  if (!pathname.startsWith("/pay/")) return false;
+function isSignalRateLimited(request: Request, pathname: string): boolean {
+  if (pathname !== "/pay/signal") return false;
   const key = request.headers.get("cf-connecting-ip") ?? "unknown";
   const now = Date.now();
-  const bucket = payRateBuckets.get(key);
+  const bucket = signalRateBuckets.get(key);
   if (!bucket || now >= bucket.resetAt) {
-    if (payRateBuckets.size >= PAY_RATE_LIMIT.maxBuckets) payRateBuckets.clear();
-    payRateBuckets.set(key, { count: 1, resetAt: now + PAY_RATE_LIMIT.windowMs });
+    if (signalRateBuckets.size >= SIGNAL_RATE_LIMIT.maxBuckets) signalRateBuckets.clear();
+    signalRateBuckets.set(key, { count: 1, resetAt: now + SIGNAL_RATE_LIMIT.windowMs });
     return false;
   }
   bucket.count += 1;
-  return bucket.count > PAY_RATE_LIMIT.maxRequests;
+  return bucket.count > SIGNAL_RATE_LIMIT.maxRequests;
 }
 
-function payRateLimitedResponse(): Response {
-  return new Response("Too many requests. Please try again in a minute.", {
+function signalRateLimitedResponse(): Response {
+  // JSON, to match the endpoint's own shape. The page treats a non-2xx claim
+  // as undelivered and tells the client honestly rather than faking success.
+  return new Response(JSON.stringify({ ok: false, error: "rate_limited" }), {
     status: 429,
-    headers: { "content-type": "text/plain; charset=utf-8", "retry-after": "60" },
+    headers: { "content-type": "application/json; charset=utf-8", "retry-after": "60" },
   });
 }
 
@@ -162,8 +170,8 @@ export default {
       const normalizedTrackingResponse = normalizePublicTrackingRequest(request);
       if (normalizedTrackingResponse) return normalizedTrackingResponse;
 
-      if (isPayRateLimited(request, new URL(request.url).pathname)) {
-        return applyPublicTrackingHeaders(request, payRateLimitedResponse());
+      if (isSignalRateLimited(request, new URL(request.url).pathname)) {
+        return applyPublicTrackingHeaders(request, signalRateLimitedResponse());
       }
 
       applyCloudflareEnvBindings(env);

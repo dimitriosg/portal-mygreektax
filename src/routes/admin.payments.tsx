@@ -39,6 +39,17 @@ const STATUS_STYLES: Record<PaymentTokenStatus, string> = {
   expired: "border-border bg-muted/40 text-muted-foreground",
 };
 
+// A Greek keyboard produces "150,00". type="number" would reject that and the
+// submit button would sit disabled with nothing explaining why, so the field is
+// plain text and both separators are accepted. Returns null when unparseable,
+// which drives the validation message rather than a silent dead end.
+function parseAmountInput(raw: string): number | null {
+  const normalised = raw.trim().replace(",", ".");
+  if (!/^\d+(\.\d{1,2})?$/.test(normalised)) return null;
+  const value = Number(normalised);
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
 function formatAmount(amount: number, currency: string) {
   try {
     return new Intl.NumberFormat("en-GB", { style: "currency", currency }).format(amount);
@@ -103,12 +114,17 @@ function PaymentsPage() {
     setNote([caseCode, kind].filter(Boolean).join(" "));
   }, [selectedClient, kind, noteTouched]);
 
+  const parsedAmount = parseAmountInput(amount);
+  const amountEntered = amount.trim() !== "";
+  const amountInvalid = amountEntered && parsedAmount === null;
+  const canCreate = !!clientId && parsedAmount !== null;
+
   const createMut = useMutation({
     mutationFn: () =>
       createFn({
         data: {
           clientId,
-          amount: Number(amount),
+          amount: parsedAmount ?? 0,
           kind,
           expiresInDays: expiresInDays === "" ? undefined : expiresInDays,
           note: note.trim() || undefined,
@@ -142,10 +158,6 @@ function PaymentsPage() {
       toast.error(getErrorMessage(e));
     },
   });
-
-  const parsedAmount = Number(amount);
-  const canCreate =
-    !!clientId && amount.trim() !== "" && Number.isFinite(parsedAmount) && parsedAmount > 0;
 
   if (loading || (!!user && !sessionReady)) {
     return (
@@ -192,14 +204,18 @@ function PaymentsPage() {
             <label className="space-y-1 text-xs text-muted-foreground">
               <span>Amount (EUR)</span>
               <Input
-                type="number"
+                type="text"
                 inputMode="decimal"
-                min="0.01"
-                step="0.01"
                 placeholder="150.00"
+                aria-invalid={amountInvalid}
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
               />
+              {amountInvalid && (
+                <span className="block text-destructive">
+                  Enter an amount like 150 or 150,00 — digits with at most two decimals.
+                </span>
+              )}
             </label>
             <label className="space-y-1 text-xs text-muted-foreground">
               <span>Kind</span>

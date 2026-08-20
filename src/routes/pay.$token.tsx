@@ -9,7 +9,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Check, Copy, ExternalLink, Landmark, ShieldCheck } from "lucide-react";
+import { AlertCircle, Check, Copy, ExternalLink, Landmark, ShieldCheck } from "lucide-react";
 import logo from "@/assets/mygreektax-mark.svg";
 import { cn } from "@/lib/utils";
 
@@ -38,14 +38,42 @@ export const Route = createFileRoute("/pay/$token")({
   }),
 });
 
-function postSignal(token: string, source: "portal_view" | "portal_claim") {
-  // A failed signal must never break the page — fire and forget.
+// Fire-and-forget. A lost view signal costs us a statistic, so it must never
+// surface to the client or delay the page.
+function postViewSignal(token: string) {
   return fetch("/pay/signal", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ token, source }),
+    body: JSON.stringify({ token, source: "portal_view" }),
     keepalive: true,
   }).catch(() => undefined);
+}
+
+const CLAIM_RETRY_DELAY_MS = 1500;
+
+// The claim is the whole point of this page, so unlike the view it is awaited
+// and retried once. A claim that never lands must be reported to the client
+// rather than silently swallowed — nothing else records that they said they
+// paid. n8n deduplicates repeat claims, so a retry is free.
+async function postClaimSignal(token: string): Promise<boolean> {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    if (attempt > 0) {
+      await new Promise((resolve) => setTimeout(resolve, CLAIM_RETRY_DELAY_MS));
+    }
+    try {
+      const res = await fetch("/pay/signal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, source: "portal_claim" }),
+        keepalive: true,
+      });
+      if (res.ok) return true;
+    } catch {
+      // Offline or DNS failure — fall through to the retry, then to the
+      // honest failure state.
+    }
+  }
+  return false;
 }
 
 // Tokens this browser session already reported a view for. Module-level so
@@ -59,7 +87,7 @@ function PayPage() {
     if (!data?.ok || data.alreadyPaid) return;
     if (viewedTokens.has(data.token)) return;
     viewedTokens.add(data.token);
-    void postSignal(data.token, "portal_view");
+    void postViewSignal(data.token);
   }, [data]);
 
   return (
@@ -162,8 +190,6 @@ function formatAmount(amount: number, currency: string) {
 }
 
 function PayContent({ data }: { data: PublicPaymentData }) {
-  const [claimed, setClaimed] = useState(false);
-
   const kindLabel =
     data.kind === "deposit" ? "Deposit" : data.kind === "balance" ? "Balance" : "Payment";
 
@@ -175,6 +201,15 @@ function PayContent({ data }: { data: PublicPaymentData }) {
         data.currency,
       )}&amount=${Math.round(data.amount * 100)}&note=${encodeURIComponent(data.paymentReference)}`
     : null;
+
+  const hasBankDetails = !!(data.iban || data.accountName);
+  // With no Revolut handle and no bank details there is no way to pay, which
+  // is the state on first deploy before the Worker secrets are set. Showing
+  // an amount and an "I've paid" button with no payment method invites a
+  // client to assert a payment they had no way to make, so the whole payment
+  // section including the claim button is withheld. getPublicPayment logs the
+  // misconfiguration server-side.
+  const canPay = !!revolutUrl || hasBankDetails;
 
   return (
     <div className="space-y-6">
@@ -188,9 +223,11 @@ function PayContent({ data }: { data: PublicPaymentData }) {
         <h1 className="font-serif text-3xl font-medium tracking-tight sm:text-[2.5rem] sm:leading-[1.1]">
           Hello <span className="italic">{data.firstName}</span>
         </h1>
-        <p className="text-sm text-muted-foreground sm:text-base">
-          Here is how to pay your {kindLabel.toLowerCase()} to MyGreekTax.
-        </p>
+        {canPay && (
+          <p className="text-sm text-muted-foreground sm:text-base">
+            Here is how to pay your {kindLabel.toLowerCase()} to MyGreekTax.
+          </p>
+        )}
       </section>
 
       <Card className="border-border/60" style={{ boxShadow: "var(--shadow-soft)" }}>
@@ -208,78 +245,130 @@ function PayContent({ data }: { data: PublicPaymentData }) {
         </CardContent>
       </Card>
 
-      {revolutUrl && (
-        <Card className="border-border/60" style={{ boxShadow: "var(--shadow-soft)" }}>
-          <CardContent className="space-y-3 p-5 sm:p-7">
-            <h2 className="font-serif text-lg font-medium">Pay with Revolut</h2>
-            <p className="text-sm text-muted-foreground">
-              Fastest option — the amount and reference are prefilled.
-            </p>
-            <Button asChild className="w-full" size="lg">
-              <a href={revolutUrl} target="_blank" rel="noopener noreferrer">
-                Open Revolut
-                <ExternalLink className="ml-2 h-4 w-4" />
-              </a>
-            </Button>
-          </CardContent>
-        </Card>
-      )}
+      {!canPay && <PaymentMethodsUnavailable />}
 
-      {(data.iban || data.accountName) && (
-        <Card className="border-border/60" style={{ boxShadow: "var(--shadow-soft)" }}>
-          <CardContent className="space-y-4 p-5 sm:p-7">
-            <h2 className="flex items-center gap-2 font-serif text-lg font-medium">
-              <Landmark className="h-4 w-4 text-brand" />
-              Pay by bank transfer
-            </h2>
-            <div className="space-y-3">
-              {data.iban && <CopyRow label="IBAN" value={data.iban} />}
-              {data.accountName && <CopyRow label="Account name" value={data.accountName} />}
-              <CopyRow label="Payment reference" value={data.paymentReference} />
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Please include the payment reference so we can match your transfer right away.
-            </p>
-          </CardContent>
-        </Card>
-      )}
-
-      <Card className="border-border/60" style={{ boxShadow: "var(--shadow-soft)" }}>
-        <CardContent className="space-y-3 p-5 sm:p-7">
-          {claimed ? (
-            <div className="flex items-start gap-3">
-              <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-success/10">
-                <Check className="h-4 w-4 text-success" strokeWidth={3} />
-              </span>
-              <div>
-                <div className="font-medium">Thanks — we'll confirm shortly.</div>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  We've been notified and will confirm your payment as soon as it arrives.
+      {canPay && (
+        <>
+          {revolutUrl && (
+            <Card className="border-border/60" style={{ boxShadow: "var(--shadow-soft)" }}>
+              <CardContent className="space-y-3 p-5 sm:p-7">
+                <h2 className="font-serif text-lg font-medium">Pay with Revolut</h2>
+                <p className="text-sm text-muted-foreground">
+                  Fastest option — the amount and reference are prefilled.
                 </p>
-              </div>
-            </div>
-          ) : (
-            <>
-              <p className="text-sm text-muted-foreground">
-                Done? Let us know so we can look out for your payment.
-              </p>
-              <Button
-                variant="outline"
-                className="w-full"
-                size="lg"
-                onClick={() => {
-                  // Disable immediately; n8n deduplicates repeat claims anyway.
-                  setClaimed(true);
-                  void postSignal(data.token, "portal_claim");
-                }}
-              >
-                I've paid
-              </Button>
-            </>
+                <Button asChild className="w-full" size="lg">
+                  <a href={revolutUrl} target="_blank" rel="noopener noreferrer">
+                    Open Revolut
+                    <ExternalLink className="ml-2 h-4 w-4" />
+                  </a>
+                </Button>
+              </CardContent>
+            </Card>
           )}
-        </CardContent>
-      </Card>
+
+          {hasBankDetails && (
+            <Card className="border-border/60" style={{ boxShadow: "var(--shadow-soft)" }}>
+              <CardContent className="space-y-4 p-5 sm:p-7">
+                <h2 className="flex items-center gap-2 font-serif text-lg font-medium">
+                  <Landmark className="h-4 w-4 text-brand" />
+                  Pay by bank transfer
+                </h2>
+                <div className="space-y-3">
+                  {data.iban && <CopyRow label="IBAN" value={data.iban} />}
+                  {data.accountName && <CopyRow label="Account name" value={data.accountName} />}
+                  <CopyRow label="Payment reference" value={data.paymentReference} />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Please include the payment reference so we can match your transfer right away.
+                </p>
+              </CardContent>
+            </Card>
+          )}
+
+          <ClaimCard token={data.token} />
+        </>
+      )}
     </div>
+  );
+}
+
+// Shown only when the Worker has no Revolut handle and no bank details, i.e.
+// misconfiguration. Deliberately carries no claim button.
+function PaymentMethodsUnavailable() {
+  return (
+    <Card className="border-warning/40 bg-warning/5" style={{ boxShadow: "var(--shadow-soft)" }}>
+      <CardContent className="flex items-start gap-3 p-5 sm:p-7">
+        <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-warning" />
+        <div>
+          <h2 className="font-serif text-lg font-medium">Payment details coming shortly</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            We're finalising the payment details for this link. Please contact MyGreekTax and we'll
+            sort it out right away.
+          </p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+type ClaimState = "idle" | "sending" | "sent" | "failed";
+
+function ClaimCard({ token }: { token: string }) {
+  const [claimState, setClaimState] = useState<ClaimState>("idle");
+
+  return (
+    <Card className="border-border/60" style={{ boxShadow: "var(--shadow-soft)" }}>
+      <CardContent className="space-y-3 p-5 sm:p-7">
+        {claimState === "sent" && (
+          <div className="flex items-start gap-3">
+            <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-success/10">
+              <Check className="h-4 w-4 text-success" strokeWidth={3} />
+            </span>
+            <div>
+              <div className="font-medium">Thanks — we'll confirm shortly.</div>
+              <p className="mt-1 text-sm text-muted-foreground">
+                We've been notified and will confirm your payment as soon as it arrives.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {claimState === "failed" && (
+          <div className="flex items-start gap-3">
+            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-warning" />
+            <div>
+              <div className="font-medium">We couldn't reach our system.</div>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Please pay as normal and email us so we can confirm — your payment details above are
+                still correct.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {(claimState === "idle" || claimState === "sending") && (
+          <>
+            <p className="text-sm text-muted-foreground">
+              Done? Let us know so we can look out for your payment.
+            </p>
+            <Button
+              variant="outline"
+              className="w-full"
+              size="lg"
+              disabled={claimState === "sending"}
+              onClick={async () => {
+                // Disabled from the first tap, so exactly one claim is sent.
+                setClaimState("sending");
+                const delivered = await postClaimSignal(token);
+                setClaimState(delivered ? "sent" : "failed");
+              }}
+            >
+              {claimState === "sending" ? "Sending…" : "I've paid"}
+            </Button>
+          </>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

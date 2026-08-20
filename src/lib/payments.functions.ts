@@ -98,6 +98,21 @@ export const getPublicPayment = createServerFn({ method: "GET" })
     const paymentReference =
       row.note?.trim() || [row.case_code, row.kind].filter(Boolean).join(" ") || row.kind;
 
+    const revolutHandle = process.env.MGT_REVOLUT_HANDLE ?? null;
+    const iban = process.env.MGT_IBAN ?? null;
+    const accountName = process.env.MGT_ACCOUNT_NAME ?? null;
+
+    // No Revolut handle and no bank details means the client has no way to
+    // pay. That is always misconfiguration on our side, never a client
+    // problem, so it is an error rather than a warning. The page withholds
+    // the payment section and the claim button in this state.
+    if (!revolutHandle && !iban && !accountName) {
+      console.error("[getPublicPayment] no payment method configured", {
+        tokenPrefix: row.token.slice(0, 8),
+        missing: ["MGT_REVOLUT_HANDLE", "MGT_IBAN", "MGT_ACCOUNT_NAME"],
+      });
+    }
+
     return {
       ok: true,
       token: row.token,
@@ -108,9 +123,9 @@ export const getPublicPayment = createServerFn({ method: "GET" })
       kind: row.kind,
       paymentReference,
       alreadyPaid: !!row.paid_at,
-      revolutHandle: process.env.MGT_REVOLUT_HANDLE ?? null,
-      iban: process.env.MGT_IBAN ?? null,
-      accountName: process.env.MGT_ACCOUNT_NAME ?? null,
+      revolutHandle,
+      iban,
+      accountName,
     };
   });
 
