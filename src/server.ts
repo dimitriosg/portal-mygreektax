@@ -15,6 +15,49 @@ const PUBLIC_TRACKING_HEADERS = {
   "x-robots-tag": "noindex, nofollow, noarchive",
 } as const;
 
+// Public token-gated pages that render without the logged-in chrome and must
+// never be cached or indexed.
+const PUBLIC_TOKEN_PATH_PREFIXES = ["/track/", "/pay/"] as const;
+
+function getPublicTokenPathPrefix(pathname: string): string | null {
+  return PUBLIC_TOKEN_PATH_PREFIXES.find((prefix) => pathname.startsWith(prefix)) ?? null;
+}
+
+// Rate limit for the signal beacon only. The payment page itself is a cheap
+// read behind an unguessable token, and clients behind carrier-grade NAT share
+// an IP with strangers — being rate-limited out of paying is a worse outcome
+// than the token scanning a limit would deter. /pay/signal is the endpoint
+// worth protecting, since it is the one that fans out to n8n and Telegram.
+//
+// Per-isolate and in-memory by design: no dependency, no binding. It is
+// therefore approximate — each isolate keeps its own counts and they reset
+// whenever an isolate recycles. Good enough to blunt a flood, not a quota.
+const SIGNAL_RATE_LIMIT = { windowMs: 60_000, maxRequests: 30, maxBuckets: 5_000 } as const;
+const signalRateBuckets = new Map<string, { count: number; resetAt: number }>();
+
+function isSignalRateLimited(request: Request, pathname: string): boolean {
+  if (pathname !== "/pay/signal") return false;
+  const key = request.headers.get("cf-connecting-ip") ?? "unknown";
+  const now = Date.now();
+  const bucket = signalRateBuckets.get(key);
+  if (!bucket || now >= bucket.resetAt) {
+    if (signalRateBuckets.size >= SIGNAL_RATE_LIMIT.maxBuckets) signalRateBuckets.clear();
+    signalRateBuckets.set(key, { count: 1, resetAt: now + SIGNAL_RATE_LIMIT.windowMs });
+    return false;
+  }
+  bucket.count += 1;
+  return bucket.count > SIGNAL_RATE_LIMIT.maxRequests;
+}
+
+function signalRateLimitedResponse(): Response {
+  // JSON, to match the endpoint's own shape. The page treats a non-2xx claim
+  // as undelivered and tells the client honestly rather than faking success.
+  return new Response(JSON.stringify({ ok: false, error: "rate_limited" }), {
+    status: 429,
+    headers: { "content-type": "application/json; charset=utf-8", "retry-after": "60" },
+  });
+}
+
 async function getServerEntry(): Promise<ServerEntry> {
   if (!serverEntryPromise) {
     serverEntryPromise = import("@tanstack/react-start/server-entry").then(
@@ -33,11 +76,8 @@ function brandedErrorResponse(): Response {
 
 function normalizePublicTrackingRequest(request: Request): Response | null {
   const url = new URL(request.url);
-  if (
-    !url.pathname.startsWith("/track/") ||
-    url.pathname === "/track/" ||
-    !url.pathname.endsWith("/")
-  ) {
+  const prefix = getPublicTokenPathPrefix(url.pathname);
+  if (!prefix || url.pathname === prefix || !url.pathname.endsWith("/")) {
     return null;
   }
   url.pathname = url.pathname.slice(0, -1);
@@ -46,7 +86,7 @@ function normalizePublicTrackingRequest(request: Request): Response | null {
 
 function applyPublicTrackingHeaders(request: Request, response: Response): Response {
   const url = new URL(request.url);
-  if (!url.pathname.startsWith("/track/")) return response;
+  if (!getPublicTokenPathPrefix(url.pathname)) return response;
 
   const headers = new Headers(response.headers);
   for (const [key, value] of Object.entries(PUBLIC_TRACKING_HEADERS)) {
@@ -129,6 +169,10 @@ export default {
     try {
       const normalizedTrackingResponse = normalizePublicTrackingRequest(request);
       if (normalizedTrackingResponse) return normalizedTrackingResponse;
+
+      if (isSignalRateLimited(request, new URL(request.url).pathname)) {
+        return applyPublicTrackingHeaders(request, signalRateLimitedResponse());
+      }
 
       applyCloudflareEnvBindings(env);
       const handler = await getServerEntry();
