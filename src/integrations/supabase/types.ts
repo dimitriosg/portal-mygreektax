@@ -1735,6 +1735,223 @@ export type Database = {
           },
         ];
       };
+      payment_signals: {
+        Row: {
+          amount: number | null;
+          client_id: string | null;
+          currency: string | null;
+          id: string;
+          metadata: Json;
+          notified_at: string | null;
+          resolved_payment_id: string | null;
+          seen_at: string;
+          source: string;
+          token: string | null;
+        };
+        Insert: {
+          amount?: number | null;
+          client_id?: string | null;
+          currency?: string | null;
+          id?: string;
+          metadata?: Json;
+          notified_at?: string | null;
+          resolved_payment_id?: string | null;
+          seen_at?: string;
+          source: string;
+          token?: string | null;
+        };
+        Update: {
+          amount?: number | null;
+          client_id?: string | null;
+          currency?: string | null;
+          id?: string;
+          metadata?: Json;
+          notified_at?: string | null;
+          resolved_payment_id?: string | null;
+          seen_at?: string;
+          source?: string;
+          token?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "payment_signals_client_id_fkey";
+            columns: ["client_id"];
+            isOneToOne: false;
+            referencedRelation: "clients";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "payment_signals_resolved_payment_id_fkey";
+            columns: ["resolved_payment_id"];
+            isOneToOne: false;
+            referencedRelation: "payments";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "payment_signals_token_fkey";
+            columns: ["token"];
+            isOneToOne: false;
+            referencedRelation: "payment_tokens";
+            referencedColumns: ["token"];
+          },
+        ];
+      };
+      payment_tokens: {
+        Row: {
+          amount: number;
+          case_code: string | null;
+          client_id: string;
+          created_at: string;
+          created_by: string | null;
+          currency: string;
+          expires_at: string | null;
+          first_opened_at: string | null;
+          kind: string;
+          last_country: string | null;
+          last_opened_at: string | null;
+          note: string | null;
+          open_count: number;
+          paid_at: string | null;
+          regenerated_from_token: string | null;
+          revoked_at: string | null;
+          token: string;
+        };
+        Insert: {
+          amount: number;
+          case_code?: string | null;
+          client_id: string;
+          created_at?: string;
+          created_by?: string | null;
+          currency?: string;
+          expires_at?: string | null;
+          first_opened_at?: string | null;
+          kind: string;
+          last_country?: string | null;
+          last_opened_at?: string | null;
+          note?: string | null;
+          open_count?: number;
+          paid_at?: string | null;
+          regenerated_from_token?: string | null;
+          revoked_at?: string | null;
+          token: string;
+        };
+        Update: {
+          amount?: number;
+          case_code?: string | null;
+          client_id?: string;
+          created_at?: string;
+          created_by?: string | null;
+          currency?: string;
+          expires_at?: string | null;
+          first_opened_at?: string | null;
+          kind?: string;
+          last_country?: string | null;
+          last_opened_at?: string | null;
+          note?: string | null;
+          open_count?: number;
+          paid_at?: string | null;
+          regenerated_from_token?: string | null;
+          revoked_at?: string | null;
+          token?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "payment_tokens_client_id_fkey";
+            columns: ["client_id"];
+            isOneToOne: false;
+            referencedRelation: "clients";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "payment_tokens_regenerated_from_token_fkey";
+            columns: ["regenerated_from_token"];
+            isOneToOne: false;
+            referencedRelation: "payment_tokens";
+            referencedColumns: ["token"];
+          },
+        ];
+      };
+      payments: {
+        Row: {
+          account_id: string | null;
+          amount: number;
+          client_id: string | null;
+          confirmed_at: string | null;
+          created_at: string;
+          currency: string;
+          external_id: string;
+          id: string;
+          kind: string | null;
+          match_confidence: string;
+          payer_name: string | null;
+          payer_reference: string | null;
+          raw: Json;
+          received_at: string;
+          reserved_at: string | null;
+          source: string;
+          status: string;
+          telegram_message_id: number | null;
+          token: string | null;
+        };
+        Insert: {
+          account_id?: string | null;
+          amount: number;
+          client_id?: string | null;
+          confirmed_at?: string | null;
+          created_at?: string;
+          currency?: string;
+          external_id: string;
+          id?: string;
+          kind?: string | null;
+          match_confidence?: string;
+          payer_name?: string | null;
+          payer_reference?: string | null;
+          raw?: Json;
+          received_at: string;
+          reserved_at?: string | null;
+          source: string;
+          status?: string;
+          telegram_message_id?: number | null;
+          token?: string | null;
+        };
+        Update: {
+          account_id?: string | null;
+          amount?: number;
+          client_id?: string | null;
+          confirmed_at?: string | null;
+          created_at?: string;
+          currency?: string;
+          external_id?: string;
+          id?: string;
+          kind?: string | null;
+          match_confidence?: string;
+          payer_name?: string | null;
+          payer_reference?: string | null;
+          raw?: Json;
+          received_at?: string;
+          reserved_at?: string | null;
+          source?: string;
+          status?: string;
+          telegram_message_id?: number | null;
+          token?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "payments_client_id_fkey";
+            columns: ["client_id"];
+            isOneToOne: false;
+            referencedRelation: "clients";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "payments_token_fkey";
+            columns: ["token"];
+            isOneToOne: false;
+            referencedRelation: "payment_tokens";
+            referencedColumns: ["token"];
+          },
+        ];
+      };
       retail_prices: {
         Row: {
           created_at: string;

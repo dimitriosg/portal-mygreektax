@@ -319,6 +319,9 @@ function AdminPage() {
           </div>
           <div className="flex items-center gap-2">
             <Button asChild variant="outline">
+              <Link to="/admin/payments">Payments</Link>
+            </Button>
+            <Button asChild variant="outline">
               <Link to="/admin/tracking-links">Tracking links</Link>
             </Button>
             <Button asChild variant="outline">
