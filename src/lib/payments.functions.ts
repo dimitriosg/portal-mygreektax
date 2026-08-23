@@ -4,6 +4,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { requireAdminAccess } from "./access-context.server";
+import { buildPaymentNote } from "./payments-shared";
 
 // Payment links, slice 1. Tokens carry the amount (clients.deposit means
 // "already paid", not "expected") and nothing in here writes to `clients`.
@@ -143,6 +144,9 @@ export type PaymentClientOption = {
   full_name: string | null;
   stage: string | null;
   balance_due: number | null;
+  // Read-only: quote_amount and balance_due are derived by a database trigger
+  // from sum(jobs.client_fee). Nothing here ever writes them.
+  quote_amount: number | null;
 };
 
 export const listPaymentClients = createServerFn({ method: "GET" })
@@ -154,7 +158,7 @@ export const listPaymentClients = createServerFn({ method: "GET" })
     });
     const { data, error } = await supabaseAdmin
       .from("clients")
-      .select("id, case_code, client_code, full_name, stage, balance_due")
+      .select("id, case_code, client_code, full_name, stage, balance_due, quote_amount")
       .in("stage", [...PAYMENT_CLIENT_STAGES])
       .order("full_name", { ascending: true });
     if (error) {
@@ -196,7 +200,7 @@ export const createPaymentToken = createServerFn({ method: "POST" })
 
     const { data: client, error: clientError } = await supabaseAdmin
       .from("clients")
-      .select("id, case_code")
+      .select("id, case_code, full_name, quote_amount")
       .eq("id", data.clientId)
       .maybeSingle();
     if (clientError) {
@@ -205,8 +209,18 @@ export const createPaymentToken = createServerFn({ method: "POST" })
     }
     if (!client) throw new Error("Client not found.");
 
-    // Case reference first — the Revolut note field truncates around 64 chars.
-    const note = data.note || [client.case_code, data.kind].filter(Boolean).join(" ") || data.kind;
+    // Authoritative: unless the admin overrode it, the server builds the note.
+    // It reaches the Revolut transaction record, so the case serial and the
+    // label always survive the length cap. The label comes from the share of
+    // the quote, deliberately not from `kind` — the two can disagree.
+    const note =
+      data.note ||
+      buildPaymentNote({
+        caseCode: client.case_code,
+        fullName: client.full_name,
+        amount: data.amount,
+        quoteAmount: client.quote_amount,
+      });
     const token = newPaymentToken();
     const expiresAt = data.expiresInDays
       ? new Date(Date.now() + data.expiresInDays * 24 * 60 * 60 * 1000).toISOString()

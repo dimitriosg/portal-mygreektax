@@ -16,6 +16,7 @@ import { getErrorMessage, isAuthSessionError } from "@/lib/auth-errors";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { buildPaymentNote, PAYMENT_NOTE_MAX_LENGTH } from "@/lib/payments-shared";
 import { buildPaymentLink } from "@/lib/tracking-links";
 import { formatDate, formatDateTime, cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -106,18 +107,26 @@ function PaymentsPage() {
     [clientsQ.data, clientId],
   );
 
-  // Default note: case reference FIRST — the Revolut note field truncates
-  // around 64 characters. Editable, but re-derived until the admin touches it.
-  useEffect(() => {
-    if (noteTouched) return;
-    const caseCode = selectedClient?.case_code ?? "";
-    setNote([caseCode, kind].filter(Boolean).join(" "));
-  }, [selectedClient, kind, noteTouched]);
-
   const parsedAmount = parseAmountInput(amount);
   const amountEntered = amount.trim() !== "";
   const amountInvalid = amountEntered && parsedAmount === null;
   const canCreate = !!clientId && parsedAmount !== null;
+
+  // Preview of the note the server would build, from the same helper, so what
+  // is shown here is what lands in payment_tokens.note. Re-derived until the
+  // admin touches the field, after which their text wins. Note it tracks the
+  // amount, not `kind`: the label is a share of the quote.
+  useEffect(() => {
+    if (noteTouched) return;
+    setNote(
+      buildPaymentNote({
+        caseCode: selectedClient?.case_code,
+        fullName: selectedClient?.full_name,
+        amount: parsedAmount ?? 0,
+        quoteAmount: selectedClient?.quote_amount,
+      }),
+    );
+  }, [selectedClient, parsedAmount, noteTouched]);
 
   const createMut = useMutation({
     mutationFn: () =>
@@ -249,7 +258,10 @@ function PaymentsPage() {
               </select>
             </label>
             <label className="space-y-1 text-xs text-muted-foreground lg:col-span-2">
-              <span>Note (prefills the Revolut reference — case code first, ~64 chars)</span>
+              <span>
+                Note (reaches the Revolut transaction record — case code first, ~
+                {PAYMENT_NOTE_MAX_LENGTH} chars). Edit to override.
+              </span>
               <Input
                 value={note}
                 maxLength={120}
