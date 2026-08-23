@@ -112,6 +112,12 @@ function PaymentsPage() {
   const amountInvalid = amountEntered && parsedAmount === null;
   const canCreate = !!clientId && parsedAmount !== null;
 
+  // A generated note always fits, but a hand-typed override skips the helper
+  // entirely. Warn rather than block: the same field is the bank-transfer
+  // reference, where a longer string is harmless, and a hard maxLength would
+  // stop typing with no explanation.
+  const noteOverCap = note.trim().length > PAYMENT_NOTE_MAX_LENGTH;
+
   // Preview of the note the server would build, from the same helper, so what
   // is shown here is what lands in payment_tokens.note. Re-derived until the
   // admin touches the field, after which their text wins. Note it tracks the
@@ -265,11 +271,19 @@ function PaymentsPage() {
               <Input
                 value={note}
                 maxLength={120}
+                aria-invalid={noteOverCap}
                 onChange={(e) => {
                   setNoteTouched(true);
                   setNote(e.target.value);
                 }}
               />
+              {noteOverCap && (
+                <span className="block text-warning">
+                  {note.trim().length} characters — Revolut keeps only the first{" "}
+                  {PAYMENT_NOTE_MAX_LENGTH}, so anything after that is lost. Put the case code
+                  first.
+                </span>
+              )}
             </label>
             <div className="flex items-end lg:col-span-2">
               <Button

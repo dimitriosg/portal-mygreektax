@@ -13,14 +13,23 @@ const MIN_NAME_CHARS = 3;
 
 export type PaymentNoteLabel = "upfront payment" | "full payment" | "deposit";
 
+// How close to 50% or 100% still counts, in percentage points.
+//
+// Half of a quote rounded to whole cents is off by at most half a cent, which
+// is (0.5 / quote) percentage points — below 0.1 for any quote above €5. So
+// this window absorbs cent rounding on every realistic quote while still
+// rejecting a genuine shortfall.
+//
+// Rounding to whole percents instead would be too coarse: €248 against a €249
+// quote is 99.598% and would round up to a "full payment" that leaves €1
+// outstanding. Exact cent arithmetic would be too strict in the other
+// direction: €50.00 against €99.99 is 50.005% and is plainly the upfront half.
+const NEAR_PERCENT = 0.1;
+
 /**
  * The label is derived from what fraction of the quote this payment is, NOT
  * from payment_tokens.kind. The two can legitimately disagree: a token with
  * kind 'deposit' covering the whole quote is labelled "full payment".
- *
- * Rounded to the nearest whole percent before comparing — €49.50 against a €99
- * quote is exactly half, but floating point does not always agree, and €168
- * against €467 is 35.97% and must land on "deposit".
  */
 export function paymentNoteLabel(
   amount: number,
@@ -29,9 +38,9 @@ export function paymentNoteLabel(
   if (!Number.isFinite(amount) || amount <= 0) return "deposit";
   if (quoteAmount == null || !Number.isFinite(quoteAmount) || quoteAmount <= 0) return "deposit";
 
-  const percent = Math.round((amount / quoteAmount) * 100);
-  if (percent === 50) return "upfront payment";
-  if (percent === 100) return "full payment";
+  const percent = (amount / quoteAmount) * 100;
+  if (Math.abs(percent - 50) <= NEAR_PERCENT) return "upfront payment";
+  if (Math.abs(percent - 100) <= NEAR_PERCENT) return "full payment";
   return "deposit";
 }
 
@@ -53,17 +62,18 @@ export function buildPaymentNote(input: {
   const fullName = (input.fullName ?? "").trim();
   const label = paymentNoteLabel(input.amount, input.quoteAmount);
 
-  // No case code is not expected — it is nullable in the schema, so degrade to
-  // the name as the identifier rather than emitting a bare label.
-  if (!caseCode) {
-    return fullName ? `${fullName}, ${label}` : label;
-  }
-
-  const withoutName = `${caseCode}, ${label}`;
+  // A missing case code is not expected — it is nullable in the schema, and the
+  // client picker filters by stage rather than by case-code presence, so a new
+  // Quoted client without one is ordinary. Degrade to the name as the
+  // identifier rather than emitting a bare label, and go through the same
+  // fitting path either way so the cap always applies.
+  const withoutName = caseCode ? `${caseCode}, ${label}` : label;
   if (!fullName) return withoutName;
 
-  // What the name costs on top: " (" + name + ")".
-  const availableForName = PAYMENT_NOTE_MAX_LENGTH - withoutName.length - " ()".length;
+  // What the name costs on top of `withoutName`: " (" + name + ")" when there
+  // is a case code to hang it off, otherwise the name plus its own ", ".
+  const nameOverhead = caseCode ? " ()".length : ", ".length;
+  const availableForName = PAYMENT_NOTE_MAX_LENGTH - withoutName.length - nameOverhead;
   if (availableForName < MIN_NAME_CHARS) return withoutName;
 
   // Truncated without an ellipsis: it would spend characters a bank statement
@@ -74,5 +84,5 @@ export function buildPaymentNote(input: {
   // genuinely short name ("Bo") fits and is kept.
   if (!fittedName) return withoutName;
 
-  return `${caseCode} (${fittedName}), ${label}`;
+  return caseCode ? `${caseCode} (${fittedName}), ${label}` : `${fittedName}, ${label}`;
 }
