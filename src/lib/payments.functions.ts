@@ -144,9 +144,11 @@ export type PaymentClientOption = {
   full_name: string | null;
   stage: string | null;
   balance_due: number | null;
-  // Read-only: quote_amount and balance_due are derived by a database trigger
-  // from sum(jobs.client_fee). Nothing here ever writes them.
+  // All read-only. quote_amount and balance_due are derived by database
+  // triggers from sum(jobs.client_fee); deposit is written by confirm_payment()
+  // and by nothing else. Nothing here ever writes any of the three.
   quote_amount: number | null;
+  deposit: number | null;
 };
 
 export const listPaymentClients = createServerFn({ method: "GET" })
@@ -158,7 +160,7 @@ export const listPaymentClients = createServerFn({ method: "GET" })
     });
     const { data, error } = await supabaseAdmin
       .from("clients")
-      .select("id, case_code, client_code, full_name, stage, balance_due, quote_amount")
+      .select("id, case_code, client_code, full_name, stage, balance_due, quote_amount, deposit")
       .in("stage", [...PAYMENT_CLIENT_STAGES])
       .order("full_name", { ascending: true });
     if (error) {
@@ -200,7 +202,7 @@ export const createPaymentToken = createServerFn({ method: "POST" })
 
     const { data: client, error: clientError } = await supabaseAdmin
       .from("clients")
-      .select("id, case_code, full_name, quote_amount")
+      .select("id, case_code, full_name, quote_amount, deposit")
       .eq("id", data.clientId)
       .maybeSingle();
     if (clientError) {
@@ -220,6 +222,7 @@ export const createPaymentToken = createServerFn({ method: "POST" })
         fullName: client.full_name,
         amount: data.amount,
         quoteAmount: client.quote_amount,
+        depositSoFar: client.deposit,
       });
     const token = newPaymentToken();
     const expiresAt = data.expiresInDays

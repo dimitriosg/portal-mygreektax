@@ -11,7 +11,8 @@ export const PAYMENT_NOTE_MAX_LENGTH = 64;
 // its parentheses instead.
 const MIN_NAME_CHARS = 3;
 
-export type PaymentNoteLabel = "upfront payment" | "full payment" | "deposit";
+export type PaymentNoteLabel =
+  "upfront payment" | "full payment" | "deposit" | "balance payment" | "part payment";
 
 // How close to 50% or 100% still counts, in percentage points.
 //
@@ -26,22 +27,53 @@ export type PaymentNoteLabel = "upfront payment" | "full payment" | "deposit";
 // direction: €50.00 against €99.99 is 50.005% and is plainly the upfront half.
 const NEAR_PERCENT = 0.1;
 
+function isNear(percent: number, target: number): boolean {
+  return Math.abs(percent - target) <= NEAR_PERCENT;
+}
+
 /**
- * The label is derived from what fraction of the quote this payment is, NOT
- * from payment_tokens.kind. The two can legitimately disagree: a token with
- * kind 'deposit' covering the whole quote is labelled "full payment".
+ * The label is derived from the money, NOT from payment_tokens.kind. The two
+ * can legitimately disagree: a token with kind 'deposit' covering the whole
+ * quote is labelled "full payment".
+ *
+ * Which fraction matters depends on whether the case has already received
+ * money. Against the quote alone, a 150 deposit and a 150 balance on a 300
+ * quote both compute to 50% and both read "upfront payment" — two Revolut
+ * transactions on one case carrying identical strings, in the field whose only
+ * job is telling them apart. So once `clients.deposit` is non-zero the label
+ * comes from the share of what is still outstanding instead.
+ *
+ * `depositSoFar` is `clients.deposit`, which is nullable: it must be coalesced
+ * before arithmetic or `quoteAmount - null` is NaN and every label collapses
+ * to "deposit".
  */
 export function paymentNoteLabel(
   amount: number,
   quoteAmount: number | null | undefined,
+  depositSoFar?: number | null,
 ): PaymentNoteLabel {
   if (!Number.isFinite(amount) || amount <= 0) return "deposit";
   if (quoteAmount == null || !Number.isFinite(quoteAmount) || quoteAmount <= 0) return "deposit";
 
-  const percent = (amount / quoteAmount) * 100;
-  if (Math.abs(percent - 50) <= NEAR_PERCENT) return "upfront payment";
-  if (Math.abs(percent - 100) <= NEAR_PERCENT) return "full payment";
-  return "deposit";
+  const paidSoFar = depositSoFar != null && Number.isFinite(depositSoFar) ? depositSoFar : 0;
+
+  // First money on this case.
+  if (paidSoFar <= 0) {
+    const percent = (amount / quoteAmount) * 100;
+    if (isNear(percent, 100)) return "full payment";
+    if (isNear(percent, 50)) return "upfront payment";
+    return "deposit";
+  }
+
+  // Money has already landed, so measure against what is left.
+  const outstanding = quoteAmount - paidSoFar;
+  // A link minted against a fully settled case. Rare — expanding scope adds a
+  // job, which raises quote_amount by trigger and makes this positive again.
+  if (outstanding <= 0) return "deposit";
+
+  const percent = (amount / outstanding) * 100;
+  if (isNear(percent, 100)) return "balance payment";
+  return "part payment";
 }
 
 /**
@@ -57,10 +89,13 @@ export function buildPaymentNote(input: {
   fullName: string | null | undefined;
   amount: number;
   quoteAmount: number | null | undefined;
+  // clients.deposit — what this case has already received. Read only; it is
+  // written by confirm_payment() and by nothing else.
+  depositSoFar?: number | null;
 }): string {
   const caseCode = (input.caseCode ?? "").trim();
   const fullName = (input.fullName ?? "").trim();
-  const label = paymentNoteLabel(input.amount, input.quoteAmount);
+  const label = paymentNoteLabel(input.amount, input.quoteAmount, input.depositSoFar);
 
   // A missing case code is not expected — it is nullable in the schema, and the
   // client picker filters by stage rather than by case-code presence, so a new

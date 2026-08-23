@@ -120,8 +120,9 @@ function PaymentsPage() {
 
   // Preview of the note the server would build, from the same helper, so what
   // is shown here is what lands in payment_tokens.note. Re-derived until the
-  // admin touches the field, after which their text wins. Note it tracks the
-  // amount, not `kind`: the label is a share of the quote.
+  // admin touches the field, after which their text wins. It tracks the amount
+  // and not `kind`: the label comes from the money — the share of the quote,
+  // or of what is still outstanding once the case has received a deposit.
   useEffect(() => {
     if (noteTouched) return;
     setNote(
@@ -130,6 +131,7 @@ function PaymentsPage() {
         fullName: selectedClient?.full_name,
         amount: parsedAmount ?? 0,
         quoteAmount: selectedClient?.quote_amount,
+        depositSoFar: selectedClient?.deposit,
       }),
     );
   }, [selectedClient, parsedAmount, noteTouched]);
