@@ -179,6 +179,7 @@ export const createPaymentToken = createServerFn({ method: "POST" })
       kind: PaymentKind;
       expiresInDays?: number;
       note?: string;
+      regeneratedFromToken?: string;
     }) =>
       z
         .object({
@@ -191,6 +192,11 @@ export const createPaymentToken = createServerFn({ method: "POST" })
           kind: z.enum(PAYMENT_KINDS),
           expiresInDays: z.number().int().min(1).max(365).optional(),
           note: z.string().trim().max(120).optional(),
+          // Set when this mint replaces an existing token at a corrected
+          // amount: payment_tokens.regenerated_from_token exists for exactly
+          // this, so "I picked the wrong figure" never becomes an in-place
+          // edit of a link that may already be in the client's inbox.
+          regeneratedFromToken: z.string().regex(PAYMENT_TOKEN_PATTERN).optional(),
         })
         .parse(d),
   )
@@ -238,6 +244,7 @@ export const createPaymentToken = createServerFn({ method: "POST" })
       note,
       expires_at: expiresAt,
       created_by: context.userId,
+      regenerated_from_token: data.regeneratedFromToken ?? null,
     });
     if (insertError) {
       console.error("[createPaymentToken] insert failed", { message: insertError.message });
@@ -268,6 +275,11 @@ export type PaymentTokenSummary = {
   clientName: string | null;
   status: PaymentTokenStatus;
   lastClaimAt: string | null;
+  regenerated_from_token: string | null;
+  // The confirmed payment this token resolved to, when it has one. Correcting
+  // an amount needs the payment id, not the token: confirm_payment books the
+  // token's amount into `payments`, and that row is what gets corrected.
+  payment: { id: string; amount: number; currency: string; status: string } | null;
 };
 
 export const listPaymentTokens = createServerFn({ method: "GET" })
@@ -290,6 +302,10 @@ export const listPaymentTokens = createServerFn({ method: "GET" })
 
     const tokens = (rows ?? []).map((r) => r.token);
     const lastClaimByToken = new Map<string, string>();
+    const paymentByToken = new Map<
+      string,
+      { id: string; amount: number; currency: string; status: string }
+    >();
     if (tokens.length > 0) {
       const { data: claims, error: claimsError } = await supabaseAdmin
         .from("payment_signals")
@@ -304,6 +320,27 @@ export const listPaymentTokens = createServerFn({ method: "GET" })
       for (const claim of claims ?? []) {
         if (claim.token && !lastClaimByToken.has(claim.token)) {
           lastClaimByToken.set(claim.token, claim.seen_at);
+        }
+      }
+
+      const { data: payments, error: paymentsError } = await supabaseAdmin
+        .from("payments")
+        .select("id, token, amount, currency, status")
+        .in("token", tokens);
+      if (paymentsError) {
+        // Only the correct-amount action needs this; the list still renders.
+        console.warn("[listPaymentTokens] payments lookup failed", {
+          message: paymentsError.message,
+        });
+      }
+      for (const payment of payments ?? []) {
+        if (payment.token && !paymentByToken.has(payment.token)) {
+          paymentByToken.set(payment.token, {
+            id: payment.id,
+            amount: payment.amount,
+            currency: payment.currency,
+            status: payment.status,
+          });
         }
       }
     }
@@ -341,6 +378,8 @@ export const listPaymentTokens = createServerFn({ method: "GET" })
           clientName: row.clients?.full_name ?? null,
           status,
           lastClaimAt,
+          regenerated_from_token: row.regenerated_from_token,
+          payment: paymentByToken.get(row.token) ?? null,
         };
       }),
     };
@@ -366,4 +405,167 @@ export const revokePaymentToken = createServerFn({ method: "POST" })
       throw new Error("Could not revoke the payment link. Please try again.");
     }
     return { ok: true as const };
+  });
+
+// ============================================================
+// Admin: confirm, edit and correct
+//
+// confirm_payment and correct_payment both RETURN a row rather than throwing:
+// `applied: false` with a `reason` is an expected outcome — a stale click on a
+// page that has moved on — not an error. Both are reached only through
+// supabaseAdmin, the service-role client, behind requireAdminAccess. Nothing
+// on the public /pay/$token page can touch either.
+// ============================================================
+
+export type ConfirmPaymentReason = "confirmed" | "already_paid" | "revoked" | "unknown_token";
+
+export type ConfirmPaymentResult = {
+  applied: boolean;
+  reason: ConfirmPaymentReason | string;
+  paymentId: string | null;
+  amount: number | null;
+  currency: string | null;
+  caseCode: string | null;
+  stageBefore: string | null;
+  stageAfter: string | null;
+  deposit: number | null;
+  balanceDue: number | null;
+};
+
+export const confirmPaymentToken = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d: { token: string }) =>
+    z.object({ token: z.string().regex(PAYMENT_TOKEN_PATTERN, "Invalid token") }).parse(d),
+  )
+  .handler(async ({ data, context }): Promise<ConfirmPaymentResult> => {
+    await requireAdminAccess({
+      userId: context.userId,
+      email: context.claims.email as string | undefined,
+    });
+
+    const { data: rows, error } = await supabaseAdmin.rpc("confirm_payment", {
+      p_token: data.token,
+    });
+    if (error) {
+      console.error("[confirmPaymentToken] rpc failed", { message: error.message });
+      throw new Error("Could not confirm the payment. Please try again.");
+    }
+    const row = rows?.[0];
+    if (!row) throw new Error("Could not confirm the payment. Please try again.");
+
+    return {
+      applied: row.applied,
+      reason: row.reason,
+      paymentId: row.payment_id,
+      amount: row.amount,
+      currency: row.currency,
+      caseCode: row.case_code,
+      stageBefore: row.stage_before,
+      stageAfter: row.stage_after,
+      deposit: row.deposit,
+      balanceDue: row.balance_due,
+    };
+  });
+
+// The note is display text and the Revolut deep-link only — it carries no
+// financial semantics, so unlike the amount it is safe to edit in place. Still
+// unpaid tokens only: once a payment is booked the note is part of the record.
+export const updatePaymentTokenNote = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d: { token: string; note: string }) =>
+    z
+      .object({
+        token: z.string().regex(PAYMENT_TOKEN_PATTERN, "Invalid token"),
+        note: z.string().trim().min(1, "The note cannot be empty").max(120),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await requireAdminAccess({
+      userId: context.userId,
+      email: context.claims.email as string | undefined,
+    });
+
+    const { data: updated, error } = await supabaseAdmin
+      .from("payment_tokens")
+      .update({ note: data.note })
+      .eq("token", data.token)
+      .is("paid_at", null)
+      .select("token")
+      .maybeSingle();
+    if (error) {
+      console.error("[updatePaymentTokenNote] update failed", { message: error.message });
+      throw new Error("Could not save the note. Please try again.");
+    }
+    // No row came back: the token was paid (or vanished) between render and
+    // submit. Report it as an outcome so the page can re-read, not as an error.
+    if (!updated) return { ok: false as const, reason: "not_editable" as const };
+    return { ok: true as const, note: data.note };
+  });
+
+export type CorrectPaymentReason =
+  "corrected" | "unknown_payment" | "not_confirmed" | "invalid_amount" | "no_change";
+
+export type CorrectPaymentResult = {
+  applied: boolean;
+  reason: CorrectPaymentReason | string;
+  paymentId: string | null;
+  oldAmount: number | null;
+  newAmount: number | null;
+  currency: string | null;
+  caseCode: string | null;
+  deposit: number | null;
+  balanceDue: number | null;
+};
+
+// Corrects the amount booked against an already-confirmed payment. The
+// function adjusts clients.deposit by the delta and deliberately does NOT
+// touch clients.stage — a correction that changes whether a case should have
+// crossed into Active is a human judgement, so nothing here re-evaluates it.
+export const correctPaymentAmount = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d: { paymentId: string; newAmount: number; reason: string }) =>
+    z
+      .object({
+        paymentId: z.string().uuid("Invalid payment id"),
+        newAmount: z
+          .number()
+          .positive("Amount must be greater than zero")
+          .max(9_999_999_999, "Amount too large")
+          .transform((v) => Math.round(v * 100) / 100),
+        // The function takes p_reason as optional, but an audit row with a null
+        // reason defeats the point of writing one, so it is required here.
+        reason: z.string().trim().min(1, "A reason is required").max(500),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }): Promise<CorrectPaymentResult> => {
+    await requireAdminAccess({
+      userId: context.userId,
+      email: context.claims.email as string | undefined,
+    });
+
+    const { data: rows, error } = await supabaseAdmin.rpc("correct_payment", {
+      p_payment_id: data.paymentId,
+      p_new_amount: data.newAmount,
+      p_reason: data.reason,
+    });
+    if (error) {
+      console.error("[correctPaymentAmount] rpc failed", { message: error.message });
+      throw new Error("Could not correct the payment. Please try again.");
+    }
+    const row = rows?.[0];
+    if (!row) throw new Error("Could not correct the payment. Please try again.");
+
+    return {
+      applied: row.applied,
+      reason: row.reason,
+      paymentId: row.payment_id,
+      oldAmount: row.old_amount,
+      newAmount: row.new_amount,
+      currency: row.currency,
+      caseCode: row.case_code,
+      deposit: row.deposit,
+      balanceDue: row.balance_due,
+    };
   });

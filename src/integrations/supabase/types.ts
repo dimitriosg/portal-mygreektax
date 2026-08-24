@@ -2223,6 +2223,39 @@ export type Database = {
     };
     Functions: {
       archive_case: { Args: { p_conversation_id: string }; Returns: undefined };
+      confirm_payment: {
+        Args: { p_token: string };
+        Returns: {
+          applied: boolean;
+          reason: string;
+          payment_id: string | null;
+          amount: number | null;
+          currency: string | null;
+          full_name: string | null;
+          first_name: string | null;
+          email: string | null;
+          case_code: string | null;
+          stage_before: string | null;
+          stage_after: string | null;
+          deposit: number | null;
+          balance_due: number | null;
+        }[];
+      };
+      correct_payment: {
+        Args: { p_payment_id: string; p_new_amount: number; p_reason?: string };
+        Returns: {
+          applied: boolean;
+          reason: string;
+          payment_id: string | null;
+          old_amount: number | null;
+          new_amount: number | null;
+          currency: string | null;
+          full_name: string | null;
+          case_code: string | null;
+          deposit: number | null;
+          balance_due: number | null;
+        }[];
+      };
       credential_delete: {
         Args: { p_submission_id: string };
         Returns: undefined;
