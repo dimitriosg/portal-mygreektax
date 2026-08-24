@@ -43,14 +43,17 @@ function isNear(percent: number, target: number): boolean {
  * job is telling them apart. So once `clients.deposit` is non-zero the label
  * comes from the share of what is still outstanding instead.
  *
- * `depositSoFar` is `clients.deposit`, which is nullable: it must be coalesced
- * before arithmetic or `quoteAmount - null` is NaN and every label collapses
- * to "deposit".
+ * `depositSoFar` is `clients.deposit`. It is REQUIRED rather than optional: a
+ * caller that omitted it would silently fall back to measuring against the
+ * quote and reintroduce the collision above, with no compile error. Required
+ * means the caller must pass it — `null` is a valid value, since the column is
+ * nullable, and is coalesced to 0 below. `quoteAmount - null` would be NaN and
+ * would collapse every label to "deposit".
  */
 export function paymentNoteLabel(
   amount: number,
   quoteAmount: number | null | undefined,
-  depositSoFar?: number | null,
+  depositSoFar: number | null | undefined,
 ): PaymentNoteLabel {
   if (!Number.isFinite(amount) || amount <= 0) return "deposit";
   if (quoteAmount == null || !Number.isFinite(quoteAmount) || quoteAmount <= 0) return "deposit";
@@ -90,8 +93,10 @@ export function buildPaymentNote(input: {
   amount: number;
   quoteAmount: number | null | undefined;
   // clients.deposit — what this case has already received. Read only; it is
-  // written by confirm_payment() and by nothing else.
-  depositSoFar?: number | null;
+  // written by confirm_payment() and by nothing else. Required, not optional:
+  // omitting it would quietly restore the deposit/balance label collision.
+  // Pass null when the case has received nothing.
+  depositSoFar: number | null | undefined;
 }): string {
   const caseCode = (input.caseCode ?? "").trim();
   const fullName = (input.fullName ?? "").trim();
