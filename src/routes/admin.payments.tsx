@@ -64,6 +64,19 @@ function parseAmountInput(raw: string): number | null {
   return Number.isFinite(value) && value > 0 ? value : null;
 }
 
+const EXPIRY_PRESET_DAYS = [7, 14, 30, 60, 90] as const;
+
+// The mint form takes a duration, not a date, so a reissue has to convert the
+// original token's absolute expiry back into days. Clamped to the range the
+// server accepts; an expiry already in the past reissues with none, since
+// minting a link that is born expired helps nobody.
+function remainingExpiryDays(expiresAt: string | null): number | "" {
+  if (!expiresAt) return "";
+  const ms = new Date(expiresAt).getTime() - Date.now();
+  if (!Number.isFinite(ms) || ms <= 0) return "";
+  return Math.min(365, Math.max(1, Math.ceil(ms / 86_400_000)));
+}
+
 function formatAmount(amount: number, currency: string) {
   try {
     return new Intl.NumberFormat("en-GB", { style: "currency", currency }).format(amount);
@@ -170,19 +183,29 @@ function PaymentsPage() {
     setAmount(String(regeneratingFrom.amount));
     setNoteTouched(true);
     setNote(regeneratingFrom.note ?? "");
-    setExpiresInDays("");
+    // Carry the original expiry rather than resetting to the form default: a
+    // reissued link quietly gaining or losing an expiry is exactly the kind of
+    // silent change revoke-and-remint exists to avoid. Round up, so a token
+    // reissued mid-life keeps roughly the window it had rather than losing a
+    // day to truncation.
+    setExpiresInDays(remainingExpiryDays(regeneratingFrom.expires_at));
   }, [regeneratingFrom]);
 
   const createMut = useMutation({
     mutationFn: async () => {
+      // Fail rather than fall back. `?? 0` here would mint a zero-amount token
+      // on any path that gets past the disabled submit — an Enter keypress, a
+      // later refactor — instead of refusing.
+      if (parsedAmount === null) throw new Error("Enter a valid amount before minting.");
       const replacing = regeneratingFrom?.token;
       const created = await createFn({
         data: {
           clientId,
-          amount: parsedAmount ?? 0,
+          amount: parsedAmount,
           kind,
           expiresInDays: expiresInDays === "" ? undefined : expiresInDays,
           note: note.trim() || undefined,
+          currency: regeneratingFrom?.currency,
           regeneratedFromToken: replacing,
         },
       });
@@ -317,11 +340,21 @@ function PaymentsPage() {
                 className="w-full rounded border border-input bg-background px-2 py-2 text-sm text-foreground"
               >
                 <option value="">No expiry</option>
-                <option value={7}>7 days</option>
-                <option value={14}>14 days</option>
-                <option value={30}>30 days</option>
-                <option value={60}>60 days</option>
-                <option value={90}>90 days</option>
+                {/* A reissue carries the original token's remaining days, which
+                    is rarely one of the presets. Without this the select would
+                    display "No expiry" while the state said otherwise — the
+                    silent mismatch this whole flow exists to avoid. */}
+                {typeof expiresInDays === "number" &&
+                  !(EXPIRY_PRESET_DAYS as readonly number[]).includes(expiresInDays) && (
+                    <option value={expiresInDays}>
+                      {expiresInDays} day{expiresInDays === 1 ? "" : "s"} (carried over)
+                    </option>
+                  )}
+                {EXPIRY_PRESET_DAYS.map((d) => (
+                  <option key={d} value={d}>
+                    {d} days
+                  </option>
+                ))}
               </select>
             </label>
             <label className="space-y-1 text-xs text-muted-foreground lg:col-span-2">
@@ -549,6 +582,16 @@ function TokenRow({
   // Correct amount.
   const isLive = t.status === "open" || t.status === "opened" || t.status === "claimed";
   const isPaid = t.status === "paid";
+  const isExpired = t.status === "expired";
+  // Expiry governs the client's ability to pay, not ours to record money that
+  // already arrived: a client who pays on day 6 of a 7-day link leaves a token
+  // that reads `expired` by the time anyone gets to it. confirm_payment does
+  // not check expiry, and workflow 63 already confirms expired tokens straight
+  // from the Telegram card — the admin page being stricter than the Telegram
+  // path for the same operation would be an inconsistency with nothing behind
+  // it. `revoked` stays inert: revocation is a deliberate "this link is dead",
+  // and un-dying it should be a fresh mint.
+  const canConfirm = isLive || isExpired;
 
   const confirmMut = useMutation({
     mutationFn: () => confirmFn({ data: { token: t.token } }),
@@ -588,14 +631,16 @@ function TokenRow({
   });
 
   const correctMut = useMutation({
-    mutationFn: () =>
-      correctFn({
-        data: {
-          paymentId: t.payment?.id ?? "",
-          newAmount: parseAmountInput(correctAmount) ?? 0,
-          reason: correctReason.trim(),
-        },
-      }),
+    mutationFn: async () => {
+      // Same reasoning as the mint: refuse rather than send a placeholder.
+      const newAmount = parseAmountInput(correctAmount);
+      if (newAmount === null || !t.payment) {
+        throw new Error("Enter a valid amount before correcting.");
+      }
+      return correctFn({
+        data: { paymentId: t.payment.id, newAmount, reason: correctReason.trim() },
+      });
+    },
     onSuccess: (res) => {
       setCorrectOpen(false);
       if (res.applied) {
@@ -685,11 +730,13 @@ function TokenRow({
           >
             Copy
           </Button>
+          {canConfirm && (
+            <Button size="sm" variant="outline" onClick={() => setConfirmOpen(true)}>
+              Confirm now
+            </Button>
+          )}
           {isLive && (
             <>
-              <Button size="sm" variant="outline" onClick={() => setConfirmOpen(true)}>
-                Confirm now
-              </Button>
               <Button
                 size="sm"
                 variant="ghost"
@@ -726,6 +773,11 @@ function TokenRow({
             >
               Correct amount
             </Button>
+          )}
+          {isPaid && !t.payment && t.paymentLookupFailed && (
+            <span className="text-xs text-muted-foreground">
+              Payment details unavailable — refresh to try again.
+            </span>
           )}
         </td>
       </tr>
@@ -768,6 +820,11 @@ function TokenRow({
                   If the case is still Quoted this also moves it to Active. Only confirm once the
                   money has actually arrived.
                 </p>
+                {isExpired && (
+                  <p className="font-medium text-foreground">
+                    This link has expired. Confirming still records the payment.
+                  </p>
+                )}
               </div>
             </DialogDescription>
           </DialogHeader>

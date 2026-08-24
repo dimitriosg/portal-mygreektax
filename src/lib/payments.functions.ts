@@ -179,6 +179,7 @@ export const createPaymentToken = createServerFn({ method: "POST" })
       kind: PaymentKind;
       expiresInDays?: number;
       note?: string;
+      currency?: string;
       regeneratedFromToken?: string;
     }) =>
       z
@@ -192,6 +193,10 @@ export const createPaymentToken = createServerFn({ method: "POST" })
           kind: z.enum(PAYMENT_KINDS),
           expiresInDays: z.number().int().min(1).max(365).optional(),
           note: z.string().trim().max(120).optional(),
+          // Not a form field — the column defaults to EUR and every row is EUR
+          // today. It exists so a reissue carries the original token's currency
+          // rather than silently resetting it to the default.
+          currency: z.string().trim().length(3).toUpperCase().optional(),
           // Set when this mint replaces an existing token at a corrected
           // amount: payment_tokens.regenerated_from_token exists for exactly
           // this, so "I picked the wrong figure" never becomes an in-place
@@ -245,6 +250,7 @@ export const createPaymentToken = createServerFn({ method: "POST" })
       expires_at: expiresAt,
       created_by: context.userId,
       regenerated_from_token: data.regeneratedFromToken ?? null,
+      ...(data.currency ? { currency: data.currency } : {}),
     });
     if (insertError) {
       console.error("[createPaymentToken] insert failed", { message: insertError.message });
@@ -280,6 +286,10 @@ export type PaymentTokenSummary = {
   // an amount needs the payment id, not the token: confirm_payment books the
   // token's amount into `payments`, and that row is what gets corrected.
   payment: { id: string; amount: number; currency: string; status: string } | null;
+  // True when the payments lookup itself failed, as distinct from finding
+  // nothing. A paid row with no payment and no explanation is indistinguishable
+  // from a row that is meant to have no actions.
+  paymentLookupFailed: boolean;
 };
 
 export const listPaymentTokens = createServerFn({ method: "GET" })
@@ -306,6 +316,7 @@ export const listPaymentTokens = createServerFn({ method: "GET" })
       string,
       { id: string; amount: number; currency: string; status: string }
     >();
+    let paymentLookupFailed = false;
     if (tokens.length > 0) {
       const { data: claims, error: claimsError } = await supabaseAdmin
         .from("payment_signals")
@@ -323,15 +334,27 @@ export const listPaymentTokens = createServerFn({ method: "GET" })
         }
       }
 
+      // Confirmed rows only, newest first. payments.token has no unique index —
+      // only payments_external_id_key, which the manual path satisfies with
+      // 'manual:' || token — so a second writer (a bank import matching to a
+      // token under a different external_id) could produce a second row. With
+      // first-row-wins below, an unordered query would then hand an arbitrary
+      // payment id to correct_payment. Ordering makes it the newest confirmed
+      // payment, which is well defined.
       const { data: payments, error: paymentsError } = await supabaseAdmin
         .from("payments")
         .select("id, token, amount, currency, status")
-        .in("token", tokens);
+        .in("token", tokens)
+        .eq("status", "confirmed")
+        .order("received_at", { ascending: false });
       if (paymentsError) {
-        // Only the correct-amount action needs this; the list still renders.
+        // Not fatal: the list must still render. But the row has to be able to
+        // say why its action is missing, or a transient failure looks exactly
+        // like a row that is meant to have no actions.
         console.warn("[listPaymentTokens] payments lookup failed", {
           message: paymentsError.message,
         });
+        paymentLookupFailed = true;
       }
       for (const payment of payments ?? []) {
         if (payment.token && !paymentByToken.has(payment.token)) {
@@ -380,6 +403,7 @@ export const listPaymentTokens = createServerFn({ method: "GET" })
           lastClaimAt,
           regenerated_from_token: row.regenerated_from_token,
           payment: paymentByToken.get(row.token) ?? null,
+          paymentLookupFailed,
         };
       }),
     };
