@@ -66,6 +66,17 @@ function parseAmountInput(raw: string): number | null {
 
 const EXPIRY_PRESET_DAYS = [7, 14, 30, 60, 90] as const;
 
+// Actionable first, then paid, then the inert ones. Within a group, newest
+// created first.
+const STATUS_SORT_GROUP: Record<PaymentTokenStatus, number> = {
+  open: 0,
+  opened: 0,
+  claimed: 0,
+  paid: 1,
+  revoked: 2,
+  expired: 2,
+};
+
 // The mint form takes a duration, not a date, so a reissue has to convert the
 // original token's absolute expiry back into days. Clamped to the range the
 // server accepts; an expiry already in the past reissues with none, since
@@ -140,6 +151,17 @@ function PaymentsPage() {
     () => clientsQ.data?.clients.find((c) => c.id === clientId),
     [clientsQ.data, clientId],
   );
+
+  // Display order only — no filtering, nothing hidden. Rows that can be acted
+  // on come first, so the list opens on the work rather than on history.
+  const sortedTokens = useMemo(() => {
+    const list = tokensQ.data?.tokens ?? [];
+    return [...list].sort((a, b) => {
+      const group = STATUS_SORT_GROUP[a.status] - STATUS_SORT_GROUP[b.status];
+      if (group !== 0) return group;
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+  }, [tokensQ.data]);
 
   const parsedAmount = parseAmountInput(amount);
   const amountEntered = amount.trim() !== "";
@@ -417,56 +439,38 @@ function PaymentsPage() {
         </CardContent>
       </Card>
 
-      <div className="overflow-x-auto rounded-lg border border-border">
-        <table className="w-full min-w-[900px] text-sm">
-          <thead className="bg-muted/50 text-left">
-            <tr>
-              <th className="px-3 py-2">Client</th>
-              <th className="px-3 py-2">Case</th>
-              <th className="px-3 py-2 text-right">Amount</th>
-              <th className="px-3 py-2">Kind</th>
-              <th className="px-3 py-2">Status</th>
-              <th className="px-3 py-2 text-right">Opens</th>
-              <th className="px-3 py-2">Last open</th>
-              <th className="px-3 py-2">Created</th>
-              <th className="px-3 py-2">Expires</th>
-              <th className="px-3 py-2"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {tokensQ.isLoading && (
-              <tr>
-                <td colSpan={10} className="px-3 py-6 text-center text-muted-foreground">
-                  Loading…
-                </td>
-              </tr>
-            )}
-            {tokensQ.error && (
-              <tr>
-                <td colSpan={10} className="px-3 py-6 text-center text-destructive">
-                  Could not load payment links: {getErrorMessage(tokensQ.error)}
-                </td>
-              </tr>
-            )}
-            {!tokensQ.isLoading && (tokensQ.data?.tokens.length ?? 0) === 0 && (
-              <tr>
-                <td colSpan={10} className="px-3 py-6 text-center text-muted-foreground">
-                  No payment links yet.
-                </td>
-              </tr>
-            )}
-            {tokensQ.data?.tokens.map((t) => (
-              <TokenRow
-                key={t.token}
-                token={t}
-                onRegenerate={() => {
-                  setRegeneratingFrom(t);
-                  window.scrollTo({ top: 0, behavior: "smooth" });
-                }}
-              />
-            ))}
-          </tbody>
-        </table>
+      {/* A row list, not a table. Nine data columns plus five action buttons do
+          not fit at any realistic viewport width, and a table makes actions
+          compete with data for horizontal space — so Revoke fell off the right
+          edge behind a scrollbar. Here the actions live in their own wrapping
+          flex container inside a wrapping row, so they drop to their own line
+          as the viewport narrows instead of widening the page. */}
+      <div className="space-y-2">
+        {tokensQ.isLoading && (
+          <div className="rounded-lg border border-border px-3 py-6 text-center text-sm text-muted-foreground">
+            Loading…
+          </div>
+        )}
+        {tokensQ.error && (
+          <div className="rounded-lg border border-border px-3 py-6 text-center text-sm text-destructive">
+            Could not load payment links: {getErrorMessage(tokensQ.error)}
+          </div>
+        )}
+        {!tokensQ.isLoading && sortedTokens.length === 0 && (
+          <div className="rounded-lg border border-border px-3 py-6 text-center text-sm text-muted-foreground">
+            No payment links yet.
+          </div>
+        )}
+        {sortedTokens.map((t) => (
+          <TokenRow
+            key={t.token}
+            token={t}
+            onRegenerate={() => {
+              setRegeneratingFrom(t);
+              window.scrollTo({ top: 0, behavior: "smooth" });
+            }}
+          />
+        ))}
       </div>
 
       <Dialog open={regenerateConfirmOpen} onOpenChange={setRegenerateConfirmOpen}>
@@ -684,126 +688,148 @@ function TokenRow({
   const noteDraftOverCap = noteDraft.trim().length > PAYMENT_NOTE_MAX_LENGTH;
   const noteUnchanged = noteDraft.trim() === (t.note ?? "").trim();
 
+  // One muted line rather than five narrow columns: same information, a
+  // fraction of the width, and it survives wrapping.
+  const meta = [
+    `${t.open_count} ${t.open_count === 1 ? "open" : "opens"}`,
+    t.last_opened_at ? `last ${formatDateTime(t.last_opened_at)}` : null,
+    `created ${formatDate(t.created_at)}`,
+    t.expires_at ? `expires ${formatDate(t.expires_at)}` : null,
+  ].filter(Boolean);
+
   return (
     <>
-      <tr className="border-t border-border hover:bg-muted/30">
-        <td className="px-3 py-2 font-medium">{t.clientName ?? "—"}</td>
-        <td className="px-3 py-2 text-muted-foreground">{t.case_code ?? "—"}</td>
-        <td className="px-3 py-2 text-right font-semibold tabular-nums">
-          {formatAmount(t.amount, t.currency)}
-          {t.payment && t.payment.amount !== t.amount && (
-            <div className="text-xs font-normal text-muted-foreground">
-              booked {formatAmount(t.payment.amount, t.payment.currency)}
-            </div>
-          )}
-        </td>
-        <td className="px-3 py-2 text-muted-foreground">
-          {KIND_LABELS[t.kind as PaymentKind] ?? t.kind}
-        </td>
-        <td className="px-3 py-2">
-          <span
-            className={cn(
-              "inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium capitalize",
-              STATUS_STYLES[t.status],
+      <div className="rounded-lg border border-border px-3 py-3 text-sm hover:bg-muted/30">
+        {/* Wrapping row: the identity block and the action block are siblings
+            that each wrap internally, so neither can force the page wider. */}
+        <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+          {/* min-w-0 is load-bearing: without it a long client name or case
+              code refuses to shrink below its content width and pushes the row
+              wide again, which is the bug this layout exists to fix. */}
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="font-medium [overflow-wrap:anywhere]">{t.clientName ?? "—"}</span>
+            {t.case_code && (
+              <span className="text-xs text-muted-foreground [overflow-wrap:anywhere]">
+                {t.case_code}
+              </span>
             )}
-            title={t.lastClaimAt ? `Claimed ${formatDateTime(t.lastClaimAt)}` : undefined}
-          >
-            {t.status}
-          </span>
-        </td>
-        <td className="px-3 py-2 text-right tabular-nums">{t.open_count}</td>
-        <td className="px-3 py-2 text-muted-foreground">
-          {t.last_opened_at ? formatDateTime(t.last_opened_at) : "—"}
-        </td>
-        <td className="px-3 py-2 text-muted-foreground">{formatDate(t.created_at)}</td>
-        <td className="px-3 py-2 text-muted-foreground">
-          {t.expires_at ? formatDate(t.expires_at) : "—"}
-        </td>
-        <td className="px-3 py-2 whitespace-nowrap text-right">
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => {
-              navigator.clipboard?.writeText(buildPaymentLink(t.token));
-              toast.success("Link copied");
-            }}
-          >
-            Copy
-          </Button>
-          {canConfirm && (
-            <Button size="sm" variant="outline" onClick={() => setConfirmOpen(true)}>
-              Confirm now
+            <span
+              className={cn(
+                "inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-xs font-medium capitalize",
+                STATUS_STYLES[t.status],
+              )}
+              title={t.lastClaimAt ? `Claimed ${formatDateTime(t.lastClaimAt)}` : undefined}
+            >
+              {t.status}
+            </span>
+            <span className="font-semibold tabular-nums">{formatAmount(t.amount, t.currency)}</span>
+            <span className="text-xs text-muted-foreground">
+              {KIND_LABELS[t.kind as PaymentKind] ?? t.kind}
+            </span>
+            {t.payment && t.payment.amount !== t.amount && (
+              <span className="text-xs text-muted-foreground">
+                booked {formatAmount(t.payment.amount, t.payment.currency)}
+              </span>
+            )}
+          </div>
+
+          {/* Deliberately NOT shrink-0. The outer row wraps this block onto its
+              own line, but on a phone that line is still narrower than five
+              buttons side by side — and shrink-0 would pin the block at its
+              max-content width so its own flex-wrap never engaged, overflowing
+              by ~117px at 390px. Letting it shrink is what makes the buttons
+              wrap. Each Button already carries whitespace-nowrap, so labels
+              stay intact; only the row between them breaks. */}
+          <div className="flex min-w-0 flex-wrap justify-end gap-1.5">
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                navigator.clipboard?.writeText(buildPaymentLink(t.token));
+                toast.success("Link copied");
+              }}
+            >
+              Copy
             </Button>
-          )}
-          {isLive && (
-            <>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  setNoteDraft(t.note ?? "");
-                  setNoteOpen(true);
-                }}
-              >
-                Edit note
+            {canConfirm && (
+              <Button size="sm" variant="outline" onClick={() => setConfirmOpen(true)}>
+                Confirm now
               </Button>
-              <Button size="sm" variant="ghost" onClick={onRegenerate}>
-                Edit amount
-              </Button>
+            )}
+            {isLive && (
+              <>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setNoteDraft(t.note ?? "");
+                    setNoteOpen(true);
+                  }}
+                >
+                  Edit note
+                </Button>
+                <Button size="sm" variant="ghost" onClick={onRegenerate}>
+                  Edit amount
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-destructive"
+                  disabled={revokeMut.isPending}
+                  onClick={() => revokeMut.mutate()}
+                >
+                  Revoke
+                </Button>
+              </>
+            )}
+            {isPaid && t.payment && (
               <Button
                 size="sm"
                 variant="outline"
-                className="text-destructive"
-                disabled={revokeMut.isPending}
-                onClick={() => revokeMut.mutate()}
+                onClick={() => {
+                  setCorrectAmount(String(t.payment?.amount ?? ""));
+                  setCorrectReason("");
+                  setCorrectOpen(true);
+                }}
               >
-                Revoke
+                Correct amount
               </Button>
-            </>
-          )}
-          {isPaid && t.payment && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                setCorrectAmount(String(t.payment?.amount ?? ""));
-                setCorrectReason("");
-                setCorrectOpen(true);
-              }}
-            >
-              Correct amount
-            </Button>
-          )}
-          {isPaid && !t.payment && t.paymentLookupFailed && (
-            <span className="text-xs text-muted-foreground">
-              Payment details unavailable — refresh to try again.
-            </span>
-          )}
-        </td>
-      </tr>
+            )}
+            {isPaid && !t.payment && t.paymentLookupFailed && (
+              <span className="text-xs text-muted-foreground">
+                Payment details unavailable — refresh to try again.
+              </span>
+            )}
+          </div>
+        </div>
 
-      {notice && (
-        <tr className="border-t border-border/50">
-          <td colSpan={10} className="px-3 py-2">
-            <div
-              className={cn(
-                "flex items-start justify-between gap-3 rounded-md border px-3 py-2 text-xs",
-                notice.tone === "applied"
-                  ? "border-success/40 bg-success/5"
-                  : "border-border bg-muted/40 text-muted-foreground",
-              )}
+        <div className="mt-2 text-xs text-muted-foreground">{meta.join(" · ")}</div>
+
+        {t.note && (
+          <div className="mt-1 text-xs text-muted-foreground [overflow-wrap:anywhere]">
+            {t.note}
+          </div>
+        )}
+
+        {notice && (
+          <div
+            className={cn(
+              "mt-2 flex flex-wrap items-start justify-between gap-2 rounded-md border px-3 py-2 text-xs",
+              notice.tone === "applied"
+                ? "border-success/40 bg-success/5"
+                : "border-border bg-muted/40 text-muted-foreground",
+            )}
+          >
+            <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{notice.text}</span>
+            <button
+              className="shrink-0 underline underline-offset-2"
+              onClick={() => setNotice(null)}
             >
-              <span>{notice.text}</span>
-              <button
-                className="shrink-0 underline underline-offset-2"
-                onClick={() => setNotice(null)}
-              >
-                Dismiss
-              </button>
-            </div>
-          </td>
-        </tr>
-      )}
+              Dismiss
+            </button>
+          </div>
+        )}
+      </div>
 
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent>
