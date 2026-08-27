@@ -51,6 +51,34 @@ function toEditorHtml(raw: string): string {
     .join("");
 }
 
+// Reduces markup to the words a reader would see. Used only to decide whether
+// the operator changed the Brain's draft before sending.
+//
+// WHY TEXT AND NOT HTML. bodyInitial is the Brain's plain text run through
+// toEditorHtml. bodyHtml is what TipTap hands back, and TipTap re-serialises a
+// document it merely loaded, so the two HTML strings differ even when nothing
+// was touched. The old server-side version of this check compared the raw
+// strings and therefore recorded every single send as "edited", which is the
+// whole reason the quality metric read as noise.
+//
+// A formatting-only change (bolding a word, tightening a list) reads as
+// "as_is". That is the intended reading: the question this metric answers is
+// whether the Brain's WORDS survived review, not whether the markup did.
+function visibleText(html: string): string {
+  return html
+    .replace(/<\s*br\s*\/?>/gi, " ")
+    .replace(/<\/\s*(p|div|li|h[1-6])\s*>/gi, " ")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 const SANITIZE_CONFIG = {
   ALLOWED_TAGS: ["p", "br", "strong", "b", "em", "i", "u", "s", "ul", "ol", "li", "a", "span"],
   ALLOWED_ATTR: ["href", "target", "rel", "style"],
@@ -114,9 +142,18 @@ export const AiReviewDesk: React.FC<AiReviewDeskProps> = ({ jobId }) => {
     setStatus({ kind: "idle" });
     setResendConfirmed(false);
     try {
+      const bodyForSend = bodyHtml || bodyInitial;
+
+      // Decided here and posted to the server, because this is the only place
+      // that still holds both sides of the comparison. By the time the draft
+      // reaches the database it has been HTML-ised and signed, and nothing
+      // downstream can tell an edit from that transformation.
+      const sentMode: "as_is" | "edited" =
+        visibleText(bodyForSend) === visibleText(bodyInitial) ? "as_is" : "edited";
+
       // Stitch body + a spacer + signature into one document, then sanitize
       // the whole thing once.
-      const combined = `${bodyHtml || bodyInitial}<br>${signatureHtml}`;
+      const combined = `${bodyForSend}<br>${signatureHtml}`;
       let cleanHtml = DOMPurify.sanitize(combined, SANITIZE_CONFIG);
 
       // Flatten <li><p>text</p></li> to <li>text</li>. TipTap wraps list-item
@@ -155,6 +192,7 @@ export const AiReviewDesk: React.FC<AiReviewDeskProps> = ({ jobId }) => {
           case_id: jobId,
           final_text: cleanHtml,
           subject: subject.trim() || undefined,
+          sent_mode: sentMode,
         }),
       });
 
