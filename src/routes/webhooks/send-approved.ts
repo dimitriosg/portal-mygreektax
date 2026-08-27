@@ -6,7 +6,8 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 //
 // Called by the AiReviewDesk button. Marks the draft approved, resolves the
 // recipient server side, sends via Mailgun's EU API directly (same path as
-// case-reply.ts, no Make hop), then logs the outbound message.
+// case-reply.ts, no Make hop), then logs the outbound message and stamps the
+// draft version history.
 //
 // The Make relay was removed: it ACKed the webhook instantly and sent the mail
 // afterwards, so a Mailgun failure inside Make surfaced as a success here. One
@@ -18,6 +19,13 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 // Env: SUPABASE_*, MAILGUN_API_KEY, MAILGUN_DOMAIN (defaults to mygreektax.eu)
 
 const DEFAULT_SUBJECT = "Update on your MyGreekTax request";
+
+// The only two answers the quality metric accepts. Anything else, including a
+// missing field from an older client, is recorded as null rather than guessed:
+// a wrong reading is worse than no reading, and guessing is exactly how the
+// previous implementation ended up calling every send "edited".
+const SENT_MODES = ["as_is", "edited"] as const;
+type SentMode = (typeof SENT_MODES)[number];
 
 // Returned as `logError` when the mail went out but the case log write did
 // not. Fixed text on purpose: the caller needs to know the log is missing,
@@ -31,6 +39,12 @@ function readString(value: unknown, maxLength: number): string | undefined {
   const trimmed = value.trim();
   if (!trimmed) return undefined;
   return trimmed.slice(0, maxLength);
+}
+
+function readSentMode(value: unknown): SentMode | null {
+  return typeof value === "string" && (SENT_MODES as readonly string[]).includes(value)
+    ? (value as SentMode)
+    : null;
 }
 
 const BASE_FONT_OPEN =
@@ -125,6 +139,7 @@ export const Route = createFileRoute("/webhooks/send-approved")({
         const caseId = readString(b.case_id, 100);
         const finalText = readString(b.final_text, 100000);
         const subject = readString(b.subject, 500) || DEFAULT_SUBJECT;
+        const sentMode = readSentMode(b.sent_mode);
 
         if (!caseId || !finalText) {
           return Response.json({ error: "case_id and final_text are required" }, { status: 400 });
@@ -279,11 +294,24 @@ export const Route = createFileRoute("/webhooks/send-approved")({
 
           // 5. Only now mark the draft approved. The send succeeded, so this
           // can no longer claim success for a mail that never left.
+          //
+          // proposed_draft IS DELIBERATELY NOT REWRITTEN HERE. It used to be
+          // overwritten with final_text, which caused two problems:
+          //
+          //   a) final_text is HTML with the signature already stitched on.
+          //      Reopening the case loaded that whole thing back into the body
+          //      editor, and the desk then appended a fresh signature on top,
+          //      so every "Send again" went out double-signed.
+          //   b) case_drafts stopped holding what the Brain actually wrote, so
+          //      nothing could compare the Brain's output against what went
+          //      out. That comparison is the entire quality metric.
+          //
+          // What was sent now lives in case_draft_versions.sent_text, which is
+          // the column that exists for it. proposed_draft stays the Brain's.
           const { error: updateError } = await supabaseAdmin
             .from("case_drafts")
             .update({
               is_approved: true,
-              proposed_draft: finalText,
               last_updated: new Date().toISOString(),
             })
             .eq("case_id", caseId);
@@ -295,7 +323,56 @@ export const Route = createFileRoute("/webhooks/send-approved")({
             );
           }
 
-          // 6. Log it onto the case.
+          // 6. Stamp the draft version history.
+          //
+          // The trigger record_case_draft_version() records generations. It
+          // used to try to record sends as well, deciding as_is vs edited by
+          // comparing the stored draft against what came back on approval.
+          // Those two strings are never equal (plain text in, signed HTML
+          // out), so it marked every send "edited" and the metric read as
+          // noise. The browser is the only place that still holds both sides
+          // of that comparison, so sent_mode arrives from the desk.
+          //
+          // The row stamped is the newest one that has not been sent yet. A
+          // resend therefore finds nothing to stamp and leaves the first send
+          // standing, which is the reading we want: the metric is about
+          // whether the Brain's draft survived review, and only the first send
+          // answers that.
+          //
+          // Failure here never fails the request. The mail has gone, and a
+          // missing metric row is not something the sender can act on.
+          let versionStamped = false;
+          if (isNewSpine) {
+            const { data: versionRow, error: versionLookupError } = await supabaseAdmin
+              .from("case_draft_versions")
+              .select("id")
+              .eq("conversation_id", caseId)
+              .is("sent_at", null)
+              .order("version_no", { ascending: false })
+              .limit(1)
+              .maybeSingle();
+
+            if (versionLookupError) {
+              console.error("[send-approved] draft version lookup failed:", versionLookupError);
+            } else if (versionRow) {
+              const { error: versionUpdateError } = await supabaseAdmin
+                .from("case_draft_versions")
+                .update({
+                  sent_at: new Date().toISOString(),
+                  sent_text: finalText,
+                  sent_mode: sentMode,
+                })
+                .eq("id", (versionRow as { id: string }).id);
+
+              if (versionUpdateError) {
+                console.error("[send-approved] draft version stamp failed:", versionUpdateError);
+              } else {
+                versionStamped = true;
+              }
+            }
+          }
+
+          // 7. Log it onto the case.
           //
           // The outcome is TRACKED and returned. Both branches below swallow
           // their error deliberately -- the mail has gone, and failing the
@@ -344,7 +421,7 @@ export const Route = createFileRoute("/webhooks/send-approved")({
               to_emails: [clientRow.email],
               subject,
               body_text: logText,
-              metadata: { via: "portal_desk" },
+              metadata: { via: "portal_desk", sent_mode: sentMode },
             });
 
             if (eventError) {
@@ -361,7 +438,7 @@ export const Route = createFileRoute("/webhooks/send-approved")({
               case_serial_id: caseSerialId,
               event_type: "outbound_sent",
               sender: "internal",
-              payload: { text: logText },
+              payload: { text: logText, sent_mode: sentMode },
             });
 
             if (timelineError) {
@@ -374,7 +451,9 @@ export const Route = createFileRoute("/webhooks/send-approved")({
             }
           }
 
-          console.log(`[send-approved] sent for case ${caseId} to ${clientRow.email}`);
+          console.log(
+            `[send-approved] sent for case ${caseId} to ${clientRow.email} (mode ${sentMode ?? "unknown"}, version stamped: ${versionStamped})`,
+          );
           return Response.json({
             ok: true,
             sent_to: clientRow.email,
@@ -382,6 +461,8 @@ export const Route = createFileRoute("/webhooks/send-approved")({
             messageId: mgId ?? null,
             logged,
             logError,
+            sentMode,
+            versionStamped,
           });
         } catch (error) {
           console.error("[send-approved] failed", { error });
