@@ -47,15 +47,22 @@ interface Props {
   onSynced?: () => void;
 }
 
-// Cards come in four kinds: client mail in, client mail out, partner mail
-// (either direction), and internal notes, which were never emailed to anyone.
-// Notes get their own look and a NOTE tag so a log line can never be mistaken
-// for mail the client received (brain_events also carries actor "system" and
-// direction "internal" rows via the conversation-log webhook).
-type CardKind = "in" | "out" | "partner" | "note";
+// Cards come in five kinds: client mail in and out, partner mail in and out,
+// and internal notes, which were never emailed to anyone. Partner mail splits
+// by direction the way client mail does, so what the partner sent and what
+// went out to him are told apart by rail and icon alone, without reading the
+// label; both keep the INTERNAL tag. Notes get their own look and a NOTE tag
+// so a log line can never be mistaken for mail the client received
+// (brain_events also carries actor "system" and direction "internal" rows via
+// the conversation-log webhook).
+type CardKind = "in" | "out" | "partner-in" | "partner-out" | "note";
+
+function isPartnerKind(kind: CardKind): boolean {
+  return kind === "partner-in" || kind === "partner-out";
+}
 
 function cardKind(e: ThreadEvent): CardKind {
-  if (isPartnerEvent(e)) return "partner";
+  if (isPartnerEvent(e)) return isInbound(e) ? "partner-in" : "partner-out";
   if (e.event_type === "internal_note" || e.direction === "internal" || e.actor === "system") {
     return "note";
   }
@@ -63,7 +70,7 @@ function cardKind(e: ThreadEvent): CardKind {
 }
 
 function whoLabel(e: ThreadEvent, kind: CardKind, clientName: string | null): string {
-  if (kind === "partner") return isInbound(e) ? "Partner" : "To partner";
+  if (isPartnerKind(kind)) return kind === "partner-in" ? "Partner" : "To partner";
   if (kind === "note") return e.actor === "system" ? "System" : "You";
   return kind === "in" ? clientName || "Client" : "You";
 }
@@ -278,7 +285,7 @@ export function CaseThread({
                   {showDay && (
                     <div className="day-div">{athensDayLabel(e.occurred_at) || "Undated"}</div>
                   )}
-                  <article className={`tmsg t-${kind}`}>
+                  <article className={`tmsg t-${kind}${isPartnerKind(kind) ? " t-partner" : ""}`}>
                     <div className="tmsg-head">
                       <span className="dir" aria-hidden="true">
                         {kind === "note" ? "•" : isInbound(e) ? "←" : "→"}
@@ -286,7 +293,7 @@ export function CaseThread({
                       <span className="who" title={e.from_email ?? undefined}>
                         {whoLabel(e, kind, clientName)}
                       </span>
-                      {kind === "partner" && <span className="tag tag-internal">INTERNAL</span>}
+                      {isPartnerKind(kind) && <span className="tag tag-internal">INTERNAL</span>}
                       {kind === "note" && <span className="tag tag-internal">NOTE</span>}
                       <span className="spacer" />
                       <span className="when" title={athensFullStamp(e.occurred_at)}>
@@ -296,7 +303,11 @@ export function CaseThread({
 
                     {showSubject && <p className="msg-subject">{subject}</p>}
 
-                    <p className="t-body">{split.visible}</p>
+                    {split.visible.trim() === "" ? (
+                      <p className="t-body empty">No new text, only the quoted thread below.</p>
+                    ) : (
+                      <p className="t-body">{split.visible}</p>
+                    )}
 
                     {split.quoted !== null && quoteOpen && (
                       <div className="quoted">{split.quoted}</div>

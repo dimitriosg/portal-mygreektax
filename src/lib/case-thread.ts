@@ -28,7 +28,11 @@ export function isPartnerEvent(e: Pick<ThreadEvent, "actor" | "event_type">): bo
 // ---------------------------------------------------------------------------
 
 export interface QuotedSplit {
-  /** The author's own text, with the quoted tail removed. */
+  /**
+   * The author's own text, with the quoted tail removed. Empty when the whole
+   * body is quoted (a bare forward, or a reply sent with nothing above the
+   * quote); the card says so rather than rendering blank.
+   */
   visible: string;
   /** The quoted tail (attribution line included), or null when there is none. */
   quoted: string | null;
@@ -36,71 +40,94 @@ export interface QuotedSplit {
   quotedLineCount: number;
 }
 
-// Gmail wraps long attribution lines, so "wrote:" can land one or two lines
-// below the "On ..." opener (often already inside the "> " quote prefix).
-const ATTRIBUTION_OPENERS = /^(On |Στις )/;
-const ATTRIBUTION_CLOSER = /(wrote|έγραψε):\s*$/;
+// Attribution lines, the "X wrote:" header a mail client puts above the text
+// it is quoting. Two dialects reach this thread:
+//
+//   Gmail:  On Thu, 23 Jul 2026 at 09:51, Someone <someone@example.com>
+//           wrote:
+//           > quoted line
+//
+//   Yahoo:      Στις Πέμπτη 23 Ιουλίου 2026 στις 09:45:18 π.μ. EEST, ο/η
+//               Someone <someone@example.com> έγραψε:
+//           quoted line, flush left, no marker at all
+//
+// Yahoo indents the line, pads it with trailing spaces, writes the date and
+// the time with a "στις" each, and then quotes the old message with no "> "
+// prefixes anywhere. So the opener tolerates leading whitespace, which in a
+// JavaScript regex covers the non-breaking space Yahoo's export carries, and
+// both are matched case-insensitively.
+const ATTRIBUTION_OPENERS = /^\s*(On|Στις)\s/i;
+const ATTRIBUTION_CLOSER = /(wrote|έγραψε)\s*:\s*$/i;
+
+// What separates a real attribution from prose that happens to open with "On"
+// and run into a line ending "wrote:": a real one carries the sender's address,
+// a year, or a clock time. Without this, "On Monday I will send the documents.
+// / Here is what the notary wrote:" would fold the rest of the message away.
+const ATTRIBUTION_EVIDENCE = /<[^\s<>]+@[^\s<>]+>|\b\d{4}\b|\b\d{1,2}:\d{2}\b/;
+
 const QUOTE_DIVIDERS = [
   /^-{2,}\s*Original Message\s*-{2,}\s*$/i,
   /^-+ ?(Forwarded message|Προωθημένο μήνυμα) ?-+\s*$/i,
   /^_{6,}\s*$/,
 ];
 
-// A Gmail-style tail only folds when it really is a quote block: at least this
-// share of its lines must be quote-shaped. Inline replies (answers interleaved
-// between "> " lines) fall below it and stay fully visible.
-const GMAIL_QUOTE_RATIO = 0.9;
+// A tail found by its "> " prefixes only folds when it really is a quote
+// block: at least this share of its lines must be quote-shaped. Inline replies
+// (answers interleaved between "> " lines) fall below it and stay visible.
+// An attribution line needs no such test, since it says outright that
+// everything below it is quoted.
+const QUOTE_PREFIX_RATIO = 0.9;
 
 function isDividerLine(line: string): boolean {
   return QUOTE_DIVIDERS.some((d) => d.test(line));
 }
 
-function isAttributionAt(lines: string[], i: number): boolean {
-  if (!ATTRIBUTION_OPENERS.test(lines[i])) return false;
+// The index of the line that closes the attribution starting at i, or -1 when
+// this is not an attribution. The closer can wrap one or two lines below the
+// opener, and by then may already carry a "> " prefix of its own.
+function attributionEndAt(lines: string[], i: number): number {
+  if (!ATTRIBUTION_OPENERS.test(lines[i])) return -1;
   const horizon = Math.min(i + 3, lines.length);
   for (let j = i; j < horizon; j++) {
-    if (ATTRIBUTION_CLOSER.test(lines[j])) return true;
+    if (!ATTRIBUTION_CLOSER.test(lines[j])) continue;
+    return ATTRIBUTION_EVIDENCE.test(lines.slice(i, j + 1).join(" ")) ? j : -1;
   }
-  return false;
+  return -1;
 }
 
 export function splitQuoted(body: string): QuotedSplit {
   const lines = body.split(/\r\n|\n|\r/);
   const whole: QuotedSplit = { visible: body, quoted: null, quotedLineCount: 0 };
 
+  // Scanning stops at the first marker of any kind. With nested replies that
+  // stack one attribution per level, the first is the right fold point:
+  // everything below it is older by definition.
   let start = -1;
-  let gmailStyle = false;
+  let byQuotePrefix = false;
   for (let i = 0; i < lines.length; i++) {
+    if (attributionEndAt(lines, i) !== -1) {
+      start = i;
+      break;
+    }
     if (lines[i].startsWith(">")) {
       start = i;
-      gmailStyle = true;
+      byQuotePrefix = true;
       break;
     }
     if (isDividerLine(lines[i])) {
       start = i;
       break;
     }
-    if (isAttributionAt(lines, i)) {
-      start = i;
-      gmailStyle = true;
-      break;
-    }
   }
   if (start === -1) return whole;
 
-  // A body that begins at a quote marker (a forward, or a reply that is all
-  // quote) has no author text of its own: folding would render a blank card,
-  // so show everything instead.
-  const hasOwnText = lines.slice(0, start).some((l) => l.trim() !== "");
-  if (!hasOwnText) return whole;
-
-  const tail = lines.slice(start);
-  if (gmailStyle) {
+  if (byQuotePrefix) {
+    const tail = lines.slice(start);
     const quoteShaped = tail.filter(
       (l) =>
         l.startsWith(">") || l.trim() === "" || isDividerLine(l) || ATTRIBUTION_OPENERS.test(l),
     ).length;
-    if (quoteShaped / tail.length < GMAIL_QUOTE_RATIO) return whole;
+    if (quoteShaped / tail.length < QUOTE_PREFIX_RATIO) return whole;
   }
 
   let end = start;

@@ -85,15 +85,30 @@ describe("splitQuoted", () => {
     expect(splitQuoted(underscores).quotedLineCount).toBe(2);
   });
 
-  it("keeps a body that is quoted from the first line fully visible instead of a blank card", () => {
+  // A body that is quoted from its first line has no new text of its own. It
+  // folds like any other quote and the card reports that there is nothing new,
+  // rather than rendering the whole chain or a blank card.
+  it("folds a body that is quoted from the first line, leaving no visible text", () => {
     const body = "> only quoted\n> nothing else";
-    expect(splitQuoted(body)).toEqual({ visible: body, quoted: null, quotedLineCount: 0 });
+    expect(splitQuoted(body)).toEqual({ visible: "", quoted: body, quotedLineCount: 2 });
   });
 
-  it("keeps a forward that starts at the divider fully visible", () => {
+  it("folds a forward that starts at the divider", () => {
     const body =
       "---------- Forwarded message ---------\nFrom: AADE\n\nYour appointment is booked.";
-    expect(splitQuoted(body)).toEqual({ visible: body, quoted: null, quotedLineCount: 0 });
+    expect(splitQuoted(body)).toEqual({ visible: "", quoted: body, quotedLineCount: 4 });
+  });
+
+  it("folds a Yahoo reply that opens straight at the attribution line", () => {
+    const body = [
+      "Στις Τρίτη 28 Ιουλίου 2026 στις 11:19:31 π.μ. EEST, ο/η Chrisostomos Ftaklakis <chris_fta@yahoo.gr> έγραψε:  ",
+      " ",
+      "  Παλιό κείμενο.",
+    ].join("\n");
+
+    const split = splitQuoted(body);
+    expect(split.visible).toBe("");
+    expect(split.quotedLineCount).toBe(3);
   });
 
   it("does not fold an inline reply whose answers sit between '>' lines", () => {
@@ -108,6 +123,66 @@ describe("splitQuoted", () => {
       "Not yet, I never set it up.",
     ].join("\n");
     expect(splitQuoted(body)).toEqual({ visible: body, quoted: null, quotedLineCount: 0 });
+  });
+
+  // Yahoo (the partner's webmail) indents its attribution line, pads it with
+  // trailing spaces, writes "στις" twice, and then quotes the old message
+  // flush left with no "> " prefix anywhere. Structure preserved from real
+  // partner mail; addresses are the business counterparties, contents redacted.
+  const YAHOO_ATTRIBUTION =
+    "    Στις Πέμπτη 23 Ιουλίου 2026 στις 09:45:18 π.μ. EEST, ο/η Hello @ MyGreekTax <hello@mygreektax.eu> έγραψε:  ";
+
+  it("folds a Yahoo attribution whose quoted body carries no '>' prefixes", () => {
+    const body = [
+      "Καλημέρα ,",
+      "Ας το διορθώσουμε βάσει των σουηδικών εγγράφων.",
+      "",
+      YAHOO_ATTRIBUTION,
+      " ",
+      " Καλημέρα, Χρυσόστομε. ",
+      "Δύο ερωτήσεις πριν φτιάξουμε το Δ210.",
+      "",
+      "Ευχαριστώ.",
+    ].join("\n");
+
+    const split = splitQuoted(body);
+    expect(split.visible).toBe("Καλημέρα ,\nΑς το διορθώσουμε βάσει των σουηδικών εγγράφων.");
+    expect(split.quoted?.startsWith(YAHOO_ATTRIBUTION)).toBe(true);
+    expect(split.quoted).toContain("Δύο ερωτήσεις πριν φτιάξουμε το Δ210.");
+    expect(split.quotedLineCount).toBe(6);
+  });
+
+  it("folds a nested Yahoo chain from the first attribution line", () => {
+    const body = [
+      "Το ανέβασα στο TAXISnet.",
+      "",
+      "    Στις Τρίτη 28 Ιουλίου 2026 στις 11:19:31 π.μ. EEST, ο/η Chrisostomos Ftaklakis <chris_fta@yahoo.gr> έγραψε:  ",
+      " ",
+      "  Υ.Δ ΕΞΟΥΣΙΟΔΟΤΗΣΗΣ ΜΕ ΓΝΗΣΙΟ ΥΠΟΓΡΑΦΗΣ ",
+      "    Στις Τρίτη 28 Ιουλίου 2026 στις 10:44:37 π.μ. EEST, ο/η Hello @ MyGreekTax <hello@mygreektax.eu> έγραψε:  ",
+      " ",
+      " Παρακάτω τα στοιχεία για το Δ210:",
+    ].join("\n");
+
+    const split = splitQuoted(body);
+    expect(split.visible).toBe("Το ανέβασα στο TAXISnet.");
+    expect(split.quoted).toContain("11:19:31");
+    // The second, deeper attribution stays inside the folded tail.
+    expect(split.quoted).toContain("10:44:37");
+    expect(split.quotedLineCount).toBe(6);
+  });
+
+  it("tolerates a non-breaking space indent on the attribution line", () => {
+    const body = [
+      "Έγινε.",
+      "",
+      "\u00a0Στις Πέμπτη 23 Ιουλίου 2026 στις 09:45:18 π.μ. EEST, ο/η Hello @ MyGreekTax <hello@mygreektax.eu> έγραψε:\u00a0",
+      "Παλιό κείμενο.",
+    ].join("\n");
+
+    const split = splitQuoted(body);
+    expect(split.visible).toBe("Έγινε.");
+    expect(split.quotedLineCount).toBe(2);
   });
 
   it("does not fold prose where an 'On' line happens to precede a line ending 'wrote:'", () => {

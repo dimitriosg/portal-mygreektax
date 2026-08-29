@@ -950,9 +950,18 @@
 .mgt-case .tmsg.t-out {
   border-left-color: var(--mc-ok);
 }
+/* Partner mail keeps its own amber family and the INTERNAL tag in both
+   directions, but reads inbound from outbound at a glance the way the client
+   thread does: a deep filled rail and icon for what the partner sent, a pale
+   one for what went out to him. */
 .mgt-case .tmsg.t-partner {
-  border-left-color: #d9a05b;
   background: #fffdf8;
+}
+.mgt-case .tmsg.t-partner-in {
+  border-left-color: var(--mc-partner);
+}
+.mgt-case .tmsg.t-partner-out {
+  border-left-color: #e6c795;
 }
 .mgt-case .tmsg.t-note {
   border-left-color: var(--mc-ink-3);
@@ -993,7 +1002,11 @@
   background: #e7f2ea;
   color: var(--mc-ok);
 }
-.mgt-case .t-partner .dir {
+.mgt-case .t-partner-in .dir {
+  background: var(--mc-partner);
+  color: #fff;
+}
+.mgt-case .t-partner-out .dir {
   background: var(--mc-partner-bg);
   color: var(--mc-partner);
 }
