@@ -99,6 +99,11 @@ function ReviewCase() {
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState<string>("");
   const [hasDraft, setHasDraft] = useState(false);
+  // case_drafts.proposed_draft: what the send desk below the thread will send.
+  // The Draft tab reads case_draft_versions and compares against this, so a
+  // generation the version trigger failed to record is visible rather than
+  // silently presented as the current draft.
+  const [draftText, setDraftText] = useState<string>("");
   const [draftStamp, setDraftStamp] = useState<string>("none");
   // The newest case_draft_versions row, reported up by the Draft tab so the
   // Knowledge tab can show what that version drew on.
@@ -183,6 +188,7 @@ function ReviewCase() {
     setEventTotal(total);
     setEventsTruncated(total > rows.length);
     setHasDraft(!!draftData?.proposed_draft);
+    setDraftText((draftData?.proposed_draft as string) || "");
     setDraftStamp((draftData?.last_updated as string) || "none");
     setLoading(false);
   }, [caseId]);
@@ -584,7 +590,7 @@ function ReviewCase() {
               <CaseDraftDesk
                 conversationId={caseId}
                 refreshKey={draftStamp}
-                hasCurrentDraftRow={hasDraft}
+                currentDraftText={draftText}
                 onCurrentVersionChange={setCurrentVersion}
                 generateSlot={
                   <>

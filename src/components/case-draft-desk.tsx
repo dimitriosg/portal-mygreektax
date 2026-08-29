@@ -30,12 +30,16 @@ interface Props {
   /** Bumped by the route when a draft lands, to force a reload. */
   refreshKey?: string | number;
   /**
-   * Whether case_drafts still holds a current draft for this case. Two cases
-   * carry one with no version rows at all, because their draft predates the
-   * trigger that records versions. Without this the panel would report "no
-   * draft" while the send desk below the thread offers that very draft.
+   * case_drafts.proposed_draft, the text the send desk below the thread will
+   * actually send. This panel reads a different table, and the two are kept in
+   * step only by the record_case_draft_version() trigger, whose insert is
+   * wrapped in a warning-and-continue handler. So the text is passed in for
+   * two reasons: two cases hold a draft with no version rows at all (theirs
+   * predates the trigger), and a swallowed insert would otherwise leave this
+   * panel presenting a superseded generation as the current draft while the
+   * desk below holds something else.
    */
-  hasCurrentDraftRow?: boolean;
+  currentDraftText?: string | null;
   /** Reports the current version to the route, for the Knowledge tab. */
   onCurrentVersionChange?: (version: DraftVersionRow | null) => void;
   /** The Generate / Regenerate control, owned by the route. */
@@ -51,10 +55,11 @@ const SEND_BADGE: Record<SendState, { label: string; className: string }> = {
 export function CaseDraftDesk({
   conversationId,
   refreshKey,
-  hasCurrentDraftRow = false,
+  currentDraftText = null,
   onCurrentVersionChange,
   generateSlot,
 }: Props) {
+  const hasCurrentDraftRow = typeof currentDraftText === "string" && currentDraftText.length > 0;
   const [versions, setVersions] = useState<DraftVersionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -124,6 +129,9 @@ export function CaseDraftDesk({
   }, [compared]);
 
   const contextLine = current ? describeContext(current.context_used) : "";
+  // The send desk holds text this panel never recorded: say so rather than
+  // presenting a superseded generation as the current draft.
+  const diverged = !!current && hasCurrentDraftRow && current.draft_text !== currentDraftText;
 
   return (
     <>
@@ -147,6 +155,16 @@ export function CaseDraftDesk({
           This case has a draft, but it predates the version history and was never recorded here. It
           is still on the desk below the thread. Regenerating records a version.
         </p>
+      )}
+
+      {current && diverged && (
+        <div className="callout">
+          <span>
+            The draft on the send desk below the thread is not this version. A generation was not
+            recorded here, so v{current.version_no} is the newest one on record, not the newest one
+            written. Regenerating records a version and brings the two back into step.
+          </span>
+        </div>
       )}
 
       {current && (
