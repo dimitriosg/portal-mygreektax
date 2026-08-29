@@ -9,12 +9,14 @@ import { updateLead } from "@/lib/leads.functions";
 import { CLIENT_STAGES } from "@/lib/leads-shared";
 import { CaseSummary } from "@/components/case-summary";
 import { CaseNotes } from "@/components/CaseNotes";
-import { DraftHistory } from "@/components/DraftHistory";
 import { CasePartnerReplyBox } from "@/components/case-partner-reply-box";
 import { CaseThread } from "@/components/case-thread";
 import { CaseRail } from "@/components/case-rail";
+import { CaseDraftDesk } from "@/components/case-draft-desk";
+import { CaseKnowledge } from "@/components/case-knowledge";
 import { getCaseRail, type CaseRailData } from "@/lib/case-workspace.functions";
-import { athensFullStamp, isPartnerEvent, type ThreadEvent } from "@/lib/case-thread";
+import { isPartnerEvent, type ThreadEvent } from "@/lib/case-thread";
+import type { DraftVersionRow } from "@/lib/case-draft-versions";
 import { getErrorMessage } from "@/lib/auth-errors";
 
 // Case workspace. The route param $caseId is a brain_conversations.id.
@@ -97,8 +99,10 @@ function ReviewCase() {
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState<string>("");
   const [hasDraft, setHasDraft] = useState(false);
-  const [draftText, setDraftText] = useState<string>("");
   const [draftStamp, setDraftStamp] = useState<string>("none");
+  // The newest case_draft_versions row, reported up by the Draft tab so the
+  // Knowledge tab can show what that version drew on.
+  const [currentVersion, setCurrentVersion] = useState<DraftVersionRow | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string>("");
   const [deskTab, setDeskTab] = useState<DeskTab>("draft");
@@ -179,7 +183,6 @@ function ReviewCase() {
     setEventTotal(total);
     setEventsTruncated(total > rows.length);
     setHasDraft(!!draftData?.proposed_draft);
-    setDraftText((draftData?.proposed_draft as string) || "");
     setDraftStamp((draftData?.last_updated as string) || "none");
     setLoading(false);
   }, [caseId]);
@@ -578,61 +581,55 @@ function ReviewCase() {
             {/* Tabs stay mounted (hidden, not unmounted) so notes keep loading
                 and in-progress edits survive a tab switch. */}
             <div className="desk-body" hidden={deskTab !== "draft"}>
-              <div className="reply-foot" style={{ marginTop: 0 }}>
-                <button
-                  className={hasDraft ? "btn btn-sm" : "btn btn-solid btn-sm"}
-                  onClick={generate}
-                  disabled={generating}
-                  title={
-                    hasDraft
-                      ? "Regenerate: runs the Brain again and replaces the current draft"
-                      : "Runs the Brain once for this case. Costs a single AI call."
-                  }
-                >
-                  {generating
-                    ? hasDraft
-                      ? "Regenerating..."
-                      : "Generating..."
-                    : hasDraft
-                      ? "Regenerate draft"
-                      : "Generate draft"}
-                </button>
-                <DraftHistory conversationId={caseId} refreshKey={draftStamp} />
-              </div>
-              {/* The Brain currently reads the whole thread; per-message and
-                  per-note selection is not wired into drafting yet, so no
-                  claim about included context is made here. */}
-              <p className="stamp">
-                Runs the Brain once over the full case thread. The in-context toggles are not read
-                by drafting yet.
-              </p>
+              <CaseDraftDesk
+                conversationId={caseId}
+                refreshKey={draftStamp}
+                hasCurrentDraftRow={hasDraft}
+                onCurrentVersionChange={setCurrentVersion}
+                generateSlot={
+                  <>
+                    <div className="reply-foot" style={{ marginTop: 0 }}>
+                      <button
+                        className={hasDraft ? "btn btn-sm" : "btn btn-solid btn-sm"}
+                        onClick={generate}
+                        disabled={generating}
+                        title={
+                          hasDraft
+                            ? "Regenerate: runs the Brain again and adds a new version"
+                            : "Runs the Brain once for this case. Costs a single AI call."
+                        }
+                      >
+                        {generating
+                          ? hasDraft
+                            ? "Regenerating..."
+                            : "Generating..."
+                          : hasDraft
+                            ? "Regenerate draft"
+                            : "Generate draft"}
+                      </button>
+                    </div>
+                    {/* The Brain currently reads the whole thread; per-message
+                        and per-note selection is not wired into drafting yet,
+                        so no claim about included context is made here. */}
+                    <p className="stamp">
+                      Runs the Brain once over the full case thread. The in-context toggles are not
+                      read by drafting yet.
+                    </p>
 
-              {generating && (
-                <p className="empty">
-                  The Brain is reading the conversation and drafting a reply. This usually takes
-                  about a minute.
-                </p>
-              )}
-              {genError && (
-                <p className="text-sm text-red-600 border border-red-200 bg-red-50 rounded px-3 py-2">
-                  {genError}
-                </p>
-              )}
-
-              {!hasDraft && !generating && (
-                <p className="empty">No draft yet. Nothing is sent until you review and approve.</p>
-              )}
-
-              {hasDraft && (
-                <>
-                  <div className="rail-div" />
-                  {draftStamp !== "none" && (
-                    <p className="stamp">Current draft, {athensFullStamp(draftStamp)}</p>
-                  )}
-                  <div className="draft-preview">{draftText}</div>
-                  <p className="stamp">Review, edit and send from the desk below the thread.</p>
-                </>
-              )}
+                    {generating && (
+                      <p className="empty">
+                        The Brain is reading the conversation and drafting a reply. This usually
+                        takes about a minute.
+                      </p>
+                    )}
+                    {genError && (
+                      <p className="text-sm text-red-600 border border-red-200 bg-red-50 rounded px-3 py-2">
+                        {genError}
+                      </p>
+                    )}
+                  </>
+                }
+              />
             </div>
 
             <div className="desk-body" hidden={deskTab !== "notes"}>
@@ -644,10 +641,7 @@ function ReviewCase() {
             </div>
 
             <div className="desk-body" hidden={deskTab !== "knowledge"}>
-              <p className="empty">
-                Not wired yet. The knowledge entries the current draft used, and any past their
-                review date, arrive with the draft desk work.
-              </p>
+              <CaseKnowledge currentVersion={currentVersion} />
             </div>
           </section>
         </aside>

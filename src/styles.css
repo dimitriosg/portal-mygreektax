@@ -1117,6 +1117,84 @@
 .mgt-case .desk-body.desk-flush > .card {
   border: 0;
 }
+/* ---------- draft versions (desk Draft tab) ---------- */
+.mgt-case .ver-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.mgt-case .ver-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--mc-ink-2);
+}
+.mgt-case .ver-row .spacer {
+  flex: 1;
+}
+/* The rail is narrow; a wrapped badge turns every row into two ragged lines. */
+.mgt-case .ver-row .badge-sent,
+.mgt-case .ver-row .badge-super,
+.mgt-case .ver-head .badge-sent,
+.mgt-case .ver-head .badge-super,
+.mgt-case .ver-row .when {
+  white-space: nowrap;
+}
+.mgt-case .ver-head .spacer {
+  flex: 1;
+}
+/* Side by side only where there is room; the rail sheet is wide enough, the
+   rail itself is not. */
+.mgt-case-sheet .ver-compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  align-items: start;
+}
+@media (max-width: 700px) {
+  .mgt-case-sheet .ver-compare {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---------- knowledge entries (desk Knowledge tab) ---------- */
+.mgt-case .kb-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.mgt-case .kb-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid var(--mc-line);
+}
+.mgt-case .kb-row:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+.mgt-case .kb-title {
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--mc-ink);
+}
+.mgt-case .kb-meta {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--mc-ink-3);
+}
+.mgt-case .kb-cat {
+  background: #eef0f3;
+  border-radius: 4px;
+  padding: 1px 6px;
+  color: var(--mc-ink-2);
+}
+
 .mgt-case .draft-preview {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
