@@ -231,7 +231,9 @@ export function CaseSummary({ caseId }: CaseSummaryProps) {
           {hasSummary && row?.generated_at && (
             <span className="stamp" style={{ marginRight: 4 }}>
               Updated {formatWhen(row.generated_at)}
-              {typeof row.event_count === "number" ? `, over ${row.event_count} messages` : ""}
+              {typeof row.event_count === "number"
+                ? `, over ${row.event_count} message${row.event_count === 1 ? "" : "s"}`
+                : ""}
             </span>
           )}
           <button

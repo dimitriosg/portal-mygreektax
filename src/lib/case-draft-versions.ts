@@ -41,11 +41,6 @@ export function sendState(
   return "sent_as_is";
 }
 
-/** True when both texts exist and differ, so a side by side view has a point. */
-export function hasComparison(v: Pick<DraftVersionRow, "draft_text" | "sent_text">): boolean {
-  return typeof v.sent_text === "string" && v.sent_text !== v.draft_text;
-}
-
 /**
  * sent_text as the reader received it, rather than as markup.
  *

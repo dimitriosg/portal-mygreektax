@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   describeContext,
-  hasComparison,
   htmlToPlainText,
   knowledgeIdsFromContext,
   later,
@@ -70,14 +69,6 @@ describe("sendState", () => {
   it("treats a send with no recorded text as as-is rather than guessing", () => {
     const noText = { ...base, sent_at: "2026-07-02T09:15:00Z", sent_mode: null, sent_text: null };
     expect(sendState(noText)).toBe("sent_as_is");
-  });
-});
-
-describe("hasComparison", () => {
-  it("is true only when both texts exist and differ", () => {
-    expect(hasComparison({ draft_text: "a", sent_text: "b" })).toBe(true);
-    expect(hasComparison({ draft_text: "a", sent_text: "a" })).toBe(false);
-    expect(hasComparison({ draft_text: "a", sent_text: null })).toBe(false);
   });
 });
 

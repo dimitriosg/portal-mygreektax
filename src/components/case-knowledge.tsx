@@ -142,10 +142,14 @@ export function CaseKnowledge({ currentVersion }: Props) {
 
       {!loading && !error && (
         <>
+          {/* Deliberately not "no draft on this case": two cases hold a draft
+              that predates the version trigger and so have no version row for
+              this tab to read. What is true either way is that no version
+              records its sources. */}
           {!currentVersion && (
             <p className="stamp">
-              No draft on this case yet. These are the entries the Brain is eligible to inject when
-              one is generated.
+              No recorded draft version on this case. These are the entries the Brain is eligible to
+              inject when one is generated.
             </p>
           )}
 

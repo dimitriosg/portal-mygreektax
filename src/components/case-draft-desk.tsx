@@ -254,7 +254,14 @@ export function CaseDraftDesk({
                     {athensStamp(v.generated_at)}
                   </span>
                   <span className="spacer" />
-                  <span className={SEND_BADGE[state].className}>{SEND_BADGE[state].label}</span>
+                  <span
+                    className={SEND_BADGE[state].className}
+                    title={
+                      v.sent_at ? `Sent ${athensFullStamp(v.sent_at)}` : "Never sent to the client"
+                    }
+                  >
+                    {SEND_BADGE[state].label}
+                  </span>
                   <button
                     className="btn btn-sm"
                     onClick={() => setCompareId(v.id)}
@@ -308,6 +315,14 @@ export function CaseDraftDesk({
                 {describeContext(compared.context_used)
                   ? ` · ${describeContext(compared.context_used)}`
                   : ""}
+              </p>
+
+              <p className="stamp">
+                {compared.sent_at
+                  ? `Sent ${athensFullStamp(compared.sent_at)}, ${
+                      sendState(compared) === "sent_edited" ? "edited first" : "unchanged"
+                    }.`
+                  : "Never sent to the client."}
               </p>
 
               {sendState(compared) === "sent_edited" && compared.sent_text ? (
