@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
 import { requireAdminAccess } from "./access-context.server";
+import { isOverdueEligibleStatus, JOB_STATUSES } from "./airtable-shared";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 // Left-rail data for the case workspace: payments received and open job items
@@ -40,6 +41,16 @@ export interface CaseRailData {
   jobs: CaseRailJob[];
 }
 
+// Only jobs in an open (overdue-eligible) status are open items, so the query
+// filters on status BEFORE its row cap: otherwise a client with more than 20
+// jobs could have an older Pending job pushed out of the window by newer
+// completed ones and vanish from the rail. "Sent" is a legacy status the
+// overdue-eligible set covers but JOB_STATUSES no longer lists.
+const OPEN_JOB_STATUSES = [
+  ...JOB_STATUSES.filter((status) => isOverdueEligibleStatus(status)),
+  "Sent",
+];
+
 export const getCaseRail = createServerFn({ method: "GET" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((d: { clientId: string }) => z.object({ clientId: RECORD_ID }).parse(d))
@@ -61,6 +72,7 @@ export const getCaseRail = createServerFn({ method: "GET" })
         .from("jobs")
         .select("id, job_code, status, next_action_needed, sla_deadline")
         .eq("client_id", data.clientId)
+        .in("status", OPEN_JOB_STATUSES)
         .order("created_at", { ascending: false })
         .limit(20),
     ]);
