@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   describeContext,
   hasComparison,
+  htmlToPlainText,
   knowledgeIdsFromContext,
+  looksLikeHtml,
   sendState,
   type DraftVersionRow,
 } from "./case-draft-versions";
@@ -75,6 +77,48 @@ describe("hasComparison", () => {
     expect(hasComparison({ draft_text: "a", sent_text: "b" })).toBe(true);
     expect(hasComparison({ draft_text: "a", sent_text: "a" })).toBe(false);
     expect(hasComparison({ draft_text: "a", sent_text: null })).toBe(false);
+  });
+});
+
+describe("htmlToPlainText", () => {
+  it("renders a stored send as the client read it", () => {
+    // Shape taken from the one real sent row: TipTap paragraphs, a <br>, then
+    // the stitched signature with inline styles and a link.
+    const sent =
+      "<p>Thank you for your message. We are reviewing the details.</p><br>" +
+      "<p>Με εκτίμηση,<br><strong>MyGreekTax Team</strong><br></p>" +
+      '<p><span style="color: rgb(107, 114, 128);">Greek tax &amp; admin, in English</span><br>' +
+      '<a target="_blank" href="https://mygreektax.eu">mygreektax.eu</a></p>';
+
+    const text = htmlToPlainText(sent);
+    expect(text).toContain("Thank you for your message.");
+    expect(text).toContain("Με εκτίμηση,");
+    expect(text).toContain("MyGreekTax Team");
+    expect(text).toContain("Greek tax & admin, in English");
+    expect(text).not.toContain("<");
+    expect(text).not.toContain("&amp;");
+    expect(text).not.toMatch(/\n{3,}/);
+  });
+
+  it("leaves plain text alone", () => {
+    expect(htmlToPlainText("Hello Marta,\n\nThe M1 is filed.")).toBe(
+      "Hello Marta,\n\nThe M1 is filed.",
+    );
+  });
+
+  it("decodes the entities the desk emits", () => {
+    expect(htmlToPlainText("<p>a &lt; b &amp; c &gt; d &quot;e&quot; &#39;f&#39;&nbsp;g</p>")).toBe(
+      "a < b & c > d \"e\" 'f' g",
+    );
+  });
+});
+
+describe("looksLikeHtml", () => {
+  it("tells a stored send from a plain draft", () => {
+    expect(looksLikeHtml("<p>Hello</p>")).toBe(true);
+    expect(looksLikeHtml("Hello Marta,\n\nThe M1 is filed.")).toBe(false);
+    // A draft may legitimately mention a comparison without being markup.
+    expect(looksLikeHtml("The fee is < 100 euro and > 50 euro.")).toBe(false);
   });
 });
 

@@ -807,6 +807,9 @@
 }
 .mgt-case .ver-body {
   white-space: pre-wrap;
+  /* Signature URLs are one unbreakable token and would push the compare pane
+     past its column without this. */
+  overflow-wrap: anywhere;
   font-size: 13px;
   color: #33414f;
   border-left: 2px solid var(--mc-line-2);

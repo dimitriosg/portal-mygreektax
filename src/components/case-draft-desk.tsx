@@ -4,6 +4,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { athensFullStamp, athensStamp } from "@/lib/case-thread";
 import {
   describeContext,
+  htmlToPlainText,
+  looksLikeHtml,
   sendState,
   type DraftVersionRow,
   type SendState,
@@ -296,7 +298,13 @@ export function CaseDraftDesk({
                   </div>
                   <div>
                     <div className="sum-label">What was sent</div>
-                    <div className="ver-body">{compared.sent_text}</div>
+                    {/* Stored as the signed HTML the desk posted, so it is
+                        shown as the client read it, not as markup. */}
+                    <div className="ver-body">
+                      {looksLikeHtml(compared.sent_text)
+                        ? htmlToPlainText(compared.sent_text)
+                        : compared.sent_text}
+                    </div>
                   </div>
                 </div>
               ) : (

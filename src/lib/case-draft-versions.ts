@@ -47,6 +47,39 @@ export function hasComparison(v: Pick<DraftVersionRow, "draft_text" | "sent_text
 }
 
 /**
+ * sent_text as the reader received it, rather than as markup.
+ *
+ * draft_text is the Brain's plain text, but sent_text never is: the desk turns
+ * the draft into paragraph HTML and stitches the signature on before posting,
+ * and /webhooks/send-approved stores that HTML verbatim. Rendering it beside
+ * the draft without this shows the operator angle brackets instead of the
+ * email, which defeats the one comparison the panel exists to make.
+ *
+ * Mirrors htmlToText in /webhooks/send-approved, which turns the same HTML
+ * into the plain text part of the outgoing mail, so the two panes are compared
+ * on the same footing.
+ */
+export function htmlToPlainText(html: string): string {
+  return html
+    .replace(/<\s*br\s*\/?>/gi, "\n")
+    .replace(/<\/\s*(p|div|li|h[1-6])\s*>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/** True when the text carries markup, i.e. it is a stored send rather than a draft. */
+export function looksLikeHtml(text: string): boolean {
+  return /<\/?[a-z][^>]*>/i.test(text);
+}
+
+/**
  * Human summary of context_used, e.g. "6 messages, 2 notes".
  *
  * Every row in the table carries an empty object today: rows are inserted by
