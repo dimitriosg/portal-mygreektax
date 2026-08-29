@@ -114,7 +114,11 @@ export function CaseSummary({ caseId }: CaseSummaryProps) {
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string>("");
-  const [expanded, setExpanded] = useState(false);
+  // Open once a summary has loaded. This panel is reached by choosing the
+  // Summary tab, so starting collapsed answered that choice with the words
+  // "Summary collapsed." and nothing else on every case that already has one.
+  // The control stays, for folding a long summary back out of the way.
+  const [expanded, setExpanded] = useState(true);
   const cancelled = useRef(false);
 
   useEffect(() => {
@@ -227,6 +231,9 @@ export function CaseSummary({ caseId }: CaseSummaryProps) {
           {hasSummary && row?.generated_at && (
             <span className="stamp" style={{ marginRight: 4 }}>
               Updated {formatWhen(row.generated_at)}
+              {typeof row.event_count === "number"
+                ? `, over ${row.event_count} message${row.event_count === 1 ? "" : "s"}`
+                : ""}
             </span>
           )}
           <button
