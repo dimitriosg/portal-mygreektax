@@ -1,4 +1,6 @@
 import { formatDate } from "@/lib/utils";
+import { athensDayKey } from "@/lib/case-thread";
+import { isOverdueEligibleStatus } from "@/lib/airtable-shared";
 import type { CaseRailData } from "@/lib/case-workspace.functions";
 
 // Left rail of the case workspace: who the client is, the money position, and
@@ -30,16 +32,31 @@ function euro(value: number | null, currency = "EUR"): string {
   return new Intl.NumberFormat("en-GB", { style: "currency", currency }).format(Number(value));
 }
 
+// sla_deadline is a plain date; a deadline is past once the Athens calendar
+// has moved beyond it, regardless of the viewer's timezone. Due today is not
+// yet overdue.
 function isPastDue(iso: string | null): boolean {
   if (!iso) return false;
-  const d = new Date(`${iso}T23:59:59`);
-  return !Number.isNaN(d.getTime()) && d.getTime() < Date.now();
+  const today = athensDayKey(new Date().toISOString());
+  return !!today && iso < today;
+}
+
+// An actionable next action; completing a job auto-writes the literal "None".
+function actionLabel(value: string | null): string | null {
+  return value && value !== "None" ? value : null;
 }
 
 export function CaseRail({ client, rail, railError, loading }: Props) {
   const payments = rail?.payments ?? [];
   const jobs = rail?.jobs ?? [];
-  const openJobs = jobs.filter((j) => j.next_action_needed || j.sla_deadline);
+  // Finished jobs keep their sla_deadline and get next_action_needed "None"
+  // written at completion, so both the status gate and the "None" check are
+  // load-bearing here; without them every completed job reads as open and
+  // overdue forever.
+  const openJobs = jobs.filter(
+    (j) =>
+      isOverdueEligibleStatus(j.status) && (actionLabel(j.next_action_needed) || j.sla_deadline),
+  );
 
   return (
     <>
@@ -146,7 +163,7 @@ export function CaseRail({ client, rail, railError, loading }: Props) {
             <ul className="rail-items">
               {openJobs.map((j) => (
                 <li key={j.id}>
-                  <span>{j.next_action_needed || j.status || "Job in progress"}</span>
+                  <span>{actionLabel(j.next_action_needed) || j.status || "Job in progress"}</span>
                   <span className={`stamp ${isPastDue(j.sla_deadline) ? "due-over" : ""}`}>
                     {j.job_code ? `${j.job_code} ` : ""}
                     {j.sla_deadline ? `due ${formatDate(j.sla_deadline)}` : ""}

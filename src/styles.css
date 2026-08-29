@@ -954,6 +954,15 @@
   border-left-color: #d9a05b;
   background: #fffdf8;
 }
+.mgt-case .tmsg.t-note {
+  border-left-color: var(--mc-ink-3);
+  border-left-style: dashed;
+  background: #fafaf8;
+}
+.mgt-case .t-note .dir {
+  background: #efeee9;
+  color: var(--mc-ink-3);
+}
 .mgt-case .tmsg-head {
   display: flex;
   align-items: center;

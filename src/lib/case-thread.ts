@@ -46,31 +46,61 @@ const QUOTE_DIVIDERS = [
   /^_{6,}\s*$/,
 ];
 
-function isQuoteStart(lines: string[], i: number): boolean {
-  const line = lines[i];
-  if (line.startsWith(">")) return true;
-  if (QUOTE_DIVIDERS.some((d) => d.test(line))) return true;
-  if (ATTRIBUTION_OPENERS.test(line)) {
-    const horizon = Math.min(i + 3, lines.length);
-    for (let j = i; j < horizon; j++) {
-      if (ATTRIBUTION_CLOSER.test(lines[j])) return true;
-    }
+// A Gmail-style tail only folds when it really is a quote block: at least this
+// share of its lines must be quote-shaped. Inline replies (answers interleaved
+// between "> " lines) fall below it and stay fully visible.
+const GMAIL_QUOTE_RATIO = 0.9;
+
+function isDividerLine(line: string): boolean {
+  return QUOTE_DIVIDERS.some((d) => d.test(line));
+}
+
+function isAttributionAt(lines: string[], i: number): boolean {
+  if (!ATTRIBUTION_OPENERS.test(lines[i])) return false;
+  const horizon = Math.min(i + 3, lines.length);
+  for (let j = i; j < horizon; j++) {
+    if (ATTRIBUTION_CLOSER.test(lines[j])) return true;
   }
   return false;
 }
 
 export function splitQuoted(body: string): QuotedSplit {
   const lines = body.split(/\r\n|\n|\r/);
+  const whole: QuotedSplit = { visible: body, quoted: null, quotedLineCount: 0 };
 
   let start = -1;
+  let gmailStyle = false;
   for (let i = 0; i < lines.length; i++) {
-    if (isQuoteStart(lines, i)) {
+    if (lines[i].startsWith(">")) {
+      start = i;
+      gmailStyle = true;
+      break;
+    }
+    if (isDividerLine(lines[i])) {
       start = i;
       break;
     }
+    if (isAttributionAt(lines, i)) {
+      start = i;
+      gmailStyle = true;
+      break;
+    }
   }
-  if (start === -1) {
-    return { visible: body, quoted: null, quotedLineCount: 0 };
+  if (start === -1) return whole;
+
+  // A body that begins at a quote marker (a forward, or a reply that is all
+  // quote) has no author text of its own: folding would render a blank card,
+  // so show everything instead.
+  const hasOwnText = lines.slice(0, start).some((l) => l.trim() !== "");
+  if (!hasOwnText) return whole;
+
+  const tail = lines.slice(start);
+  if (gmailStyle) {
+    const quoteShaped = tail.filter(
+      (l) =>
+        l.startsWith(">") || l.trim() === "" || isDividerLine(l) || ATTRIBUTION_OPENERS.test(l),
+    ).length;
+    if (quoteShaped / tail.length < GMAIL_QUOTE_RATIO) return whole;
   }
 
   let end = start;

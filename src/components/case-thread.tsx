@@ -8,6 +8,7 @@ import {
   athensStamp,
   isPartnerEvent,
   splitQuoted,
+  type QuotedSplit,
   type ThreadEvent,
 } from "@/lib/case-thread";
 
@@ -42,16 +43,29 @@ interface Props {
   syncSlot?: ReactNode;
   /** Status line from the route's Gmail sync, shown under the header. */
   statusLine?: string;
-  /** Reports how many partner messages are currently marked in context. */
-  onPartnerIncludedChange?: (count: number) => void;
   /** Called after a partner sync is accepted, so the page can refresh events. */
   onSynced?: () => void;
 }
 
-function whoLabel(e: ThreadEvent, clientName: string | null): string {
-  const inbound = isInbound(e);
-  if (isPartnerEvent(e)) return inbound ? "Partner" : "To partner";
-  return inbound ? clientName || "Client" : "You";
+// Cards come in four kinds: client mail in, client mail out, partner mail
+// (either direction), and internal notes, which were never emailed to anyone.
+// Notes get their own look and a NOTE tag so a log line can never be mistaken
+// for mail the client received (brain_events also carries actor "system" and
+// direction "internal" rows via the conversation-log webhook).
+type CardKind = "in" | "out" | "partner" | "note";
+
+function cardKind(e: ThreadEvent): CardKind {
+  if (isPartnerEvent(e)) return "partner";
+  if (e.event_type === "internal_note" || e.direction === "internal" || e.actor === "system") {
+    return "note";
+  }
+  return isInbound(e) ? "in" : "out";
+}
+
+function whoLabel(e: ThreadEvent, kind: CardKind, clientName: string | null): string {
+  if (kind === "partner") return isInbound(e) ? "Partner" : "To partner";
+  if (kind === "note") return e.actor === "system" ? "System" : "You";
+  return kind === "in" ? clientName || "Client" : "You";
 }
 
 function isInbound(e: ThreadEvent): boolean {
@@ -67,7 +81,6 @@ export function CaseThread({
   truncated,
   syncSlot,
   statusLine,
-  onPartnerIncludedChange,
   onSynced,
 }: Props) {
   const [tab, setTab] = useState<TabId>("client");
@@ -88,26 +101,37 @@ export function CaseThread({
   );
   const inContext = (id: string) => ctxOverrides[id] ?? defaultOn.has(id);
 
-  const partnerIncluded = useMemo(
-    () => partnerEvents.filter((e) => ctxOverrides[e.id] ?? defaultOn.has(e.id)).length,
-    [partnerEvents, ctxOverrides, defaultOn],
-  );
-  useEffect(() => {
-    onPartnerIncludedChange?.(partnerIncluded);
-  }, [partnerIncluded, onPartnerIncludedChange]);
-
+  // Splitting is cached across refreshes: load() replaces the events array
+  // every realtime tick and sync poll, and re-splitting hundreds of 100k-char
+  // bodies each time would stall the tab. Bodies are effectively immutable, so
+  // an entry is reused while its length matches; the rebuild drops entries for
+  // events no longer present.
+  const splitCacheRef = useRef<Map<string, { len: number; split: QuotedSplit }>>(new Map());
   const splits = useMemo(() => {
-    const m = new Map<string, ReturnType<typeof splitQuoted>>();
-    for (const e of events) m.set(e.id, splitQuoted(e.body_text ?? ""));
-    return m;
+    const prev = splitCacheRef.current;
+    const next = new Map<string, { len: number; split: QuotedSplit }>();
+    for (const e of events) {
+      const body = e.body_text ?? "";
+      const cached = prev.get(e.id);
+      next.set(
+        e.id,
+        cached && cached.len === body.length
+          ? cached
+          : { len: body.length, split: splitQuoted(body) },
+      );
+    }
+    splitCacheRef.current = next;
+    return next;
   }, [events]);
 
-  // Keep the view pinned to the newest message when the thread grows or the
-  // tab changes; the reader scrolls up for history.
+  // Keep the view pinned to the newest message when the visible thread grows
+  // or the tab changes; the reader scrolls up for history. Keyed to the shown
+  // list so mail landing in the other tab does not yank this pane.
+  const shownLength = shown.length;
   useEffect(() => {
     const el = paneRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [tab, events.length, loading]);
+  }, [tab, shownLength, loading]);
 
   const toggleQuote = (id: string) => {
     setOpenQuotes((prev) => {
@@ -240,9 +264,8 @@ export function CaseThread({
               const showSubject = subject !== null && subject !== prevSubject;
               prevSubject = subject;
 
-              const partner = isPartnerEvent(e);
-              const inbound = isInbound(e);
-              const split = splits.get(e.id) ?? {
+              const kind = cardKind(e);
+              const split = splits.get(e.id)?.split ?? {
                 visible: e.body_text ?? "",
                 quoted: null,
                 quotedLineCount: 0,
@@ -255,15 +278,16 @@ export function CaseThread({
                   {showDay && (
                     <div className="day-div">{athensDayLabel(e.occurred_at) || "Undated"}</div>
                   )}
-                  <article className={`tmsg ${partner ? "t-partner" : inbound ? "t-in" : "t-out"}`}>
+                  <article className={`tmsg t-${kind}`}>
                     <div className="tmsg-head">
                       <span className="dir" aria-hidden="true">
-                        {inbound ? "←" : "→"}
+                        {kind === "note" ? "•" : isInbound(e) ? "←" : "→"}
                       </span>
                       <span className="who" title={e.from_email ?? undefined}>
-                        {whoLabel(e, clientName)}
+                        {whoLabel(e, kind, clientName)}
                       </span>
-                      {partner && <span className="tag tag-internal">INTERNAL</span>}
+                      {kind === "partner" && <span className="tag tag-internal">INTERNAL</span>}
+                      {kind === "note" && <span className="tag tag-internal">NOTE</span>}
                       <span className="spacer" />
                       <span className="when" title={athensFullStamp(e.occurred_at)}>
                         {athensStamp(e.occurred_at)}
@@ -294,8 +318,8 @@ export function CaseThread({
                         onClick={() => toggleContext(e.id)}
                         title={
                           included
-                            ? "Handed to the Brain when a draft is generated"
-                            : "Left out when a draft is generated"
+                            ? "Marked as Brain context. Drafting does not read this yet."
+                            : "Marked out of Brain context. Drafting does not read this yet."
                         }
                       >
                         <span className="ctx-box" aria-hidden="true" />

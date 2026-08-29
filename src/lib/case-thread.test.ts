@@ -77,19 +77,49 @@ describe("splitQuoted", () => {
     expect(split.quotedLineCount).toBe(2);
   });
 
-  it("folds Outlook-style dividers", () => {
-    const original = "Fine by me.\n\n-----Original Message-----\nFrom: someone";
-    expect(splitQuoted(original).quotedLineCount).toBe(2);
+  it("folds Outlook-style dividers even though their tail carries no '>' prefixes", () => {
+    const original = "Fine by me.\n\n-----Original Message-----\nFrom: someone\nHello there";
+    expect(splitQuoted(original).quotedLineCount).toBe(3);
 
     const underscores = "Fine by me.\n\n________________\nFrom: someone";
     expect(splitQuoted(underscores).quotedLineCount).toBe(2);
   });
 
-  it("handles a body that is quoted text from the first line", () => {
+  it("keeps a body that is quoted from the first line fully visible instead of a blank card", () => {
     const body = "> only quoted\n> nothing else";
-    const split = splitQuoted(body);
-    expect(split.visible).toBe("");
-    expect(split.quotedLineCount).toBe(2);
+    expect(splitQuoted(body)).toEqual({ visible: body, quoted: null, quotedLineCount: 0 });
+  });
+
+  it("keeps a forward that starts at the divider fully visible", () => {
+    const body =
+      "---------- Forwarded message ---------\nFrom: AADE\n\nYour appointment is booked.";
+    expect(splitQuoted(body)).toEqual({ visible: body, quoted: null, quotedLineCount: 0 });
+  });
+
+  it("does not fold an inline reply whose answers sit between '>' lines", () => {
+    const body = [
+      "Hi Dimitris,",
+      "",
+      "> Do you have an AFM?",
+      "Yes, since 2019.",
+      "> Any rental income?",
+      "No, none at all.",
+      "> Can you access TAXISnet?",
+      "Not yet, I never set it up.",
+    ].join("\n");
+    expect(splitQuoted(body)).toEqual({ visible: body, quoted: null, quotedLineCount: 0 });
+  });
+
+  it("does not fold prose where an 'On' line happens to precede a line ending 'wrote:'", () => {
+    const body = [
+      "Quick update.",
+      "",
+      "On Monday I will send the documents.",
+      "Here is what the notary wrote:",
+      "1) The deed needs an apostille.",
+      "2) The translation must be certified.",
+    ].join("\n");
+    expect(splitQuoted(body)).toEqual({ visible: body, quoted: null, quotedLineCount: 0 });
   });
 });
 

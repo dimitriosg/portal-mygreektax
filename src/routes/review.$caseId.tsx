@@ -89,6 +89,9 @@ function ReviewCase() {
   const [conversation, setConversation] = useState<ConversationInfo | null>(null);
   const [client, setClient] = useState<ClientInfo | null>(null);
   const [events, setEvents] = useState<ThreadEvent[]>([]);
+  // Total rows in the database for this case, which can exceed the fetched
+  // window; drives the truncation notice and the sync progress counter.
+  const [eventTotal, setEventTotal] = useState(0);
   const [eventsTruncated, setEventsTruncated] = useState(false);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -105,11 +108,6 @@ function ReviewCase() {
   const [rail, setRail] = useState<CaseRailData | null>(null);
   const [railError, setRailError] = useState<string>("");
 
-  // Context counters, shown next to Generate so the cost of a run is visible
-  // before it is spent.
-  const [includedNotes, setIncludedNotes] = useState(0);
-  const [includedPartner, setIncludedPartner] = useState(0);
-
   // Editable lead fields (draft state, seeded once from the client row).
   const [stageDraft, setStageDraft] = useState<string>("");
   const [nextActionDraft, setNextActionDraft] = useState<string>("");
@@ -124,17 +122,22 @@ function ReviewCase() {
   const syncRef = useRef<{ start: number; lastActivity: number; baseline: number } | null>(null);
   const eventCountRef = useRef(0);
   const prevCountRef = useRef(0);
+  // Monotonic guard: overlapping load() calls (realtime fires one per insert)
+  // can resolve out of order, and an older snapshot must not overwrite a newer
+  // one. Only the most recently started load commits its results.
+  const loadSeqRef = useRef(0);
 
   const load = useCallback(async () => {
+    const seq = ++loadSeqRef.current;
+
     const { data: convData } = await supabase
       .from("brain_conversations")
       .select("id, case_serial_id, customer_email, stage, client_id")
       .eq("id", caseId)
       .maybeSingle();
-
     const conv = (convData as ConversationInfo | null) ?? null;
-    setConversation(conv);
 
+    let clientRow: ClientInfo | null = null;
     if (conv?.client_id) {
       const { data: clientData } = await supabase
         .from("clients")
@@ -143,21 +146,23 @@ function ReviewCase() {
         )
         .eq("id", conv.client_id)
         .maybeSingle();
-      setClient((clientData as ClientInfo | null) ?? null);
+      clientRow = (clientData as ClientInfo | null) ?? null;
     }
 
     // Newest first so the cap trims history, not the present; reversed so the
-    // thread renders oldest first, newest at the bottom.
-    const { data: eventData } = await supabase
+    // thread renders oldest first, newest at the bottom. The exact count keeps
+    // the truncation notice and the sync progress honest past the cap.
+    const { data: eventData, count: eventCount } = await supabase
       .from("brain_events")
-      .select("id, event_type, actor, direction, from_email, subject, body_text, occurred_at")
+      .select("id, event_type, actor, direction, from_email, subject, body_text, occurred_at", {
+        count: "exact",
+      })
       .eq("conversation_id", caseId)
       .order("occurred_at", { ascending: false })
       .order("created_at", { ascending: false })
       .limit(EVENT_FETCH_LIMIT);
     const rows = ((eventData as ThreadEvent[] | null) ?? []).slice().reverse();
-    setEvents(rows);
-    setEventsTruncated(rows.length === EVENT_FETCH_LIMIT);
+    const total = eventCount ?? rows.length;
 
     // Does a draft already exist for this case?
     const { data: draftData } = await supabase
@@ -165,10 +170,17 @@ function ReviewCase() {
       .select("case_id, proposed_draft, last_updated")
       .eq("case_id", caseId)
       .maybeSingle();
+
+    if (seq !== loadSeqRef.current) return;
+
+    setConversation(conv);
+    if (conv?.client_id) setClient(clientRow);
+    setEvents(rows);
+    setEventTotal(total);
+    setEventsTruncated(total > rows.length);
     setHasDraft(!!draftData?.proposed_draft);
     setDraftText((draftData?.proposed_draft as string) || "");
     setDraftStamp((draftData?.last_updated as string) || "none");
-
     setLoading(false);
   }, [caseId]);
 
@@ -243,15 +255,16 @@ function ReviewCase() {
     }
   }, [conversation?.client_id, client]);
 
-  // Track the event count and, during a sync, note when it grows (activity).
+  // Track the database event count (not the fetched window, which pins at the
+  // cap) and, during a sync, note when it grows (activity).
   useEffect(() => {
-    const grew = events.length > prevCountRef.current;
-    prevCountRef.current = events.length;
-    eventCountRef.current = events.length;
+    const grew = eventTotal > prevCountRef.current;
+    prevCountRef.current = eventTotal;
+    eventCountRef.current = eventTotal;
     if (syncing && syncRef.current && grew) {
       syncRef.current.lastActivity = Date.now();
     }
-  }, [events.length, syncing]);
+  }, [eventTotal, syncing]);
 
   // While syncing, poll (refreshing events in case realtime lags) and decide
   // when the import has finished.
@@ -391,7 +404,7 @@ function ReviewCase() {
       return;
     }
     setSyncMsg("");
-    syncRef.current = { start: Date.now(), lastActivity: Date.now(), baseline: events.length };
+    syncRef.current = { start: Date.now(), lastActivity: Date.now(), baseline: eventTotal };
     setSyncing(true);
     try {
       const {
@@ -433,8 +446,6 @@ function ReviewCase() {
 
   // The reply box replies on the latest client-thread subject.
   const clientEvents = useMemo(() => events.filter((e) => !isPartnerEvent(e)), [events]);
-
-  const contextLine = `${includedNotes} note${includedNotes === 1 ? "" : "s"} and ${includedPartner} partner message${includedPartner === 1 ? "" : "s"} will be included`;
 
   const syncSlot = (
     <button
@@ -546,7 +557,6 @@ function ReviewCase() {
           truncated={eventsTruncated}
           syncSlot={syncSlot}
           statusLine={syncMsg}
-          onPartnerIncludedChange={setIncludedPartner}
           onSynced={load}
         />
 
@@ -589,7 +599,13 @@ function ReviewCase() {
                 </button>
                 <DraftHistory conversationId={caseId} refreshKey={draftStamp} />
               </div>
-              <p className="stamp">{contextLine}</p>
+              {/* The Brain currently reads the whole thread; per-message and
+                  per-note selection is not wired into drafting yet, so no
+                  claim about included context is made here. */}
+              <p className="stamp">
+                Runs the Brain once over the full case thread. The in-context toggles are not read
+                by drafting yet.
+              </p>
 
               {generating && (
                 <p className="empty">
@@ -620,7 +636,7 @@ function ReviewCase() {
             </div>
 
             <div className="desk-body" hidden={deskTab !== "notes"}>
-              <CaseNotes conversationId={caseId} onIncludedCountChange={setIncludedNotes} />
+              <CaseNotes conversationId={caseId} />
             </div>
 
             <div className="desk-body desk-flush" hidden={deskTab !== "summary"}>
