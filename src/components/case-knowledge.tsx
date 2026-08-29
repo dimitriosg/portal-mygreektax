@@ -47,6 +47,8 @@ function isPastReview(row: KnowledgeRow, todayIso: string): boolean {
 export function CaseKnowledge({ currentVersion }: Props) {
   const [eligible, setEligible] = useState<KnowledgeRow[]>([]);
   const [recorded, setRecorded] = useState<KnowledgeRow[]>([]);
+  const [recordedLoading, setRecordedLoading] = useState(false);
+  const [recordedError, setRecordedError] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -88,20 +90,35 @@ export function CaseKnowledge({ currentVersion }: Props) {
     const ids = recordedKey ? recordedKey.split(",") : [];
     if (ids.length === 0) {
       setRecorded([]);
+      setRecordedLoading(false);
+      setRecordedError("");
       return;
     }
     let cancelled = false;
+    setRecordedLoading(true);
     (async () => {
-      const { data } = await supabase.from("knowledge_base").select(SELECT).in("id", ids);
-      if (!cancelled) setRecorded((data as KnowledgeRow[] | null) ?? []);
+      const { data, error: err } = await supabase
+        .from("knowledge_base")
+        .select(SELECT)
+        .in("id", ids);
+      if (cancelled) return;
+      setRecordedError(err ? `Could not load the recorded entries: ${err.message}` : "");
+      setRecorded((data as KnowledgeRow[] | null) ?? []);
+      setRecordedLoading(false);
     })();
     return () => {
       cancelled = true;
     };
   }, [recordedKey]);
 
-  const showing = recorded.length > 0 ? recorded : eligible;
-  const isFallback = recorded.length === 0;
+  // A fallback is decided by whether the draft recorded anything, never by
+  // whether those rows came back. If a draft names entries that have since
+  // been deleted, or their fetch is still in flight or failed, showing the
+  // eligible list under the words "did not record which entries it used"
+  // would contradict the draft's own record to someone reviewing tax advice.
+  const isFallback = recordedIds.length === 0;
+  const showing = isFallback ? eligible : recorded;
+  const missingCount = isFallback ? 0 : recordedIds.length - recorded.length;
 
   // Compared in Athens terms like every other date on this page: review_by is
   // a plain date, so a string compare against today's Athens date is right.
@@ -141,12 +158,20 @@ export function CaseKnowledge({ currentVersion }: Props) {
 
           {currentVersion && !isFallback && (
             <p className="stamp">
-              Recorded as used by draft v{currentVersion.version_no}.
-              {recordedIds.length !== recorded.length
-                ? ` ${recordedIds.length - recorded.length} recorded entr${
-                    recordedIds.length - recorded.length === 1 ? "y is" : "ies are"
+              {recordedIds.length} entr{recordedIds.length === 1 ? "y" : "ies"} recorded as used by
+              draft v{currentVersion.version_no}.
+              {missingCount > 0 && !recordedLoading && !recordedError
+                ? ` ${missingCount} of them ${
+                    missingCount === 1 ? "is" : "are"
                   } no longer in the knowledge base.`
                 : ""}
+            </p>
+          )}
+
+          {recordedLoading && <p className="empty">Loading the recorded entries...</p>}
+          {recordedError && (
+            <p className="text-sm text-red-600 border border-red-200 bg-red-50 rounded px-3 py-2">
+              {recordedError}
             </p>
           )}
 
@@ -160,7 +185,13 @@ export function CaseKnowledge({ currentVersion }: Props) {
             </div>
           )}
 
-          {showing.length === 0 && <p className="empty">No knowledge entries to show.</p>}
+          {showing.length === 0 && !recordedLoading && (
+            <p className="empty">
+              {isFallback
+                ? "No knowledge entries to show."
+                : "None of the recorded entries are still in the knowledge base."}
+            </p>
+          )}
 
           {showing.length > 0 && (
             <div className="kb-list">

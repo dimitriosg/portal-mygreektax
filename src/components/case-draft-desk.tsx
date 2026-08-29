@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { athensFullStamp, athensStamp } from "@/lib/case-thread";
@@ -59,8 +59,24 @@ export function CaseDraftDesk({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [compareId, setCompareId] = useState<string | null>(null);
+  // Only the most recently started load may commit. Moving between cases keeps
+  // this component mounted, so without this an earlier query can resolve last
+  // and show the previous case's drafts under the new case.
+  const loadSeqRef = useRef(0);
+
+  // Clear on a case change, so nothing from the previous case stays on screen
+  // while the new load is in flight. Keyed on conversationId alone: refreshKey
+  // also reloads, and emptying the list on every regenerate poll would flash.
+  useEffect(() => {
+    loadSeqRef.current++;
+    setVersions([]);
+    setCompareId(null);
+    setError("");
+    setLoading(true);
+  }, [conversationId]);
 
   const load = useCallback(async () => {
+    const seq = ++loadSeqRef.current;
     const { data, error: err } = await supabase
       .from("case_draft_versions")
       .select(
@@ -68,6 +84,8 @@ export function CaseDraftDesk({
       )
       .eq("conversation_id", conversationId)
       .order("version_no", { ascending: false });
+
+    if (seq !== loadSeqRef.current) return;
 
     if (err) {
       setError(`Could not load draft versions: ${err.message}`);
