@@ -5,6 +5,7 @@ import {
   knowledgeIdsFromContext,
   later,
   looksLikeHtml,
+  rerunUnchangedAt,
   sendState,
   type DraftVersionRow,
 } from "./case-draft-versions";
@@ -132,6 +133,45 @@ describe("later", () => {
     expect(later(null, "2026-08-29T17:04:00Z")).toBeNull();
     expect(later("2026-08-29T17:04:00Z", null)).toBeNull();
     expect(later("none", "2026-08-29T17:04:00Z")).toBeNull();
+  });
+});
+
+describe("rerunUnchangedAt", () => {
+  const generated = "2026-08-29T17:04:00Z";
+
+  it("says nothing when last_updated only matches the generation", () => {
+    expect(rerunUnchangedAt({ generated_at: generated, sent_at: null }, generated)).toBeNull();
+  });
+
+  it("reports a re-run that produced no new version", () => {
+    expect(
+      rerunUnchangedAt({ generated_at: generated, sent_at: null }, "2026-08-29T18:00:00Z"),
+    ).toBe("2026-08-29T18:00:00Z");
+  });
+
+  it("does not mistake a send for a re-run", () => {
+    // Approving a send moves case_drafts.last_updated without writing a
+    // version row, and stamps sent_at immediately afterwards. Without this
+    // guard every sent case would claim a Brain run that never happened.
+    expect(
+      rerunUnchangedAt(
+        { generated_at: generated, sent_at: "2026-08-29T17:15:02Z" },
+        "2026-08-29T17:15:00Z",
+      ),
+    ).toBeNull();
+  });
+
+  it("still reports a genuine re-run after a send", () => {
+    expect(
+      rerunUnchangedAt(
+        { generated_at: generated, sent_at: "2026-08-29T17:15:02Z" },
+        "2026-08-30T09:00:00Z",
+      ),
+    ).toBe("2026-08-30T09:00:00Z");
+  });
+
+  it("says nothing without a draft timestamp", () => {
+    expect(rerunUnchangedAt({ generated_at: generated, sent_at: null }, null)).toBeNull();
   });
 });
 

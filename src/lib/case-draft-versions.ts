@@ -90,6 +90,30 @@ export function later(candidate: string | null, reference: string | null): strin
 }
 
 /**
+ * When the Brain was re-run and produced nothing new, or null.
+ *
+ * The trigger records a version only when the draft text actually moves, so a
+ * re-run that reproduces the same prose leaves the panel with nothing to show.
+ * case_drafts.last_updated running ahead of the version's generated_at is the
+ * evidence that a run happened at all.
+ *
+ * Approving a send also moves last_updated, and deliberately does not rewrite
+ * proposed_draft, so without the sent_at guard every sent case would claim a
+ * re-run that never happened, permanently, at the same minute as the send.
+ * send-approved stamps sent_at after that update, so a genuine re-run after a
+ * send is still later than both.
+ */
+export function rerunUnchangedAt(
+  v: Pick<DraftVersionRow, "generated_at" | "sent_at">,
+  draftUpdatedAt: string | null,
+): string | null {
+  const afterGeneration = later(draftUpdatedAt, v.generated_at);
+  if (!afterGeneration) return null;
+  if (v.sent_at && !later(draftUpdatedAt, v.sent_at)) return null;
+  return afterGeneration;
+}
+
+/**
  * Human summary of context_used, e.g. "6 messages, 2 notes".
  *
  * Every row in the table carries an empty object today: rows are inserted by

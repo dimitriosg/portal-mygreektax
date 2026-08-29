@@ -5,8 +5,8 @@ import { athensFullStamp, athensStamp } from "@/lib/case-thread";
 import {
   describeContext,
   htmlToPlainText,
-  later,
   looksLikeHtml,
+  rerunUnchangedAt,
   sendState,
   type DraftVersionRow,
   type SendState,
@@ -74,6 +74,12 @@ export function CaseDraftDesk({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [compareId, setCompareId] = useState<string | null>(null);
+  // Which refreshKey the loaded versions belong to. The route commits the new
+  // case_drafts text and stamp in one batch, and this component reloads only
+  // afterwards, so for one committed render the props describe a generation
+  // the version list has not seen. Every claim that compares the two waits
+  // until they agree, or the panel would cry "not recorded" on every generate.
+  const [loadedKey, setLoadedKey] = useState<string | number | undefined>(undefined);
   // Only the most recently started load may commit. Moving between cases keeps
   // this component mounted, so without this an earlier query can resolve last
   // and show the previous case's drafts under the new case.
@@ -90,30 +96,34 @@ export function CaseDraftDesk({
     setLoading(true);
   }, [conversationId]);
 
-  const load = useCallback(async () => {
-    const seq = ++loadSeqRef.current;
-    const { data, error: err } = await supabase
-      .from("case_draft_versions")
-      .select(
-        "id, version_no, draft_text, compliance_insights, context_used, model, generated_at, sent_at, sent_text, sent_mode",
-      )
-      .eq("conversation_id", conversationId)
-      .order("version_no", { ascending: false });
+  const load = useCallback(
+    async (key: string | number | undefined) => {
+      const seq = ++loadSeqRef.current;
+      const { data, error: err } = await supabase
+        .from("case_draft_versions")
+        .select(
+          "id, version_no, draft_text, compliance_insights, context_used, model, generated_at, sent_at, sent_text, sent_mode",
+        )
+        .eq("conversation_id", conversationId)
+        .order("version_no", { ascending: false });
 
-    if (seq !== loadSeqRef.current) return;
+      if (seq !== loadSeqRef.current) return;
 
-    if (err) {
-      setError(`Could not load draft versions: ${err.message}`);
-      setVersions([]);
-    } else {
-      setError("");
-      setVersions((data as DraftVersionRow[] | null) ?? []);
-    }
-    setLoading(false);
-  }, [conversationId]);
+      if (err) {
+        setError(`Could not load draft versions: ${err.message}`);
+        setVersions([]);
+      } else {
+        setError("");
+        setVersions((data as DraftVersionRow[] | null) ?? []);
+      }
+      setLoadedKey(key);
+      setLoading(false);
+    },
+    [conversationId],
+  );
 
   useEffect(() => {
-    load();
+    load(refreshKey);
   }, [load, refreshKey]);
 
   // Newest version_no first, so the head of the list is the current draft.
@@ -139,14 +149,21 @@ export function CaseDraftDesk({
   }, [compared]);
 
   const contextLine = current ? describeContext(current.context_used) : "";
+
+  // True only once the loaded versions correspond to the props being compared
+  // against. Both claims below are about the two disagreeing, so making one
+  // while they are simply out of step would be false every time.
+  const inStep = loadedKey === refreshKey;
+
   // The send desk holds text this panel never recorded: say so rather than
   // presenting a superseded generation as the current draft.
-  const diverged = !!current && hasCurrentDraftRow && current.draft_text !== currentDraftText;
+  const diverged =
+    inStep && !!current && hasCurrentDraftRow && current.draft_text !== currentDraftText;
   // Same text, later run: the Brain was asked again and returned what it had,
   // so the trigger recorded no version. Without this the panel shows the old
   // stamp and looks as though nothing happened.
-  const rerunAt = later(currentDraftUpdatedAt, current?.generated_at ?? null);
-  const rerunUnchanged = !!current && !diverged && rerunAt !== null;
+  const rerunAt = current && inStep ? rerunUnchangedAt(current, currentDraftUpdatedAt) : null;
+  const rerunUnchanged = !diverged && rerunAt !== null;
 
   return (
     <>
@@ -159,13 +176,13 @@ export function CaseDraftDesk({
         </p>
       )}
 
-      {!loading && !error && versions.length === 0 && !hasCurrentDraftRow && (
+      {!loading && !error && (!inStep || !hasCurrentDraftRow) && versions.length === 0 && (
         <p className="empty">
           No draft generated for this case yet. Nothing is sent until you review and approve.
         </p>
       )}
 
-      {!loading && !error && versions.length === 0 && hasCurrentDraftRow && (
+      {!loading && !error && inStep && versions.length === 0 && hasCurrentDraftRow && (
         <p className="empty">
           This case has a draft, but it predates the version history and was never recorded here. It
           is still on the desk below the thread. Regenerating records a version.
