@@ -591,6 +591,7 @@ function ReviewCase() {
                 conversationId={caseId}
                 refreshKey={draftStamp}
                 currentDraftText={draftText}
+                currentDraftUpdatedAt={draftStamp === "none" ? null : draftStamp}
                 onCurrentVersionChange={setCurrentVersion}
                 generateSlot={
                   <>

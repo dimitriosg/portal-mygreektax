@@ -144,7 +144,8 @@ export function CaseKnowledge({ currentVersion }: Props) {
         <>
           {!currentVersion && (
             <p className="stamp">
-              No draft on this case yet, so nothing has drawn on the knowledge base.
+              No draft on this case yet. These are the entries the Brain is eligible to inject when
+              one is generated.
             </p>
           )}
 

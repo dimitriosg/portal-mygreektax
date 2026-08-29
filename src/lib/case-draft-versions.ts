@@ -80,6 +80,21 @@ export function looksLikeHtml(text: string): boolean {
 }
 
 /**
+ * `candidate` when it is strictly later than `reference`, otherwise null.
+ *
+ * Both come from timestamptz columns but through different queries, so they
+ * are parsed rather than string-compared. Anything unparseable is treated as
+ * "not later", since claiming a run happened is worse than staying quiet.
+ */
+export function later(candidate: string | null, reference: string | null): string | null {
+  if (!candidate || !reference) return null;
+  const a = Date.parse(candidate);
+  const b = Date.parse(reference);
+  if (Number.isNaN(a) || Number.isNaN(b)) return null;
+  return a > b ? candidate : null;
+}
+
+/**
  * Human summary of context_used, e.g. "6 messages, 2 notes".
  *
  * Every row in the table carries an empty object today: rows are inserted by

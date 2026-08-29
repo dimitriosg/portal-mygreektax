@@ -5,6 +5,7 @@ import { athensFullStamp, athensStamp } from "@/lib/case-thread";
 import {
   describeContext,
   htmlToPlainText,
+  later,
   looksLikeHtml,
   sendState,
   type DraftVersionRow,
@@ -42,6 +43,12 @@ interface Props {
    * desk below holds something else.
    */
   currentDraftText?: string | null;
+  /**
+   * case_drafts.last_updated. The version trigger only inserts when the text
+   * actually moved, so a regenerate that reproduces the same prose leaves this
+   * panel looking inert. This is what lets it say a run happened.
+   */
+  currentDraftUpdatedAt?: string | null;
   /** Reports the current version to the route, for the Knowledge tab. */
   onCurrentVersionChange?: (version: DraftVersionRow | null) => void;
   /** The Generate / Regenerate control, owned by the route. */
@@ -58,6 +65,7 @@ export function CaseDraftDesk({
   conversationId,
   refreshKey,
   currentDraftText = null,
+  currentDraftUpdatedAt = null,
   onCurrentVersionChange,
   generateSlot,
 }: Props) {
@@ -134,6 +142,11 @@ export function CaseDraftDesk({
   // The send desk holds text this panel never recorded: say so rather than
   // presenting a superseded generation as the current draft.
   const diverged = !!current && hasCurrentDraftRow && current.draft_text !== currentDraftText;
+  // Same text, later run: the Brain was asked again and returned what it had,
+  // so the trigger recorded no version. Without this the panel shows the old
+  // stamp and looks as though nothing happened.
+  const rerunAt = later(currentDraftUpdatedAt, current?.generated_at ?? null);
+  const rerunUnchanged = !!current && !diverged && rerunAt !== null;
 
   return (
     <>
@@ -186,6 +199,13 @@ export function CaseDraftDesk({
             {contextLine ? `Built from ${contextLine}.` : "Context at generation was not recorded."}
             {current.model ? ` Model ${current.model}.` : ""}
           </p>
+
+          {rerunUnchanged && (
+            <p className="stamp">
+              Regenerated {athensFullStamp(rerunAt)}, which returned the same text, so no new
+              version was recorded.
+            </p>
+          )}
 
           <div className="draft-preview">{current.draft_text}</div>
 

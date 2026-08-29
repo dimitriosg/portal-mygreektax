@@ -4,6 +4,7 @@ import {
   hasComparison,
   htmlToPlainText,
   knowledgeIdsFromContext,
+  later,
   looksLikeHtml,
   sendState,
   type DraftVersionRow,
@@ -119,6 +120,27 @@ describe("looksLikeHtml", () => {
     expect(looksLikeHtml("Hello Marta,\n\nThe M1 is filed.")).toBe(false);
     // A draft may legitimately mention a comparison without being markup.
     expect(looksLikeHtml("The fee is < 100 euro and > 50 euro.")).toBe(false);
+  });
+});
+
+describe("later", () => {
+  it("returns the candidate only when it is strictly later", () => {
+    expect(later("2026-08-29T18:00:00Z", "2026-08-29T17:04:00Z")).toBe("2026-08-29T18:00:00Z");
+    expect(later("2026-08-29T17:04:00Z", "2026-08-29T18:00:00Z")).toBeNull();
+    expect(later("2026-08-29T17:04:00Z", "2026-08-29T17:04:00Z")).toBeNull();
+  });
+
+  it("compares across the formats the two queries return", () => {
+    // case_drafts.last_updated and case_draft_versions.generated_at reach the
+    // browser through different queries and need not be spelled identically.
+    expect(later("2026-08-29T22:27:48.89+00:00", "2026-08-29T22:27:48Z")).not.toBeNull();
+    expect(later("2026-08-29T22:27:48+00:00", "2026-08-29T22:27:49Z")).toBeNull();
+  });
+
+  it("stays quiet on missing or unparseable input", () => {
+    expect(later(null, "2026-08-29T17:04:00Z")).toBeNull();
+    expect(later("2026-08-29T17:04:00Z", null)).toBeNull();
+    expect(later("none", "2026-08-29T17:04:00Z")).toBeNull();
   });
 });
 
