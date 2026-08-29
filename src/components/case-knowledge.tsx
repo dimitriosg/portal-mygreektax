@@ -95,6 +95,12 @@ export function CaseKnowledge({ currentVersion }: Props) {
       return;
     }
     let cancelled = false;
+    // Clear first. showing selects recorded as soon as the new version records
+    // ids, so leaving the previous version's rows in place would label them,
+    // and their overdue warnings, as the sources of this draft for as long as
+    // the fetch takes.
+    setRecorded([]);
+    setRecordedError("");
     setRecordedLoading(true);
     (async () => {
       const { data, error: err } = await supabase
