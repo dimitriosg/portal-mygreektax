@@ -818,6 +818,316 @@
   margin-top: 9px;
 }
 
+/* ---------- workspace grid (case page) ---------- */
+.mgt-case .ws {
+  display: grid;
+  grid-template-columns: 268px minmax(0, 1fr) 336px;
+  gap: 14px;
+  align-items: start;
+}
+.mgt-case .ws-rail,
+.mgt-case .ws-desk {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+@media (max-width: 1180px) {
+  .mgt-case .ws {
+    grid-template-columns: minmax(0, 1fr) 336px;
+  }
+  .mgt-case .ws-rail {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    align-items: start;
+  }
+}
+@media (max-width: 860px) {
+  .mgt-case .ws {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ---------- left rail ---------- */
+.mgt-case .kv-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mgt-case .kv {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 12.5px;
+}
+.mgt-case .kv .k {
+  color: var(--mc-ink-3);
+}
+.mgt-case .kv .v {
+  font-weight: 500;
+  color: var(--mc-ink);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+.mgt-case .rail-div {
+  height: 1px;
+  background: var(--mc-line);
+  margin: 11px 0;
+}
+.mgt-case .due-over {
+  color: #b45309;
+}
+.mgt-case .rail-items {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.mgt-case .rail-items li {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+/* ---------- centre thread ---------- */
+.mgt-case .seg .seg-count {
+  opacity: 0.65;
+  font-weight: 400;
+  margin-left: 3px;
+}
+.mgt-case .tpane {
+  max-height: max(440px, calc(100vh - 330px));
+  overflow-y: auto;
+  padding-right: 6px;
+}
+.mgt-case .tpane::-webkit-scrollbar {
+  width: 8px;
+}
+.mgt-case .tpane::-webkit-scrollbar-thumb {
+  background: #dfe3e8;
+  border-radius: 8px;
+}
+.mgt-case .trunc-note {
+  display: block;
+  padding: 6px 0;
+}
+.mgt-case .day-div {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0 8px;
+  background: var(--mc-paper);
+  font-size: 11px;
+  color: var(--mc-ink-3);
+  letter-spacing: 0.04em;
+}
+.mgt-case .day-div::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--mc-line);
+}
+.mgt-case .tmsg {
+  border: 1px solid var(--mc-line);
+  border-left: 3px solid var(--mc-line-2);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  background: var(--mc-paper);
+}
+.mgt-case .tmsg.t-in {
+  border-left-color: var(--mc-accent);
+}
+.mgt-case .tmsg.t-out {
+  border-left-color: var(--mc-ok);
+}
+/* Partner mail keeps its own amber family and the INTERNAL tag in both
+   directions, but reads inbound from outbound at a glance the way the client
+   thread does: a deep filled rail and icon for what the partner sent, a pale
+   one for what went out to him. */
+.mgt-case .tmsg.t-partner {
+  background: #fffdf8;
+}
+.mgt-case .tmsg.t-partner-in {
+  border-left-color: var(--mc-partner);
+}
+.mgt-case .tmsg.t-partner-out {
+  border-left-color: #e6c795;
+}
+.mgt-case .tmsg.t-note {
+  border-left-color: var(--mc-ink-3);
+  border-left-style: dashed;
+  background: #fafaf8;
+}
+.mgt-case .t-note .dir {
+  background: #efeee9;
+  color: var(--mc-ink-3);
+}
+.mgt-case .tmsg-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+.mgt-case .tmsg-head .spacer {
+  flex: 1;
+}
+.mgt-case .dir {
+  width: 17px;
+  height: 17px;
+  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  background: #f0f2f4;
+  color: var(--mc-ink-2);
+  flex-shrink: 0;
+}
+.mgt-case .t-in .dir {
+  background: var(--mc-accent-bg);
+  color: var(--mc-accent);
+}
+.mgt-case .t-out .dir {
+  background: #e7f2ea;
+  color: var(--mc-ok);
+}
+.mgt-case .t-partner-in .dir {
+  background: var(--mc-partner);
+  color: #fff;
+}
+.mgt-case .t-partner-out .dir {
+  background: var(--mc-partner-bg);
+  color: var(--mc-partner);
+}
+.mgt-case .t-body {
+  margin: 0;
+  font-size: 13px;
+  color: #33414f;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.mgt-case .quoted {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-left: 2px solid var(--mc-line-2);
+  background: #f7f8fa;
+  border-radius: 6px;
+  font-size: 12.5px;
+  color: var(--mc-ink-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.mgt-case .tmsg-foot {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 8px;
+}
+.mgt-case .qtoggle {
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: 11.5px;
+  color: var(--mc-accent);
+  border-bottom: 1px dotted #a9c0d4;
+  cursor: pointer;
+}
+.mgt-case .qtoggle:hover {
+  color: var(--mc-ink);
+}
+.mgt-case .ctx-toggle {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: 0;
+  font-size: 11px;
+  color: var(--mc-ink-3);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 5px;
+}
+.mgt-case .ctx-toggle:hover {
+  background: #f0f2f4;
+  color: var(--mc-ink);
+}
+.mgt-case .ctx-box {
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  border: 1.5px solid var(--mc-line-2);
+  display: inline-block;
+}
+.mgt-case .ctx-toggle[aria-pressed="true"] .ctx-box {
+  background: var(--mc-ok);
+  border-color: var(--mc-ok);
+}
+
+/* ---------- right desk ---------- */
+.mgt-case .desk-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--mc-line);
+}
+.mgt-case .desk-tabs button {
+  flex: 1;
+  background: none;
+  border: 0;
+  padding: 10px 0;
+  font-size: 12px;
+  color: var(--mc-ink-3);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.mgt-case .desk-tabs button:hover {
+  color: var(--mc-ink);
+}
+.mgt-case .desk-tabs button[aria-selected="true"] {
+  color: var(--mc-ink);
+  font-weight: 600;
+  border-bottom-color: var(--mc-accent);
+}
+.mgt-case .desk-tabs button:focus-visible {
+  outline: 2px solid var(--mc-accent);
+  outline-offset: -2px;
+}
+.mgt-case .desk-body {
+  padding: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.mgt-case .desk-body.desk-flush {
+  padding: 0;
+}
+.mgt-case .desk-body.desk-flush > .card {
+  border: 0;
+}
+.mgt-case .draft-preview {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  color: #33414f;
+  border-left: 2px solid var(--mc-line-2);
+  padding-left: 11px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
 /* ---------- modal (pop-out sheets, draft history) ---------- */
 .mgt-case-backdrop {
   position: fixed;

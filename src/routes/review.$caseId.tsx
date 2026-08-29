@@ -9,28 +9,26 @@ import { updateLead } from "@/lib/leads.functions";
 import { CLIENT_STAGES } from "@/lib/leads-shared";
 import { CaseSummary } from "@/components/case-summary";
 import { CaseNotes } from "@/components/CaseNotes";
-import { CasePartnerThread } from "@/components/case-partner-thread";
 import { DraftHistory } from "@/components/DraftHistory";
-import { PopOutSection } from "@/components/section-shell";
 import { CasePartnerReplyBox } from "@/components/case-partner-reply-box";
+import { CaseThread } from "@/components/case-thread";
+import { CaseRail } from "@/components/case-rail";
+import { getCaseRail, type CaseRailData } from "@/lib/case-workspace.functions";
+import { athensFullStamp, isPartnerEvent, type ThreadEvent } from "@/lib/case-thread";
+import { getErrorMessage } from "@/lib/auth-errors";
 
-// Case review page (new spine). The route param $caseId is a
-// brain_conversations.id. This page shows the full conversation from
-// brain_events, lets Jim read it, then Generate a draft on demand, then
-// review/edit/send it via AiReviewDesk. Read first, decide, then generate.
+// Case workspace. The route param $caseId is a brain_conversations.id.
 //
-// The header also exposes the linked lead's Stage / Next action / Next action
-// date. These are the same public.clients columns the /leads page edits, saved
+// One screen, three zones: a left rail (who the client is, the money, the open
+// items), a centre conversation built from brain_events with tabbed Client /
+// Partner / All threads, and a right desk (draft, notes, summary, knowledge).
+// The reply forms and the review desk sit below the workspace; a single docked
+// composer replaces them in a later change.
+//
+// The header exposes the linked lead's Stage / Next action / Next action date.
+// These are the same public.clients columns the /leads page edits, saved
 // through the same updateLead server function, so both screens are one source
 // of truth and the change is audit-logged either way.
-//
-// Layout: client conversation and partner thread sit side by side at half
-// width each, so either can be scrolled without losing the other. Notes and
-// summary share the next row at one third and two thirds. The reply runs full
-// width below, since it is the thing that actually gets edited.
-//
-// Partner correspondence is quarantined to its own pane and never rendered in
-// the client conversation, so there is no way to confuse the two at a glance.
 
 interface ConversationInfo {
   id: string;
@@ -47,21 +45,27 @@ interface ClientInfo {
   stage: string | null;
   next_action: string | null;
   next_action_date: string | null;
+  nationality: string | null;
+  afm: string | null;
+  taxisnet_access: boolean | null;
+  quote_amount: number | null;
+  deposit: number | null;
+  balance_due: number | null;
 }
 
-interface EventRow {
-  id: string;
-  event_type: string | null;
-  actor: string | null;
-  direction: string | null;
-  from_email: string | null;
-  subject: string | null;
-  body_text: string | null;
-  occurred_at: string | null;
-}
+type DeskTab = "draft" | "notes" | "summary" | "knowledge";
 
-// Conversation display: nothing, the latest message only, or the full thread.
-type ConvView = "collapsed" | "latest" | "all";
+const DESK_TABS: Array<{ id: DeskTab; label: string }> = [
+  { id: "draft", label: "Draft" },
+  { id: "notes", label: "Notes" },
+  { id: "summary", label: "Summary" },
+  { id: "knowledge", label: "Knowledge" },
+];
+
+// brain_events fetch cap. Fetched newest-first so a long history loses its
+// oldest messages, not its newest, then reversed so the thread reads oldest
+// first. The largest real case holds ~400 rows; normal cases sit far below.
+const EVENT_FETCH_LIMIT = 500;
 
 // Gmail sync progress tuning. Make runs asynchronously and gives the browser no
 // hard "finished" signal, so the button tracks the actual import instead: it
@@ -76,28 +80,6 @@ const SYNC_MAX_MS = 240000;
 const GEN_POLL_MS = 3000;
 const GEN_TIMEOUT_MS = 180000;
 
-const ACTOR_LABELS: Record<string, string> = {
-  customer: "Client",
-  partner: "Partner",
-  ai_agent: "Brain",
-  internal: "You",
-  system: "System",
-  dimitris: "You",
-};
-
-function formatWhen(iso: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "" : d.toLocaleString();
-}
-
-// A partner message is one whose actor is the partner, or whose event type is
-// explicitly a partner email. Everything else belongs to the client pane.
-function isPartnerEvent(e: EventRow): boolean {
-  if (e.actor === "partner") return true;
-  return e.event_type === "partner_email_received" || e.event_type === "partner_email_sent";
-}
-
 export const Route = createFileRoute("/review/$caseId")({
   component: ReviewCase,
 });
@@ -106,20 +88,25 @@ function ReviewCase() {
   const { caseId } = Route.useParams(); // brain_conversations.id
   const [conversation, setConversation] = useState<ConversationInfo | null>(null);
   const [client, setClient] = useState<ClientInfo | null>(null);
-  const [events, setEvents] = useState<EventRow[]>([]);
+  const [events, setEvents] = useState<ThreadEvent[]>([]);
+  // Total rows in the database for this case, which can exceed the fetched
+  // window; drives the truncation notice and the sync progress counter.
+  const [eventTotal, setEventTotal] = useState(0);
+  const [eventsTruncated, setEventsTruncated] = useState(false);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState<string>("");
   const [hasDraft, setHasDraft] = useState(false);
+  const [draftText, setDraftText] = useState<string>("");
   const [draftStamp, setDraftStamp] = useState<string>("none");
-  const [convView, setConvView] = useState<ConvView>("collapsed");
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string>("");
+  const [deskTab, setDeskTab] = useState<DeskTab>("draft");
 
-  // Context counters, shown next to Generate so the cost of a run is visible
-  // before it is spent.
-  const [includedNotes, setIncludedNotes] = useState(0);
-  const [includedPartner, setIncludedPartner] = useState(0);
+  // Left-rail money and open items, via the admin server fn (payments and jobs
+  // have no browser RLS policies).
+  const [rail, setRail] = useState<CaseRailData | null>(null);
+  const [railError, setRailError] = useState<string>("");
 
   // Editable lead fields (draft state, seeded once from the client row).
   const [stageDraft, setStageDraft] = useState<string>("");
@@ -129,38 +116,53 @@ function ReviewCase() {
   const seededRef = useRef<string | null>(null);
 
   const updateLeadFn = useServerFn(updateLead);
+  const getCaseRailFn = useServerFn(getCaseRail);
 
   // Sync progress tracking (refs so the poll interval reads fresh values).
   const syncRef = useRef<{ start: number; lastActivity: number; baseline: number } | null>(null);
   const eventCountRef = useRef(0);
   const prevCountRef = useRef(0);
+  // Monotonic guard: overlapping load() calls (realtime fires one per insert)
+  // can resolve out of order, and an older snapshot must not overwrite a newer
+  // one. Only the most recently started load commits its results.
+  const loadSeqRef = useRef(0);
 
   const load = useCallback(async () => {
+    const seq = ++loadSeqRef.current;
+
     const { data: convData } = await supabase
       .from("brain_conversations")
       .select("id, case_serial_id, customer_email, stage, client_id")
       .eq("id", caseId)
       .maybeSingle();
-
     const conv = (convData as ConversationInfo | null) ?? null;
-    setConversation(conv);
 
+    let clientRow: ClientInfo | null = null;
     if (conv?.client_id) {
       const { data: clientData } = await supabase
         .from("clients")
-        .select("full_name, email, client_code, stage, next_action, next_action_date")
+        .select(
+          "full_name, email, client_code, stage, next_action, next_action_date, nationality, afm, taxisnet_access, quote_amount, deposit, balance_due",
+        )
         .eq("id", conv.client_id)
         .maybeSingle();
-      setClient((clientData as ClientInfo | null) ?? null);
+      clientRow = (clientData as ClientInfo | null) ?? null;
     }
 
-    const { data: eventData } = await supabase
+    // Newest first so the cap trims history, not the present; reversed so the
+    // thread renders oldest first, newest at the bottom. The exact count keeps
+    // the truncation notice and the sync progress honest past the cap.
+    const { data: eventData, count: eventCount } = await supabase
       .from("brain_events")
-      .select("id, event_type, actor, direction, from_email, subject, body_text, occurred_at")
+      .select("id, event_type, actor, direction, from_email, subject, body_text, occurred_at", {
+        count: "exact",
+      })
       .eq("conversation_id", caseId)
-      .order("occurred_at", { ascending: true })
-      .limit(100);
-    setEvents((eventData as EventRow[] | null) ?? []);
+      .order("occurred_at", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(EVENT_FETCH_LIMIT);
+    const rows = ((eventData as ThreadEvent[] | null) ?? []).slice().reverse();
+    const total = eventCount ?? rows.length;
 
     // Does a draft already exist for this case?
     const { data: draftData } = await supabase
@@ -168,9 +170,17 @@ function ReviewCase() {
       .select("case_id, proposed_draft, last_updated")
       .eq("case_id", caseId)
       .maybeSingle();
-    setHasDraft(!!draftData?.proposed_draft);
-    setDraftStamp((draftData?.last_updated as string) || "none");
 
+    if (seq !== loadSeqRef.current) return;
+
+    setConversation(conv);
+    if (conv?.client_id) setClient(clientRow);
+    setEvents(rows);
+    setEventTotal(total);
+    setEventsTruncated(total > rows.length);
+    setHasDraft(!!draftData?.proposed_draft);
+    setDraftText((draftData?.proposed_draft as string) || "");
+    setDraftStamp((draftData?.last_updated as string) || "none");
     setLoading(false);
   }, [caseId]);
 
@@ -203,6 +213,35 @@ function ReviewCase() {
     };
   }, [caseId, load]);
 
+  // The rail data only moves when the linked client changes (payments and jobs
+  // have no realtime feed here), so it loads once per client, not per load().
+  const clientId = conversation?.client_id ?? null;
+  useEffect(() => {
+    if (!clientId) {
+      setRail(null);
+      setRailError("");
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await getCaseRailFn({ data: { clientId } });
+        if (!cancelled) {
+          setRail(data);
+          setRailError("");
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setRail(null);
+          setRailError(`Could not load payments and jobs: ${getErrorMessage(err)}`);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [clientId, getCaseRailFn]);
+
   // Seed the editable lead fields once per client, when the row first loads.
   // Not re-seeded on later load() calls (e.g. during a Gmail sync), so an
   // in-progress edit is never clobbered by background refreshes.
@@ -216,15 +255,16 @@ function ReviewCase() {
     }
   }, [conversation?.client_id, client]);
 
-  // Track the event count and, during a sync, note when it grows (activity).
+  // Track the database event count (not the fetched window, which pins at the
+  // cap) and, during a sync, note when it grows (activity).
   useEffect(() => {
-    const grew = events.length > prevCountRef.current;
-    prevCountRef.current = events.length;
-    eventCountRef.current = events.length;
+    const grew = eventTotal > prevCountRef.current;
+    prevCountRef.current = eventTotal;
+    eventCountRef.current = eventTotal;
     if (syncing && syncRef.current && grew) {
       syncRef.current.lastActivity = Date.now();
     }
-  }, [events.length, syncing]);
+  }, [eventTotal, syncing]);
 
   // While syncing, poll (refreshing events in case realtime lags) and decide
   // when the import has finished.
@@ -364,7 +404,7 @@ function ReviewCase() {
       return;
     }
     setSyncMsg("");
-    syncRef.current = { start: Date.now(), lastActivity: Date.now(), baseline: events.length };
+    syncRef.current = { start: Date.now(), lastActivity: Date.now(), baseline: eventTotal };
     setSyncing(true);
     try {
       const {
@@ -404,15 +444,24 @@ function ReviewCase() {
     }
   };
 
-  // Split the thread. Partner messages never appear in the client pane.
+  // The reply box replies on the latest client-thread subject.
   const clientEvents = useMemo(() => events.filter((e) => !isPartnerEvent(e)), [events]);
-  const partnerEvents = useMemo(() => events.filter(isPartnerEvent), [events]);
 
-  // Which client events to render for the current view.
-  const visibleEvents =
-    convView === "all" ? clientEvents : convView === "latest" ? clientEvents.slice(-1) : [];
-
-  const contextLine = `${includedNotes} note${includedNotes === 1 ? "" : "s"} and ${includedPartner} partner message${includedPartner === 1 ? "" : "s"} will be included`;
+  const syncSlot = (
+    <button
+      className="icon-btn"
+      onClick={handleSync}
+      disabled={syncing || !email}
+      title="Search Gmail for this customer and import the whole thread into this case"
+      aria-label="Sync from Gmail"
+    >
+      {syncing ? (
+        <span className="inline-block h-3.5 w-3.5 rounded-full border-2 border-slate-300 border-t-slate-600 animate-spin" />
+      ) : (
+        <RefreshCw size={15} />
+      )}
+    </button>
+  );
 
   return (
     <div className="mgt-case max-w-7xl mx-auto p-6 space-y-3.5">
@@ -494,126 +543,117 @@ function ReviewCase() {
         )}
       </div>
 
-      {/* Row 1: client conversation and partner thread, half each. */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 items-start">
-        <section className="card" data-open={convView !== "collapsed"}>
-          <div className="card-head">
-            <h2>Client conversation</h2>
-            {!loading && clientEvents.length > 0 && (
-              <span className="count">{clientEvents.length}</span>
-            )}
-            <div className="head-actions">
-              {!loading && clientEvents.length > 0 && (
-                <span className="seg">
-                  <button
-                    aria-pressed={convView === "collapsed"}
-                    onClick={() => setConvView("collapsed")}
-                  >
-                    Collapse
-                  </button>
-                  <button
-                    aria-pressed={convView === "latest"}
-                    onClick={() => setConvView("latest")}
-                  >
-                    Latest
-                  </button>
-                  <button aria-pressed={convView === "all"} onClick={() => setConvView("all")}>
-                    All ({clientEvents.length})
-                  </button>
-                </span>
-              )}
-              <button
-                className="icon-btn"
-                onClick={handleSync}
-                disabled={syncing || !email}
-                title="Search Gmail for this customer and import the whole thread into this case"
-                aria-label="Sync from Gmail"
-              >
-                {syncing ? (
-                  <span className="inline-block h-3.5 w-3.5 rounded-full border-2 border-slate-300 border-t-slate-600 animate-spin" />
-                ) : (
-                  <RefreshCw size={15} />
-                )}
-              </button>
+      {/* The workspace: left rail, conversation, desk. */}
+      <div className="ws">
+        <aside className="ws-rail">
+          <CaseRail client={client} rail={rail} railError={railError} loading={loading} />
+        </aside>
+
+        <CaseThread
+          events={events}
+          loading={loading}
+          clientName={client?.full_name ?? null}
+          conversationId={caseId}
+          truncated={eventsTruncated}
+          syncSlot={syncSlot}
+          statusLine={syncMsg}
+          onSynced={load}
+        />
+
+        <aside className="ws-desk">
+          <section className="card">
+            <div className="desk-tabs" role="tablist" aria-label="Case desk">
+              {DESK_TABS.map((t) => (
+                <button
+                  key={t.id}
+                  role="tab"
+                  aria-selected={deskTab === t.id}
+                  onClick={() => setDeskTab(t.id)}
+                >
+                  {t.label}
+                </button>
+              ))}
             </div>
-          </div>
 
-          <div className="card-body">
-            {syncMsg && <p className="stamp">{syncMsg}</p>}
-
-            {loading && <p className="empty">Loading conversation...</p>}
-            {!loading && clientEvents.length === 0 && (
-              <p className="empty">
-                No messages logged for this case yet. Use Sync from Gmail to pull the history.
-              </p>
-            )}
-
-            {visibleEvents.length > 0 && (
-              <div className={convView === "all" ? "pane" : ""}>
-                {visibleEvents.map((row) => (
-                  <div key={row.id} className="msg">
-                    <div className="msg-head">
-                      <span className="who">
-                        {ACTOR_LABELS[row.actor ?? ""] ?? row.actor ?? "Unknown"}
-                      </span>
-                      {row.direction && <span className="when">({row.direction})</span>}
-                      <span className="when">{formatWhen(row.occurred_at)}</span>
-                    </div>
-                    {row.subject && <p className="msg-subject">Subject: {row.subject}</p>}
-                    <p>{row.body_text ?? ""}</p>
-                  </div>
-                ))}
+            {/* Tabs stay mounted (hidden, not unmounted) so notes keep loading
+                and in-progress edits survive a tab switch. */}
+            <div className="desk-body" hidden={deskTab !== "draft"}>
+              <div className="reply-foot" style={{ marginTop: 0 }}>
+                <button
+                  className={hasDraft ? "btn btn-sm" : "btn btn-solid btn-sm"}
+                  onClick={generate}
+                  disabled={generating}
+                  title={
+                    hasDraft
+                      ? "Regenerate: runs the Brain again and replaces the current draft"
+                      : "Runs the Brain once for this case. Costs a single AI call."
+                  }
+                >
+                  {generating
+                    ? hasDraft
+                      ? "Regenerating..."
+                      : "Generating..."
+                    : hasDraft
+                      ? "Regenerate draft"
+                      : "Generate draft"}
+                </button>
+                <DraftHistory conversationId={caseId} refreshKey={draftStamp} />
               </div>
-            )}
-
-            {!loading && convView === "latest" && clientEvents.length > 1 && (
-              <p className="empty">
-                Showing the latest message only. {clientEvents.length - 1} earlier hidden.
+              {/* The Brain currently reads the whole thread; per-message and
+                  per-note selection is not wired into drafting yet, so no
+                  claim about included context is made here. */}
+              <p className="stamp">
+                Runs the Brain once over the full case thread. The in-context toggles are not read
+                by drafting yet.
               </p>
-            )}
-            {!loading && convView === "collapsed" && clientEvents.length > 0 && (
-              <p className="empty">
-                Conversation collapsed. {clientEvents.length} message
-                {clientEvents.length === 1 ? "" : "s"} hidden.
-              </p>
-            )}
-          </div>
-        </section>
 
-        <PopOutSection
-          title="Partner thread"
-          collapsible={false}
-          headerExtras={
-            <>
-              <span className="tag tag-internal">Internal</span>
-              {partnerEvents.length > 0 && <span className="count">{partnerEvents.length}</span>}
-            </>
-          }
-        >
-          <CasePartnerThread
-            events={partnerEvents}
-            loading={loading}
-            conversationId={caseId}
-            onIncludedCountChange={setIncludedPartner}
-            onSynced={load}
-          />
-        </PopOutSection>
+              {generating && (
+                <p className="empty">
+                  The Brain is reading the conversation and drafting a reply. This usually takes
+                  about a minute.
+                </p>
+              )}
+              {genError && (
+                <p className="text-sm text-red-600 border border-red-200 bg-red-50 rounded px-3 py-2">
+                  {genError}
+                </p>
+              )}
+
+              {!hasDraft && !generating && (
+                <p className="empty">No draft yet. Nothing is sent until you review and approve.</p>
+              )}
+
+              {hasDraft && (
+                <>
+                  <div className="rail-div" />
+                  {draftStamp !== "none" && (
+                    <p className="stamp">Current draft, {athensFullStamp(draftStamp)}</p>
+                  )}
+                  <div className="draft-preview">{draftText}</div>
+                  <p className="stamp">Review, edit and send from the desk below the thread.</p>
+                </>
+              )}
+            </div>
+
+            <div className="desk-body" hidden={deskTab !== "notes"}>
+              <CaseNotes conversationId={caseId} />
+            </div>
+
+            <div className="desk-body desk-flush" hidden={deskTab !== "summary"}>
+              <CaseSummary caseId={caseId} caseSerialId={conversation?.case_serial_id ?? null} />
+            </div>
+
+            <div className="desk-body" hidden={deskTab !== "knowledge"}>
+              <p className="empty">
+                Not wired yet. The knowledge entries the current draft used, and any past their
+                review date, arrive with the draft desk work.
+              </p>
+            </div>
+          </section>
+        </aside>
       </div>
 
-      {/* Row 2: notes at one third, summary at two thirds. */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3.5 items-start">
-        <div className="lg:col-span-1">
-          <PopOutSection title="My notes" defaultCollapsed={false}>
-            <CaseNotes conversationId={caseId} onIncludedCountChange={setIncludedNotes} />
-          </PopOutSection>
-        </div>
-
-        <div className="lg:col-span-2">
-          <CaseSummary caseId={caseId} caseSerialId={conversation?.case_serial_id ?? null} />
-        </div>
-      </div>
-
-      {/* Row 3: the reply, full width. */}
+      {/* The send forms, unchanged until the docked composer replaces them. */}
       <CaseReplyBox
         conversationId={caseId}
         clientEmail={email}
@@ -637,73 +677,9 @@ function ReviewCase() {
         onSent={load}
       />
 
-      {/* Generate control: only shown when no draft exists yet. Once a draft
-          is present, AiReviewDesk below takes over with edit + send. */}
-      {!loading && !hasDraft && (
-        <div className="flex flex-col items-start gap-2">
-          <div className="reply-foot" style={{ marginTop: 0 }}>
-            <button className="btn btn-solid" onClick={generate} disabled={generating}>
-              {generating ? (
-                <span className="inline-flex items-center gap-2">
-                  <span className="inline-block h-3 w-3 rounded-full border-2 border-white/40 border-t-white animate-spin" />
-                  Generating draft...
-                </span>
-              ) : (
-                "Generate draft"
-              )}
-            </button>
-            <DraftHistory conversationId={caseId} refreshKey={draftStamp} />
-            <span className="ctx-line">{contextLine}</span>
-          </div>
-          <p className="stamp">
-            Runs the Brain once for this case. Costs a single AI call. Nothing is sent until you
-            review and approve.
-          </p>
-          {generating && (
-            <div
-              className="flex items-center gap-2"
-              style={{
-                fontSize: 13,
-                color: "var(--mc-ink-2)",
-                border: "1px solid var(--mc-line)",
-                background: "var(--mc-page)",
-                borderRadius: 8,
-                padding: "8px 12px",
-              }}
-            >
-              <span className="inline-block h-3 w-3 rounded-full border-2 border-slate-300 border-t-slate-600 animate-spin" />
-              The Brain is reading the conversation and drafting a reply. This usually takes about a
-              minute.
-            </div>
-          )}
-          {genError && (
-            <p className="text-sm text-red-600 border border-red-200 bg-red-50 rounded px-3 py-2">
-              {genError}
-            </p>
-          )}
-        </div>
-      )}
-
-      {/* When a draft exists, the desk shows it for edit + approve + send, and
-          offers a regenerate path. */}
-      {hasDraft && (
-        <div className="space-y-3">
-          <div className="reply-foot" style={{ marginTop: 0 }}>
-            <button
-              className="btn btn-sm"
-              onClick={generate}
-              disabled={generating}
-              title="Regenerate: runs the Brain again and replaces the current draft"
-            >
-              {generating ? "Regenerating..." : "Regenerate draft"}
-            </button>
-            <DraftHistory conversationId={caseId} refreshKey={draftStamp} />
-            <span className="ctx-line">{contextLine}</span>
-            {genError && <span className="text-sm text-red-600">{genError}</span>}
-          </div>
-          <AiReviewDesk key={draftStamp} jobId={caseId} />
-        </div>
-      )}
+      {/* When a draft exists, the desk shows it for edit + approve + send.
+          Generate and Regenerate live in the Draft tab of the workspace. */}
+      {hasDraft && <AiReviewDesk key={draftStamp} jobId={caseId} />}
     </div>
   );
 }
