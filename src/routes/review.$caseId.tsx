@@ -3,17 +3,15 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { AiReviewDesk } from "@/components/AiReviewDesk";
-import { CaseReplyBox } from "@/components/case-reply-box";
 import { updateLead } from "@/lib/leads.functions";
 import { CLIENT_STAGES } from "@/lib/leads-shared";
 import { CaseSummary } from "@/components/case-summary";
 import { CaseNotes } from "@/components/CaseNotes";
-import { CasePartnerReplyBox } from "@/components/case-partner-reply-box";
 import { CaseThread } from "@/components/case-thread";
 import { CaseRail } from "@/components/case-rail";
 import { CaseDraftDesk } from "@/components/case-draft-desk";
 import { CaseKnowledge } from "@/components/case-knowledge";
+import { CaseComposer } from "@/components/case-composer";
 import { getCaseRail, type CaseRailData } from "@/lib/case-workspace.functions";
 import { isPartnerEvent, type ThreadEvent } from "@/lib/case-thread";
 import type { DraftVersionRow } from "@/lib/case-draft-versions";
@@ -24,8 +22,8 @@ import { getErrorMessage } from "@/lib/auth-errors";
 // One screen, three zones: a left rail (who the client is, the money, the open
 // items), a centre conversation built from brain_events with tabbed Client /
 // Partner / All threads, and a right desk (draft, notes, summary, knowledge).
-// The reply forms and the review desk sit below the workspace; a single docked
-// composer replaces them in a later change.
+// One composer sits below the workspace and can write to either party, with
+// the same rules binding both.
 //
 // The header exposes the linked lead's Stage / Next action / Next action date.
 // These are the same public.clients columns the /leads page edits, saved
@@ -654,33 +652,21 @@ function ReviewCase() {
         </aside>
       </div>
 
-      {/* The send forms, unchanged until the docked composer replaces them. */}
-      <CaseReplyBox
-        conversationId={caseId}
-        clientEmail={email}
-        clientName={client?.full_name ?? undefined}
-        caseSerialId={conversation?.case_serial_id ?? undefined}
-        replyToSubject={
-          clientEvents.length
-            ? (clientEvents[clientEvents.length - 1].subject ?? undefined)
-            : undefined
-        }
-        onSent={load}
-      />
-
-      {/* Follow up with partner: compose by hand or draft with the Brain (in
-          Greek, mode "partner"). Logs as partner_email_sent. clientStage feeds
-          the R7 deposit-gate notice. */}
-      <CasePartnerReplyBox
+      {/* One composer for both directions. It replaces the separate client and
+          partner boxes: the same R2 and R7 checks bind whichever target is
+          selected, which is the reason for merging them. The old boxes and the
+          review desk are superseded and removed in PR 4, once nothing else
+          depends on them. */}
+      <CaseComposer
         conversationId={caseId}
         caseSerialId={conversation?.case_serial_id ?? null}
+        clientName={client?.full_name ?? null}
+        clientEmail={email || null}
         clientStage={client?.stage ?? null}
+        events={events}
+        currentVersion={currentVersion}
         onSent={load}
       />
-
-      {/* When a draft exists, the desk shows it for edit + approve + send.
-          Generate and Regenerate live in the Draft tab of the workspace. */}
-      {hasDraft && <AiReviewDesk key={draftStamp} jobId={caseId} />}
     </div>
   );
 }

@@ -75,9 +75,11 @@ const BASE_FONT_OPEN =
   '<div style="font-family: Arial, Helvetica, sans-serif; font-size: 14px; color: #1E2A3A; line-height: 1.6;">';
 
 // Standing signature, legacy plaintext path only. No em/en dashes anywhere.
+// Signs as the team, never a person: a named signature is not used anywhere
+// in outgoing mail, and this line was the last one that still carried one.
 const SIGNATURE_HTML =
   '<div style="font-family: Arial, Helvetica, sans-serif; font-size: 14px; color: #1E2A3A; line-height: 1.6; margin-top: 16px;">' +
-  "Με εκτίμηση,<br>Δημήτρης<br>MyGreekTax</div>";
+  "Με εκτίμηση,<br>MyGreekTax Team</div>";
 
 export const Route = createFileRoute("/webhooks/case-reply")({
   server: {
