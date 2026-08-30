@@ -77,9 +77,9 @@ src/
     admin.tsx  admin.index.tsx  admin.change-requests.tsx  admin.tracking-links.tsx
     webhooks/                 Machine to machine endpoints (see table below)
   components/
-    AiReviewDesk.tsx          Draft edit, approve, send
+    AiReviewDesk.tsx          Draft edit, approve, send (/jobs/:jobId)
     RichTextEditor.tsx        TipTap editor
-    case-reply-box.tsx        Direct reply composer
+    case-composer.tsx         Client and partner send box (/review/:caseId)
     case-summary.tsx
     admin-analytics.tsx  admin-partners.tsx
     tracking-link-preview-notice.tsx
@@ -115,9 +115,8 @@ Everything under `/webhooks/` lives here, but the callers are not all the same a
 | `webhooks/mailgun-events.ts`   | machine | Mailgun HMAC signature                           | Log Mailgun delivery events into `email_send_log`         |
 | `webhooks/ops-snapshot.ts`     | machine | `x-ops-key`                                      | Operations snapshot for the Make ops scenario             |
 | `webhooks/case-create.ts`      | browser | Bearer token, admin role                         | Create a case                                             |
-| `webhooks/case-reply.ts`       | browser | Bearer token, admin role                         | Send a reply to the client and log it on the case         |
 | `webhooks/case-action.ts`      | browser | Bearer token, admin role                         | Case state actions                                        |
-| `webhooks/send-approved.ts`    | browser | Bearer token, admin role                         | Send an approved draft through Mailgun                    |
+| `webhooks/send-approved.ts`    | browser | Bearer token, admin role                         | Send client or partner mail through Mailgun (`target`)    |
 | `webhooks/gmail-sync.ts`       | browser | Bearer token, admin role                         | Gmail inbox sync                                          |
 | `webhooks/generate-draft.ts`   | browser | Bearer token                                     | Calls the Brain to draft a reply                          |
 | `webhooks/summarize-case.ts`   | browser | Bearer token                                     | Generate a case summary                                   |

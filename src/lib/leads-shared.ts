@@ -19,13 +19,10 @@ export const LEAD_URGENCY_OPTIONS = ["Within a week", "This month", "Just explor
 
 export type LeadUrgency = (typeof LEAD_URGENCY_OPTIONS)[number];
 
-const CLIENT_STAGE_SET = new Set<string>(CLIENT_STAGES);
-
-export function isClientStage(value?: string | null): value is ClientStage {
-  return typeof value === "string" && CLIENT_STAGE_SET.has(value);
-}
-
-/** Unknown or legacy stages sort after the active pipeline. */
-export function getClientStageSortOrder(stage?: string | null) {
-  return isClientStage(stage) ? CLIENT_STAGES.indexOf(stage) : CLIENT_STAGES.length;
-}
+// getClientStageSortOrder() and its isClientStage() helper lived here until the
+// partner reply box was deleted, which was their only caller. They ranked a
+// stage by its position in CLIENT_STAGES, and the deposit gate in
+// src/lib/case-composer.ts deliberately stopped using that reading: the array
+// is a display order, so Parked and Lost sort after Active and a quoted lead
+// that went quiet read as paid. Anything reaching for an ordering here should
+// read that comment first.

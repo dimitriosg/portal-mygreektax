@@ -2,15 +2,17 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 // The guard that keeps a partner send partner-only.
 //
-// Extracted so the two endpoints that can mail a partner cannot drift apart on
-// it. This is the check that stops a partner endpoint being pointed at a
-// client, or at any other address, whatever the browser posts: the address is
-// matched against partner_profiles and the value used for delivery afterwards
-// is the one the database returned, never the raw request value.
+// Extracted when there were two endpoints that could mail a partner, so they
+// could not drift apart on it. Only send-approved remains, and this still
+// lives apart from it: it is the check that stops a partner endpoint being
+// pointed at a client, or at any other address, whatever the browser posts,
+// and the next such endpoint should reuse it rather than rewrite it. The
+// address is matched against partner_profiles and the value used for delivery
+// afterwards is the one the database returned, never the raw request value.
 
-// A partner send must name a real address, not a pattern. partner-reply
-// checked this before its lookup; the check moved here with the lookup so the
-// two cannot come apart.
+// A partner send must name a real address, not a pattern. The retired
+// partner-reply route checked this before its lookup, and the check moved here
+// with the lookup rather than being left behind.
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**

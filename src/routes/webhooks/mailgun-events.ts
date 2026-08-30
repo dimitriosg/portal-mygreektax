@@ -192,9 +192,9 @@ async function sendAlert(subject: string, lines: string[]): Promise<void> {
     return;
   }
   const to = process.env.MAILGUN_ALERT_TO || "jim@mygreektax.eu";
-  // Same convention as send-approved, case-reply and partner-reply, rather than
-  // a hardcoded domain: all four send through the one variable so a domain
-  // change is a single edit instead of a hunt for the site that was missed.
+  // Same convention as send-approved, rather than a hardcoded domain: every
+  // site reads the one variable so a domain change is a single edit instead of
+  // a hunt for the one that was missed.
   const domain = process.env.MAILGUN_DOMAIN || "mygreektax.eu";
 
   const form = new FormData();

@@ -27,8 +27,8 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 // the note at each call site.
 //
 // NOT REPOINTED AT MAILGUN HERE, DELIBERATELY. The portal does send mail
-// directly elsewhere (case-reply, send-approved, partner-reply all POST to
-// Mailgun), so wiring these three the same way would have been a short change.
+// directly elsewhere (send-approved POSTs to Mailgun), so wiring these three
+// the same way would have been a short change.
 // It is the wrong place: outbound email is being consolidated onto n8n, where
 // sending, suppression handling and email_send_log writes already live
 // together. When these flows come back, the portal should POST an event and

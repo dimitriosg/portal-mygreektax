@@ -8,8 +8,8 @@ import { isBeforeDeposit, reviewBody, visibleText } from "@/lib/case-composer";
 //
 // Called by the case composer (and still by the AiReviewDesk button). Marks
 // the draft approved, resolves the recipient server side, sends via Mailgun's
-// EU API directly (same path as case-reply.ts, no Make hop), then logs the
-// outbound message and stamps the draft version history.
+// EU API directly (the path the retired case-reply route took, no Make hop),
+// then logs the outbound message and stamps the draft version history.
 //
 // TARGET. The composer can write to the client or to the partner, so the body
 // carries `target`. It defaults to "client", which is what every existing
@@ -21,8 +21,10 @@ import { isBeforeDeposit, reviewBody, visibleText } from "@/lib/case-composer";
 //
 //   1. The recipient must be an ACTIVE PARTNER, checked against
 //      partner_profiles by resolveActivePartner(). That check is what keeps a
-//      partner send from being pointed at a client, and it lives in a shared
-//      module precisely so the two endpoints cannot drift apart on it.
+//      partner send from being pointed at a client. It stays in its own module
+//      rather than inline here: it was shared with the retired partner-reply
+//      route so the two could not drift apart, and the next endpoint that
+//      mails a partner should reuse it for the same reason.
 //   2. NO BCC to hello@. hello@ forwards into the same Gmail the partner sync
 //      searches, so a BCC would re-import as a duplicate of the message.
 //   3. NO SIGNATURE. Partner mail carries none: these are working exchanges
@@ -837,9 +839,9 @@ export const Route = createFileRoute("/webhooks/send-approved")({
               //
               // The result was that this route sent correctly and logged
               // nothing, for its entire life: 0 rows via portal_desk against
-              // 10 from case-reply.ts, which uses "dimitris" and works. Every
-              // approved draft reached the client and left no trace on the
-              // case.
+              // 10 from the then-live case-reply route, which used
+              // "dimitris" and worked. Every approved draft reached the client
+              // and left no trace on the case.
               //
               // "internal" is a valid DIRECTION, which is most likely how it
               // got here. It has never been a valid actor.
