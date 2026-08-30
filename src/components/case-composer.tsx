@@ -89,7 +89,9 @@ export function CaseComposer({
   // Client mail is HTML from the rich editor; partner mail is plain text,
   // which is what the partner send path has always taken.
   const [clientHtml, setClientHtml] = useState("");
-  const [clientPrefill, setClientPrefill] = useState("");
+  // The version already sent from this composer, so its text stops being
+  // offered back as a prefill and the editor comes up empty afterwards.
+  const [sentVersionId, setSentVersionId] = useState<string | null>(null);
   const [partnerText, setPartnerText] = useState("");
 
   const [partners, setPartners] = useState<PartnerOption[]>([]);
@@ -105,13 +107,23 @@ export function CaseComposer({
 
   const beforeDeposit = isBeforeDeposit(clientStage);
 
-  // Prefill the client body from the newest draft version, once, and only
-  // while the operator has not started writing.
-  useEffect(() => {
+  // The prefill is derived, not stored, and the editor is keyed on it.
+  //
+  // RichTextEditor takes its content once, at mount (content: initialHtml,
+  // with no effect that follows later changes). The draft version arrives from
+  // the desk after this component has already mounted, so holding the prefill
+  // in state and letting it fill in later meant the editor never saw it and
+  // the body came up empty. Keying the editor on the version remounts it with
+  // the text, which is the same mechanism the old desk used (it was keyed on
+  // the draft stamp) and carries the same accepted trade: a regenerate
+  // replaces what is in the box.
+  const prefillHtml = useMemo(() => {
     const text = currentVersion?.draft_text ?? "";
-    if (!text || clientPrefill) return;
-    setClientPrefill(plainToHtml(text));
-  }, [currentVersion, clientPrefill]);
+    if (!text) return "";
+    // Once a version has been sent, it stops being an offer to send again.
+    if (sentVersionId && sentVersionId === currentVersion?.id) return "";
+    return plainToHtml(text);
+  }, [currentVersion, sentVersionId]);
 
   useEffect(() => {
     if (subjectTouched.current) return;
@@ -158,8 +170,7 @@ export function CaseComposer({
   };
 
   // The text the rules are applied to: what a reader would see, in both modes.
-  const bodyForReview =
-    target === "partner" ? partnerText : visibleText(clientHtml || clientPrefill);
+  const bodyForReview = target === "partner" ? partnerText : visibleText(clientHtml || prefillHtml);
   const verdict = useMemo(
     () => reviewBody(bodyForReview, target, beforeDeposit),
     [bodyForReview, target, beforeDeposit],
@@ -195,12 +206,12 @@ export function CaseComposer({
       let sentMode: "as_is" | "edited" | undefined;
 
       if (target === "client") {
-        const bodyForSend = clientHtml || clientPrefill;
+        const bodyForSend = clientHtml || prefillHtml;
         const combined = `${bodyForSend}<br>${SIGNATURE_HTML}`;
         finalText = DOMPurify.sanitize(combined, SANITIZE_CONFIG)
           .replace(/<li>\s*<p>/gi, "<li>")
           .replace(/<\/p>\s*<\/li>/gi, "</li>");
-        sentMode = visibleText(bodyForSend) === visibleText(clientPrefill) ? "as_is" : "edited";
+        sentMode = visibleText(bodyForSend) === visibleText(prefillHtml) ? "as_is" : "edited";
       } else {
         // Partner mail goes as plain text and is never signed.
         finalText = partnerText;
@@ -242,7 +253,7 @@ export function CaseComposer({
       );
       if (target === "client") {
         setClientHtml("");
-        setClientPrefill("");
+        setSentVersionId(currentVersion?.id ?? null);
       } else {
         setPartnerText("");
       }
@@ -364,7 +375,11 @@ export function CaseComposer({
         <div className="field">
           <label htmlFor="composer-body">Message</label>
           {target === "client" ? (
-            <RichTextEditor initialHtml={clientPrefill} onChange={setClientHtml} />
+            <RichTextEditor
+              key={`${currentVersion?.id ?? "none"}:${sentVersionId ?? ""}`}
+              initialHtml={prefillHtml}
+              onChange={setClientHtml}
+            />
           ) : (
             <textarea
               id="composer-body"
