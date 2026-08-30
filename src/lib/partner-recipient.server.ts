@@ -8,9 +8,22 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 // matched against partner_profiles and the value used for delivery afterwards
 // is the one the database returned, never the raw request value.
 
-/** ILIKE treats % and _ as wildcards, and both are legal in an address. */
+// A partner send must name a real address, not a pattern. partner-reply
+// checked this before its lookup; the check moved here with the lookup so the
+// two cannot come apart.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * ILIKE wildcards, escaped.
+ *
+ * % and _ are the documented pair, but PostgREST also accepts * as an alias
+ * for %, so an unescaped "*" would reach the query as "match anything" and
+ * return whichever active partner sorted first. The address format check
+ * above already rejects it; escaping it too means neither guard is load
+ * bearing on its own.
+ */
 function escapeLike(s: string): string {
-  return s.replace(/[\\%_]/g, (c) => `\\${c}`);
+  return s.replace(/[\\%_*]/g, (c) => `\\${c}`);
 }
 
 export interface PartnerRecipient {
@@ -34,6 +47,14 @@ export async function resolveActivePartner(
       detail: "A partner send must name the partner it is going to.",
     };
   }
+  if (!EMAIL_RE.test(requestedEmail)) {
+    return {
+      ok: false,
+      status: 400,
+      error: "partner_email is not an address",
+      detail: "A partner send must name one address, not a pattern.",
+    };
+  }
 
   const { data, error } = await supabase
     .from("partner_profiles")
@@ -43,11 +64,14 @@ export async function resolveActivePartner(
     .limit(1);
 
   if (error) {
+    // The database's own words name tables and columns and tell the caller
+    // nothing they can act on. They go to the log, not the response.
+    console.error("[partner-recipient] lookup failed:", error.message);
     return {
       ok: false,
       status: 500,
       error: "Partner lookup failed",
-      detail: error.message,
+      detail: "The partner list could not be read. The reason is in the server log.",
     };
   }
 

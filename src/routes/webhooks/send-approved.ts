@@ -76,10 +76,20 @@ const BASE_FONT_OPEN =
 const TARGETS = ["client", "partner"] as const;
 type Target = (typeof TARGETS)[number];
 
-function readTarget(value: unknown): Target {
+/**
+ * The target, or null when one was supplied that is not a target.
+ *
+ * Absent means "client", because every caller that predates the composer posts
+ * no target at all. A value that is present but unrecognised is an error and
+ * not a client send: coercing "Partner" to the client branch would put Greek
+ * partner text, unescaped and with a client's address resolved for it, into a
+ * client's inbox.
+ */
+function readTarget(value: unknown): Target | null {
+  if (value === undefined || value === null) return "client";
   return typeof value === "string" && (TARGETS as readonly string[]).includes(value)
     ? (value as Target)
-    : "client";
+    : null;
 }
 
 /** Partner bodies arrive as plain text, so they are escaped, never trusted. */
@@ -218,6 +228,12 @@ export const Route = createFileRoute("/webhooks/send-approved")({
         const subject = readString(b.subject, 500) || DEFAULT_SUBJECT;
         const sentMode = readSentMode(b.sent_mode);
         const target = readTarget(b.target);
+        if (target === null) {
+          return Response.json(
+            { error: "Unknown target", detail: 'target must be "client" or "partner".' },
+            { status: 400 },
+          );
+        }
         // The version this send corresponds to, chosen by the composer. See
         // the stamping step for why the server no longer picks one itself.
         const draftVersionId = readString(b.draft_version_id, 100);
@@ -242,7 +258,10 @@ export const Route = createFileRoute("/webhooks/send-approved")({
         // ---------------------------------------------------------------
         const stage = await readCaseStage(caseId);
         const beforeDeposit = isBeforeDeposit(stage);
-        const verdict = reviewBody(visibleText(finalText), target, beforeDeposit);
+        // The subject is sent in the same message and is read first, so it is
+        // judged with the body. A retail figure in a partner subject line is
+        // exactly as much an R2 breach as one in the body.
+        const verdict = reviewBody(`${subject}\n${visibleText(finalText)}`, target, beforeDeposit);
 
         if (verdict.blocking.length > 0) {
           return Response.json(
@@ -317,14 +336,37 @@ export const Route = createFileRoute("/webhooks/send-approved")({
             form.set("html", html);
             form.set("h:X-Mailgun-Variables", JSON.stringify({ src: "portal_composer" }));
 
-            const mgRes = await fetch(`https://api.eu.mailgun.net/v3/${domain}/messages`, {
-              method: "POST",
-              headers: {
-                Authorization: "Basic " + btoa("api:" + mailgunKey),
-                "Content-Type": "application/x-www-form-urlencoded",
-              },
-              body: form.toString(),
-            });
+            // Bounded like partner-reply's send: without it a stalled Mailgun
+            // holds the worker until the platform kills it, and the operator
+            // is told nothing about whether the mail went.
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000);
+            let mgRes: Response;
+            try {
+              mgRes = await fetch(`https://api.eu.mailgun.net/v3/${domain}/messages`, {
+                method: "POST",
+                headers: {
+                  Authorization: "Basic " + btoa("api:" + mailgunKey),
+                  "Content-Type": "application/x-www-form-urlencoded",
+                },
+                body: form.toString(),
+                signal: controller.signal,
+              });
+            } catch (sendError) {
+              const aborted = sendError instanceof Error && sendError.name === "AbortError";
+              console.error("[send-approved] partner send failed:", sendError);
+              return Response.json(
+                {
+                  error: aborted ? "Mailgun timed out" : "Mailgun unreachable",
+                  detail: aborted
+                    ? "The send did not complete within 10 seconds. Check the partner thread before retrying."
+                    : "The mail server could not be reached.",
+                },
+                { status: 502 },
+              );
+            } finally {
+              clearTimeout(timeoutId);
+            }
             const mgText = await mgRes.text();
             if (!mgRes.ok) {
               return mailgunFailureResponse(
@@ -388,7 +430,18 @@ export const Route = createFileRoute("/webhooks/send-approved")({
         }
 
         try {
-          // 1. The draft must exist before anything is sent.
+          // 1. A draft row is no longer required to send.
+          //
+          // This used to 404 without one, which was right while the only
+          // caller was the approve button on a generated draft. The composer
+          // is now the only way to write to a client from the case page, and
+          // it replaced a reply box that never needed a draft, so refusing
+          // here would mean a case the Brain has never drafted for cannot be
+          // replied to at all.
+          //
+          // What the row still decides is whether this send is APPROVING a
+          // draft: the approval flag and the version stamp below only apply
+          // when there is one and the caller says the draft is what it sent.
           const { data: draftRow, error: draftError } = await supabaseAdmin
             .from("case_drafts")
             .select("case_id, is_approved")
@@ -396,9 +449,13 @@ export const Route = createFileRoute("/webhooks/send-approved")({
             .maybeSingle();
 
           if (draftError) throw draftError;
-          if (!draftRow) {
-            return Response.json({ error: "No draft found for this case" }, { status: 404 });
-          }
+
+          // An ad-hoc reply is not an approval. The composer posts a version
+          // id (or a sent_mode) only when the body it is sending came from the
+          // draft; without either, this is a message the operator wrote, and
+          // marking the Brain's draft approved and sent for it would put a
+          // send into the quality metric that never happened.
+          const approvesDraft = !!draftRow && (!!draftVersionId || sentMode !== null);
 
           // 2. Resolve the recipient. Unchanged from the Make version.
           let clientRow: { id: string; full_name: string | null; email: string | null } | null =
@@ -550,19 +607,21 @@ export const Route = createFileRoute("/webhooks/send-approved")({
           //
           // What was sent now lives in case_draft_versions.sent_text, which is
           // the column that exists for it. proposed_draft stays the Brain's.
-          const { error: updateError } = await supabaseAdmin
-            .from("case_drafts")
-            .update({
-              is_approved: true,
-              last_updated: new Date().toISOString(),
-            })
-            .eq("case_id", caseId);
+          if (approvesDraft) {
+            const { error: updateError } = await supabaseAdmin
+              .from("case_drafts")
+              .update({
+                is_approved: true,
+                last_updated: new Date().toISOString(),
+              })
+              .eq("case_id", caseId);
 
-          if (updateError) {
-            console.error(
-              "[send-approved] approval update failed (mail already sent):",
-              updateError,
-            );
+            if (updateError) {
+              console.error(
+                "[send-approved] approval update failed (mail already sent):",
+                updateError,
+              );
+            }
           }
 
           // 6. Stamp the draft version history.
@@ -594,7 +653,7 @@ export const Route = createFileRoute("/webhooks/send-approved")({
           // Failure here never fails the request. The mail has gone, and a
           // missing metric row is not something the sender can act on.
           let versionStamped = false;
-          if (isNewSpine) {
+          if (isNewSpine && approvesDraft) {
             const query = supabaseAdmin.from("case_draft_versions").select("id, sent_at");
             const { data: versionRow, error: versionLookupError } = draftVersionId
               ? await query.eq("id", draftVersionId).eq("conversation_id", caseId).maybeSingle()

@@ -112,6 +112,10 @@ export function CaseComposer({
     const text = currentVersion?.draft_text ?? "";
     if (!text) return "";
     // Once a version has been sent, it stops being an offer to send again.
+    // sent_at on the row is the authoritative answer and survives a reload,
+    // a second tab and a second operator; the local id only covers the moment
+    // between this send and the row coming back.
+    if (currentVersion?.sent_at) return "";
     if (sentVersionId && sentVersionId === currentVersion?.id) return "";
     return plainToHtml(text);
   }, [currentVersion, sentVersionId]);
@@ -162,9 +166,13 @@ export function CaseComposer({
 
   // The text the rules are applied to: what a reader would see, in both modes.
   const bodyForReview = target === "partner" ? partnerText : visibleText(clientHtml || prefillHtml);
+  // The subject travels in the same message and is read first, so it is judged
+  // with the body: a retail figure in a partner subject line breaks R2 exactly
+  // as much as one in the body.
+  const reviewed = `${subject}\n${bodyForReview}`;
   const verdict = useMemo(
-    () => reviewBody(bodyForReview, target, beforeDeposit),
-    [bodyForReview, target, beforeDeposit],
+    () => reviewBody(reviewed, target, beforeDeposit),
+    [reviewed, target, beforeDeposit],
   );
 
   // A new body has not been looked at yet, so any earlier acknowledgement of
@@ -172,8 +180,11 @@ export function CaseComposer({
   useEffect(() => {
     setPricingAcknowledged(false);
     setConfirming(false);
-  }, [bodyForReview, target]);
+  }, [reviewed, target]);
 
+  // Whether this send is the current draft going out, rather than something
+  // the operator wrote from nothing. Only then does it approve a draft.
+  const sendingDraft = target === "client" && !!prefillHtml;
   const hasBody = bodyForReview.trim().length > 0;
   const needsAcknowledgement = verdict.confirmations.length > 0 && !pricingAcknowledged;
   const recipientReady = target === "client" ? !!clientEmail : !!partnerEmail;
@@ -202,7 +213,11 @@ export function CaseComposer({
         finalText = DOMPurify.sanitize(combined, SANITIZE_CONFIG)
           .replace(/<li>\s*<p>/gi, "<li>")
           .replace(/<\/p>\s*<\/li>/gi, "</li>");
-        sentMode = visibleText(bodyForSend) === visibleText(prefillHtml) ? "as_is" : "edited";
+        sentMode = sendingDraft
+          ? visibleText(bodyForSend) === visibleText(prefillHtml)
+            ? "as_is"
+            : "edited"
+          : undefined;
       } else {
         // Partner mail goes as plain text and is never signed.
         finalText = partnerText;
@@ -225,7 +240,11 @@ export function CaseComposer({
           ...(sentMode ? { sent_mode: sentMode } : {}),
           // Which version this send corresponds to, so a resend cannot stamp
           // an older unsent one.
-          ...(target === "client" && currentVersion ? { draft_version_id: currentVersion.id } : {}),
+          // Only when the draft is what is going out. An ad-hoc reply that the
+          // operator wrote is not an approval of the Brain's draft, and
+          // stamping it would put a send into the quality metric that never
+          // happened.
+          ...(sendingDraft && currentVersion ? { draft_version_id: currentVersion.id } : {}),
           ...(target === "partner" ? { partner_email: partnerEmail } : {}),
         }),
       });
@@ -240,11 +259,19 @@ export function CaseComposer({
         return;
       }
 
-      setSentMsg(
+      const to =
         target === "client"
-          ? `Sent to ${clientName || clientEmail}.`
-          : `Sent to ${partners.find((p) => p.email === partnerEmail)?.full_name || partnerEmail}.`,
-      );
+          ? clientName || clientEmail
+          : partners.find((p) => p.email === partnerEmail)?.full_name || partnerEmail;
+      if (payload.logged === false) {
+        // The mail went but the case did not record it. Saying "Sent" and
+        // nothing else is how an empty case thread went unnoticed before.
+        setError(
+          `Sent to ${to}, but it was not written to the case thread. ${payload.logError ?? ""}`.trim(),
+        );
+      } else {
+        setSentMsg(`Sent to ${to}.`);
+      }
       if (target === "client") {
         setClientHtml("");
         setSentVersionId(currentVersion?.id ?? null);
@@ -366,24 +393,32 @@ export function CaseComposer({
           />
         </div>
 
-        <div className="field">
+        {/* Both editors stay mounted and the inactive one is hidden, rather
+            than switching on the target. The rich editor takes its content at
+            mount and emits it once, so unmounting it on a flip to the partner
+            tab and remounting it on the way back would overwrite a
+            half-written client message with the prefill. Hiding costs
+            nothing and keeps both drafts while the operator moves between
+            them. */}
+        <div className="field" hidden={target !== "client"}>
+          <label>Message</label>
+          <RichTextEditor
+            key={`${currentVersion?.id ?? "none"}:${sentVersionId ?? ""}`}
+            initialHtml={prefillHtml}
+            onChange={setClientHtml}
+          />
+        </div>
+
+        <div className="field" hidden={target !== "partner"}>
           <label htmlFor="composer-body">Message</label>
-          {target === "client" ? (
-            <RichTextEditor
-              key={`${currentVersion?.id ?? "none"}:${sentVersionId ?? ""}`}
-              initialHtml={prefillHtml}
-              onChange={setClientHtml}
-            />
-          ) : (
-            <textarea
-              id="composer-body"
-              className="mc-input"
-              style={{ minHeight: 160 }}
-              value={partnerText}
-              onChange={(e) => setPartnerText(e.target.value)}
-              placeholder="Γράψε το μήνυμα προς τον συνεργάτη. Το MGT-REF-ID μπαίνει αυτόματα."
-            />
-          )}
+          <textarea
+            id="composer-body"
+            className="mc-input"
+            style={{ minHeight: 160 }}
+            value={partnerText}
+            onChange={(e) => setPartnerText(e.target.value)}
+            placeholder="Γράψε το μήνυμα προς τον συνεργάτη. Το MGT-REF-ID μπαίνει αυτόματα."
+          />
         </div>
 
         {target === "client" && (
