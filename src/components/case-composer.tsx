@@ -56,6 +56,13 @@ interface Props {
   onSent?: () => void;
 }
 
+/**
+ * Draft text as the rich editor needs it.
+ *
+ * `case_draft_versions.draft_text` is plain text, so it is escaped first and
+ * only then given structure: a blank line becomes a paragraph and a single
+ * newline a `<br>`, which is the shape the Brain's drafts are written in.
+ */
 function plainToHtml(raw: string): string {
   const escape = (s: string) =>
     s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -65,6 +72,17 @@ function plainToHtml(raw: string): string {
     .join("");
 }
 
+/**
+ * The one place a case sends mail from, to either side of it.
+ *
+ * See the module header above for what the target switch changes and why the
+ * two boxes this replaces were merged. Two things are worth knowing before
+ * reading the state: each target keeps its own subject and its own body, so
+ * flipping between them never destroys half-written work or carries a client
+ * subject onto a partner send; and every rule shown here is applied again by
+ * /webhooks/send-approved, so this component decides what is easy to do, not
+ * what is possible.
+ */
 export function CaseComposer({
   conversationId,
   caseSerialId,

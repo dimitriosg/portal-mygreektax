@@ -147,6 +147,17 @@ async function readCaseGateFacts(caseId: string): Promise<CaseGateFacts> {
   return { stage: typeof conv.stage === "string" ? conv.stage : null, depositRecorded: false };
 }
 
+/**
+ * The MGT-REF-ID footer, which is how a partner's reply finds its way back.
+ *
+ * Partner mail goes to the partner's own mailbox and comes back through the
+ * sync with no thread the portal owns, so the case code travels in the body
+ * and is read back out of the reply. Byte for byte the same line
+ * /webhooks/partner-reply already emits, "MGT-" prefix stripped and all: two
+ * endpoints writing the marker two ways is how one of them stops matching.
+ * Returns "" for a case with no serial, and the partner branch refuses to
+ * send in that state rather than mailing an unmatchable message.
+ */
 function refLine(caseSerialId: string | null): string {
   const refCore = caseSerialId ? caseSerialId.replace(/^MGT-/i, "") : "";
   return refCore

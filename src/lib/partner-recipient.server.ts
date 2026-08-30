@@ -35,6 +35,20 @@ export type PartnerLookup =
   | { ok: true; partner: PartnerRecipient }
   | { ok: false; status: number; error: string; detail: string };
 
+/**
+ * The partner a send may go to, or the reason it may not.
+ *
+ * `requestedEmail` is the browser's claim about who the operator picked. It is
+ * used only to look a partner up: on success the address returned is the one
+ * `partner_profiles` holds, so a posted address that is not an enabled
+ * partner (a client's, or one that was disabled since the page loaded) cannot
+ * be mailed by a partner endpoint.
+ *
+ * Errors carry a status and two strings: `error` for the operator and `detail`
+ * for what they can do about it. The database's own message never travels,
+ * since it names tables and columns and tells the caller nothing they can act
+ * on.
+ */
 export async function resolveActivePartner(
   supabase: SupabaseClient,
   requestedEmail: string,

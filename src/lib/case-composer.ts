@@ -230,6 +230,22 @@ export interface SendVerdict {
   confirmations: string[];
 }
 
+/**
+ * Everything R2 and R7 have to say about one outgoing message.
+ *
+ * `text` is the subject and body together, read the way the recipient will
+ * read them: stripped to its words for client HTML, as written for partner
+ * plain text. Getting that wrong in either direction hides content from the
+ * rules that the recipient still receives.
+ *
+ * Blocking findings have no override, by design. Confirmations are the shape
+ * R2 asks for in words, a human answering "yes, that figure is wholesale",
+ * and the caller carries that answer to the server as `pricing_ack`.
+ *
+ * Both the composer and /webhooks/send-approved call this, over the same
+ * input, so the button and the endpoint cannot disagree about what is
+ * allowed out.
+ */
 export function reviewBody(
   text: string,
   target: ComposerTarget,
