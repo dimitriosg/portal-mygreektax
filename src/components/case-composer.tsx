@@ -5,7 +5,13 @@ import { RichTextEditor } from "@/components/RichTextEditor";
 import { SIGNATURE_HTML } from "@/lib/signature";
 import { athensStamp, isPartnerEvent, type ThreadEvent } from "@/lib/case-thread";
 import { type DraftVersionRow } from "@/lib/case-draft-versions";
-import { isBeforeDeposit, reviewBody, visibleText, type ComposerTarget } from "@/lib/case-composer";
+import {
+  draftToOffer,
+  isBeforeDeposit,
+  reviewBody,
+  visibleText,
+  type ComposerTarget,
+} from "@/lib/case-composer";
 
 // One composer for both directions of a case.
 //
@@ -206,46 +212,23 @@ export function CaseComposer({
   // the text, which is the same mechanism the old desk used (it was keyed on
   // the draft stamp) and carries the same accepted trade: a regenerate
   // replaces what is in the box.
-  // Whether the newest recorded version is the draft that would go out.
-  //
-  // When it is not, the version is history and case_drafts holds something
-  // newer: a generation the trigger did not record, or a draft older than the
-  // version table. Sending then must not be attributed to that version, or the
-  // metric gets a row whose sent_text was never its draft_text, which is the
-  // same shape as the resend double-stamp this PR fixes.
-  const versionIsCurrent =
-    !!currentVersion &&
-    typeof currentDraftText === "string" &&
-    currentDraftText.length > 0 &&
-    currentVersion.draft_text === currentDraftText;
-
-  const prefillHtml = useMemo(() => {
-    // case_drafts first: it is what the send path has always sent, and it is
-    // the only one of the two that is guaranteed to exist for a drafted case.
-    const text = currentDraftText || currentVersion?.draft_text || "";
-    if (!text) return "";
-    // Already sent, on the record that is written first and so outlives the
-    // version stamp. Without this, a stamp that failed left sent_at null and a
-    // reload put the just-sent draft back in the box, ready to go again.
-    if (currentDraftApproved) return "";
-    // Once a version has been sent, it stops being an offer to send again.
-    // sent_at on the row is the authoritative answer and survives a reload,
-    // a second tab and a second operator; the local id only covers the moment
-    // between this send and the row coming back. Only when that version is
-    // still the current draft, though: a newer unrecorded draft is unsent
-    // whatever the version behind it says.
-    if (versionIsCurrent && currentVersion?.sent_at) return "";
-    if (versionIsCurrent && sentVersionId && sentVersionId === currentVersion?.id) return "";
-    if (!versionIsCurrent && sentDraftText !== null && sentDraftText === text) return "";
-    return plainToHtml(text);
-  }, [
-    currentDraftText,
-    currentDraftApproved,
-    currentVersion,
-    sentVersionId,
-    sentDraftText,
-    versionIsCurrent,
-  ]);
+  // Which draft to offer, and whether sending it counts against the recorded
+  // version. The decision itself is pure and lives in the rules module, where
+  // it is unit tested: it is what stands between a stale or already-sent draft
+  // and a second copy of the same email.
+  const offer = useMemo(
+    () =>
+      draftToOffer({
+        currentDraftText,
+        currentDraftApproved,
+        version: currentVersion ?? null,
+        sentVersionId,
+        sentDraftText,
+      }),
+    [currentDraftText, currentDraftApproved, currentVersion, sentVersionId, sentDraftText],
+  );
+  const versionIsCurrent = offer.versionIsCurrent;
+  const prefillHtml = useMemo(() => (offer.text ? plainToHtml(offer.text) : ""), [offer.text]);
 
   // A client reply carries "Re: <the subject they last wrote under>", which is
   // what puts it in their existing thread rather than starting a new one. The

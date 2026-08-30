@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  draftToOffer,
   findCurrencyFigures,
   findGatedContent,
   findPricingExposure,
@@ -7,6 +8,118 @@ import {
   reviewBody,
   visibleText,
 } from "./case-composer";
+
+describe("draftToOffer", () => {
+  const v = (over: Partial<{ id: string; draft_text: string; sent_at: string | null }> = {}) => ({
+    id: "v2",
+    draft_text: "Dear Anna, your 2025 return is filed.",
+    sent_at: null,
+    ...over,
+  });
+
+  it("offers the draft and attributes it when the two agree", () => {
+    const out = draftToOffer({ currentDraftText: v().draft_text, version: v() });
+    expect(out).toEqual({ text: v().draft_text, versionIsCurrent: true, reason: "offer" });
+  });
+
+  it("offers a draft the version table never recorded, unattributed", () => {
+    // The trigger swallows its own exceptions, so this case exists in the data.
+    // Before the fix the editor came up empty and the draft could not be sent.
+    const out = draftToOffer({ currentDraftText: "Hand-written by the Brain", version: null });
+    expect(out.text).toBe("Hand-written by the Brain");
+    expect(out.versionIsCurrent).toBe(false);
+    expect(out.reason).toBe("offer");
+  });
+
+  it("offers the newer draft, not the recorded one, when they diverge", () => {
+    // The regression that would have sent the stale text.
+    const out = draftToOffer({
+      currentDraftText: "v3 text",
+      version: v({ draft_text: "v2 text" }),
+    });
+    expect(out.text).toBe("v3 text");
+    expect(out.versionIsCurrent).toBe(false);
+  });
+
+  it("offers nothing when there is no draft anywhere", () => {
+    expect(draftToOffer({}).reason).toBe("no-draft");
+    expect(draftToOffer({ currentDraftText: "" }).reason).toBe("no-draft");
+  });
+
+  it("stops offering an approved draft, even when the version stamp failed", () => {
+    // is_approved is written before the stamp, so it is the signal that
+    // survives it. sent_at being null here is the whole point of the case.
+    const out = draftToOffer({
+      currentDraftText: v().draft_text,
+      currentDraftApproved: true,
+      version: v({ sent_at: null }),
+    });
+    expect(out.text).toBe("");
+    expect(out.reason).toBe("already-approved");
+  });
+
+  it("stops offering an approved draft that has no version row at all", () => {
+    const out = draftToOffer({
+      currentDraftText: "Sent, never recorded",
+      currentDraftApproved: true,
+      version: null,
+    });
+    expect(out.reason).toBe("already-approved");
+  });
+
+  it("stops offering a version already stamped as sent", () => {
+    const out = draftToOffer({
+      currentDraftText: v().draft_text,
+      version: v({ sent_at: "2026-08-30T10:00:00Z" }),
+    });
+    expect(out.reason).toBe("version-already-sent");
+  });
+
+  it("keeps offering a newer draft even when the version behind it was sent", () => {
+    // A regeneration the trigger missed, on top of a version that did send.
+    // The new text is unsent whatever the older row says.
+    const out = draftToOffer({
+      currentDraftText: "regenerated after the send",
+      version: v({ draft_text: "the one that went", sent_at: "2026-08-30T10:00:00Z" }),
+    });
+    expect(out.text).toBe("regenerated after the send");
+    expect(out.reason).toBe("offer");
+  });
+
+  it("stops offering within the session, before the reload lands", () => {
+    expect(
+      draftToOffer({ currentDraftText: v().draft_text, version: v(), sentVersionId: "v2" }).reason,
+    ).toBe("sent-this-session");
+    expect(
+      draftToOffer({ currentDraftText: "ad hoc", version: null, sentDraftText: "ad hoc" }).reason,
+    ).toBe("sent-this-session");
+  });
+
+  it("does not confuse one session send for another", () => {
+    // A different version, and different unrecorded text, are both still on offer.
+    expect(
+      draftToOffer({ currentDraftText: v().draft_text, version: v(), sentVersionId: "v1" }).reason,
+    ).toBe("offer");
+    expect(
+      draftToOffer({ currentDraftText: "draft B", version: null, sentDraftText: "draft A" }).reason,
+    ).toBe("offer");
+  });
+
+  it("never attributes a send to a version whose text is not going out", () => {
+    // The invariant that keeps the quality metric honest: every state that
+    // offers text must either match the version or decline to attribute it.
+    const states = [
+      { currentDraftText: "x", version: v({ draft_text: "x" }) },
+      { currentDraftText: "x", version: v({ draft_text: "y" }) },
+      { currentDraftText: "x", version: null },
+      { currentDraftText: "", version: v({ draft_text: "y" }) },
+    ];
+    for (const s of states) {
+      const out = draftToOffer(s);
+      if (out.versionIsCurrent) expect(out.text).toBe(s.version?.draft_text);
+    }
+  });
+});
 
 describe("isBeforeDeposit", () => {
   it("gates the stages before Active and clears the rest", () => {

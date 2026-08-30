@@ -87,6 +87,82 @@ export function isBeforeDeposit(
 }
 
 // ---------------------------------------------------------------------------
+// Which draft the composer offers, and whether a send counts against a version
+// ---------------------------------------------------------------------------
+
+/** The version row fields this decision needs. */
+export interface OfferableVersion {
+  id: string;
+  draft_text: string;
+  sent_at: string | null;
+}
+
+export interface DraftOfferInput {
+  /** case_drafts.proposed_draft: the draft the send path would actually send. */
+  currentDraftText?: string | null;
+  /** case_drafts.is_approved: this draft has already gone out. */
+  currentDraftApproved?: boolean;
+  /** The newest recorded version, or null when the trigger recorded none. */
+  version?: OfferableVersion | null;
+  /** A version this session has already sent. */
+  sentVersionId?: string | null;
+  /** Draft text this session has already sent with no version behind it. */
+  sentDraftText?: string | null;
+}
+
+export interface DraftOffer {
+  /** The draft to put in the editor. Empty means offer nothing. */
+  text: string;
+  /**
+   * Whether a send of this text may be attributed to `version`. False means the
+   * mail still goes, but carries no draft_version_id and no sent_mode.
+   */
+  versionIsCurrent: boolean;
+  /** Why, so a caller (and a test) can state the case rather than infer it. */
+  reason: "offer" | "no-draft" | "already-approved" | "version-already-sent" | "sent-this-session";
+}
+
+/**
+ * Whether to offer the draft again, and whether sending it counts as sending a
+ * recorded version.
+ *
+ * Pure, and separated from the component on purpose: this is the decision that
+ * governs whether a client can be emailed the same message twice, and it reads
+ * from four sources that disagree in ordinary operation. `case_drafts` holds
+ * the sendable draft; `case_draft_versions` holds the history and can lag it,
+ * or miss it entirely, because the trigger that writes it early-returns on an
+ * approved update and swallows its own exceptions. The two session fields cover
+ * the window between a send and the reload that follows it.
+ *
+ * The order of the checks is the substance. `is_approved` is tested first
+ * because it is the only signal written before the version stamp, so it is the
+ * one that survives the stamp failing.
+ */
+export function draftToOffer(input: DraftOfferInput): DraftOffer {
+  const { currentDraftText, currentDraftApproved, version, sentVersionId, sentDraftText } = input;
+
+  const text = currentDraftText || version?.draft_text || "";
+  const versionIsCurrent =
+    !!version &&
+    typeof currentDraftText === "string" &&
+    currentDraftText.length > 0 &&
+    version.draft_text === currentDraftText;
+
+  if (!text) return { text: "", versionIsCurrent, reason: "no-draft" };
+  if (currentDraftApproved) return { text: "", versionIsCurrent, reason: "already-approved" };
+  if (versionIsCurrent && version?.sent_at) {
+    return { text: "", versionIsCurrent, reason: "version-already-sent" };
+  }
+  if (versionIsCurrent && sentVersionId && sentVersionId === version?.id) {
+    return { text: "", versionIsCurrent, reason: "sent-this-session" };
+  }
+  if (!versionIsCurrent && sentDraftText != null && sentDraftText === text) {
+    return { text: "", versionIsCurrent, reason: "sent-this-session" };
+  }
+  return { text, versionIsCurrent, reason: "offer" };
+}
+
+// ---------------------------------------------------------------------------
 // R2: money in partner-facing text
 // ---------------------------------------------------------------------------
 
