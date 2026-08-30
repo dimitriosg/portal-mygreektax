@@ -185,16 +185,18 @@ export function CaseDraftDesk({
       {!loading && !error && inStep && versions.length === 0 && hasCurrentDraftRow && (
         <p className="empty">
           This case has a draft, but it predates the version history and was never recorded here. It
-          is still on the desk below the thread. Regenerating records a version.
+          is still loaded in the composer and can be sent; it just will not be counted. Regenerating
+          records a version.
         </p>
       )}
 
       {current && diverged && (
         <div className="callout">
           <span>
-            The draft on the send desk below the thread is not this version. A generation was not
-            recorded here, so v{current.version_no} is the newest one on record, not the newest one
-            written. Regenerating records a version and brings the two back into step.
+            The draft loaded in the composer is not this version. A generation was not recorded
+            here, so v{current.version_no} is the newest one on record, not the newest one written.
+            The composer sends the newer one, and does not count it against this version.
+            Regenerating records a version and brings the two back into step.
           </span>
         </div>
       )}

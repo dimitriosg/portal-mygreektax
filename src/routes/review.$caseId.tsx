@@ -669,6 +669,10 @@ function ReviewCase() {
         // what keeps a paid case that was later parked from being gated.
         clientDeposit={client?.deposit ?? null}
         events={events}
+        // case_drafts.proposed_draft is what the send path sends, and it is
+        // the only one of the two that always exists for a drafted case. The
+        // version row is passed alongside it purely to attribute the send.
+        currentDraftText={draftText}
         currentVersion={currentVersion}
         onSent={load}
       />

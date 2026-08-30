@@ -50,7 +50,20 @@ interface Props {
   clientDeposit?: number | null;
   /** The whole case timeline, for the context panel. */
   events: ThreadEvent[];
-  /** The newest draft version, used to prefill the client body. */
+  /**
+   * case_drafts.proposed_draft: the draft that is actually sendable.
+   *
+   * This, not the version row, is the source of truth for the prefill.
+   * case_draft_versions is written by a trigger that early-returns on an
+   * approved update and swallows its own exceptions, so a case can hold a
+   * current draft with no version row at all, or with a version row whose
+   * text is older. The draft desk already names both states.
+   */
+  currentDraftText?: string | null;
+  /**
+   * The newest recorded version, used to attribute a send to the metric.
+   * Only that: a version whose text has been superseded is not what goes out.
+   */
   currentVersion?: DraftVersionRow | null;
   /** Called after a successful send so the page can refresh the thread. */
   onSent?: () => void;
@@ -91,6 +104,7 @@ export function CaseComposer({
   clientStage,
   clientDeposit,
   events,
+  currentDraftText,
   currentVersion,
   onSent,
 }: Props) {
@@ -113,6 +127,11 @@ export function CaseComposer({
   // The version already sent from this composer, so its text stops being
   // offered back as a prefill and the editor comes up empty afterwards.
   const [sentVersionId, setSentVersionId] = useState<string | null>(null);
+  // The same idea for a draft with no version row behind it. There, nothing is
+  // written anywhere on send (no version to stamp, no is_approved), so a
+  // reload of case_drafts offers the identical text straight back. The version
+  // id cannot express this one; the text is all there is to compare.
+  const [sentDraftText, setSentDraftText] = useState<string | null>(null);
   // Bumped on every send that clears the editor. The version id alone cannot
   // express "cleared": an ad-hoc reply on a case with no draft leaves it null
   // before and after, the key never changes, and the text that was just mailed
@@ -150,17 +169,35 @@ export function CaseComposer({
   // the text, which is the same mechanism the old desk used (it was keyed on
   // the draft stamp) and carries the same accepted trade: a regenerate
   // replaces what is in the box.
+  // Whether the newest recorded version is the draft that would go out.
+  //
+  // When it is not, the version is history and case_drafts holds something
+  // newer: a generation the trigger did not record, or a draft older than the
+  // version table. Sending then must not be attributed to that version, or the
+  // metric gets a row whose sent_text was never its draft_text, which is the
+  // same shape as the resend double-stamp this PR fixes.
+  const versionIsCurrent =
+    !!currentVersion &&
+    typeof currentDraftText === "string" &&
+    currentDraftText.length > 0 &&
+    currentVersion.draft_text === currentDraftText;
+
   const prefillHtml = useMemo(() => {
-    const text = currentVersion?.draft_text ?? "";
+    // case_drafts first: it is what the send path has always sent, and it is
+    // the only one of the two that is guaranteed to exist for a drafted case.
+    const text = currentDraftText || currentVersion?.draft_text || "";
     if (!text) return "";
     // Once a version has been sent, it stops being an offer to send again.
     // sent_at on the row is the authoritative answer and survives a reload,
     // a second tab and a second operator; the local id only covers the moment
-    // between this send and the row coming back.
-    if (currentVersion?.sent_at) return "";
-    if (sentVersionId && sentVersionId === currentVersion?.id) return "";
+    // between this send and the row coming back. Only when that version is
+    // still the current draft, though: a newer unrecorded draft is unsent
+    // whatever the version behind it says.
+    if (versionIsCurrent && currentVersion?.sent_at) return "";
+    if (versionIsCurrent && sentVersionId && sentVersionId === currentVersion?.id) return "";
+    if (!versionIsCurrent && sentDraftText !== null && sentDraftText === text) return "";
     return plainToHtml(text);
-  }, [currentVersion, sentVersionId]);
+  }, [currentDraftText, currentVersion, sentVersionId, sentDraftText, versionIsCurrent]);
 
   // A client reply carries "Re: <the subject they last wrote under>", which is
   // what puts it in their existing thread rather than starting a new one. The
@@ -248,6 +285,10 @@ export function CaseComposer({
   // Whether this send is the current draft going out, rather than something
   // the operator wrote from nothing. Only then does it approve a draft.
   const sendingDraft = target === "client" && !!prefillHtml;
+  // ...and whether that draft is one the metric can be told about. A draft the
+  // version table never recorded still sends; it just sends unattributed,
+  // rather than stamping a version row with text that was never its own.
+  const sendingRecordedVersion = sendingDraft && versionIsCurrent;
   const hasBody = bodyForReview.trim().length > 0;
   const needsAcknowledgement = verdict.confirmations.length > 0 && !pricingAcknowledged;
   const recipientReady = target === "client" ? !!clientEmail : !!partnerEmail;
@@ -277,7 +318,7 @@ export function CaseComposer({
         finalText = DOMPurify.sanitize(combined, SANITIZE_CONFIG)
           .replace(/<li>\s*<p>/gi, "<li>")
           .replace(/<\/p>\s*<\/li>/gi, "</li>");
-        sentMode = sendingDraft
+        sentMode = sendingRecordedVersion
           ? visibleText(bodyForSend) === visibleText(prefillHtml)
             ? "as_is"
             : "edited"
@@ -304,11 +345,17 @@ export function CaseComposer({
           ...(sentMode ? { sent_mode: sentMode } : {}),
           // Which version this send corresponds to, so a resend cannot stamp
           // an older unsent one.
-          // Only when the draft is what is going out. An ad-hoc reply that the
-          // operator wrote is not an approval of the Brain's draft, and
-          // stamping it would put a send into the quality metric that never
-          // happened.
-          ...(sendingDraft && currentVersion ? { draft_version_id: currentVersion.id } : {}),
+          //
+          // Both conditions matter. An ad-hoc reply the operator wrote is not
+          // an approval of the Brain's draft, and a version the draft has since
+          // moved past is not the thing being sent; stamping either would put a
+          // send into the quality metric that never happened. Sending a draft
+          // the version table never recorded is fine and still goes out, it
+          // just carries no version id and no sent_mode, so the server leaves
+          // the history alone rather than writing this text onto an older row.
+          ...(sendingRecordedVersion && currentVersion
+            ? { draft_version_id: currentVersion.id }
+            : {}),
           ...(target === "partner" ? { partner_email: partnerEmail } : {}),
         }),
       });
@@ -343,7 +390,12 @@ export function CaseComposer({
         setSentMsg(`Sent to ${to}.`);
         if (target === "client") {
           setClientHtml("");
-          setSentVersionId(currentVersion?.id ?? null);
+          // Only the version that actually went out. Recording one the send was
+          // not attributed to would suppress a prefill that is still unsent.
+          setSentVersionId(sendingRecordedVersion ? (currentVersion?.id ?? null) : null);
+          if (sendingDraft && !sendingRecordedVersion) {
+            setSentDraftText(currentDraftText || currentVersion?.draft_text || null);
+          }
           // Remounts the editor even when there is no version id to change,
           // which is every ad-hoc reply.
           setClearNonce((n) => n + 1);
