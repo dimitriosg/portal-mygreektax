@@ -38,6 +38,21 @@ interface PartnerOption {
   full_name: string | null;
 }
 
+interface PartnerDraft {
+  subject: string | null;
+  body: string | null;
+  internal_notes: string | null;
+  pricing_flag: boolean;
+  drafted_for_email: string | null;
+  last_updated: string;
+}
+
+// The Brain writes case_partner_drafts in the background, so the generate call
+// returns before the draft exists and there is nothing to await. Same shape as
+// the client generate path in review.$caseId.tsx.
+const GEN_POLL_MS = 3000;
+const GEN_TIMEOUT_MS = 180000;
+
 interface Props {
   /** brain_conversations.id. */
   conversationId: string;
@@ -143,6 +158,19 @@ export function CaseComposer({
   const [partnerEmail, setPartnerEmail] = useState("");
   const [partnerError, setPartnerError] = useState("");
 
+  // Brain assist for partner mail. Generation only: it never sends, never
+  // picks a recipient, and never bypasses the confirmation. Whatever lands in
+  // the box is edited and approved by a human exactly as typed text is.
+  const [partnerDraft, setPartnerDraft] = useState<PartnerDraft | null>(null);
+  // Whether that draft is what is currently in the box. The R6 check below is
+  // about the text carrying one partner's context, so it has to follow the
+  // text, not merely the existence of a row: a draft loaded at mount and never
+  // applied says nothing about a message the operator typed themselves.
+  const [partnerDraftApplied, setPartnerDraftApplied] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [genError, setGenError] = useState("");
+  const [notesOpen, setNotesOpen] = useState(false);
+
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
   const [contextOpen, setContextOpen] = useState(false);
   const [pricingAcknowledged, setPricingAcknowledged] = useState(false);
@@ -245,6 +273,134 @@ export function CaseComposer({
     };
   }, []);
 
+  // Returns the error rather than swallowing it. This backs both the mount
+  // load and every iteration of the poll below, so a query that keeps failing
+  // (an RLS change, a missing table) would otherwise be indistinguishable from
+  // "no draft yet" and would surface three minutes later as a generic timeout.
+  const loadPartnerDraft = useCallback(async (): Promise<{
+    row: PartnerDraft | null;
+    error: string | null;
+  }> => {
+    const { data, error: err } = await supabase
+      .from("case_partner_drafts")
+      .select("subject, body, internal_notes, pricing_flag, drafted_for_email, last_updated")
+      .eq("case_id", conversationId)
+      .maybeSingle();
+    if (err) {
+      console.error("[case-composer] partner draft load failed:", err.message);
+      return { row: null, error: err.message };
+    }
+    return { row: (data as PartnerDraft | null) ?? null, error: null };
+  }, [conversationId]);
+
+  // Loaded but never applied automatically: applying overwrites the box, and
+  // on mount there is no way to know the operator did not mean to keep a
+  // half-written message.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { row } = await loadPartnerDraft();
+      if (!cancelled) setPartnerDraft(row);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loadPartnerDraft]);
+
+  const applyPartnerDraft = (row: PartnerDraft) => {
+    if (row.subject) {
+      subjectTouched.current.partner = true;
+      setPartnerSubject(row.subject);
+    }
+    setPartnerText(row.body ?? "");
+    setPartnerDraftApplied(true);
+    setConfirming(false);
+  };
+
+  const generatePartnerDraft = async () => {
+    setGenError("");
+    if (!partnerEmail) {
+      setGenError("Pick a partner first. The draft is written for a specific recipient.");
+      return;
+    }
+    setGenerating(true);
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      const res = await fetch("/webhooks/generate-partner-draft", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
+        // The recipient goes with the request: the Brain filters the case
+        // timeline to this partner's correspondence (R6) and addresses the
+        // draft to them. The server revalidates it against active partners.
+        body: JSON.stringify({ conversation_id: conversationId, partner_email: partnerEmail }),
+      });
+
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok || !payload?.ok) {
+        const detail =
+          typeof payload?.detail === "string"
+            ? payload.detail
+            : (payload?.error ?? `HTTP ${res.status}`);
+        setGenError(`Generation failed: ${detail}`);
+        return;
+      }
+
+      const baseline: string | null = payload.previousUpdatedAt ?? null;
+      const startedAt = Date.now();
+
+      while (Date.now() - startedAt < GEN_TIMEOUT_MS) {
+        await new Promise((r) => setTimeout(r, GEN_POLL_MS));
+        const { row: fresh, error: readError } = await loadPartnerDraft();
+        // Stop on a read failure rather than polling out. The Brain may well
+        // have written the draft; what is broken is our ability to read it.
+        if (readError) {
+          setGenError(`Could not read the draft back: ${readError}`);
+          return;
+        }
+        if (fresh && fresh.last_updated !== baseline) {
+          setPartnerDraft(fresh);
+          applyPartnerDraft(fresh);
+          return;
+        }
+      }
+
+      setGenError(
+        "The draft is taking longer than expected. It may still finish, so try reloading the page in a minute.",
+      );
+    } catch (err) {
+      setGenError(
+        `Could not reach the server: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  // R6: a draft is written with one partner's thread in scope and every other
+  // partner's filtered out. Changing the recipient afterwards is one click,
+  // and sending it as-is would put one partner's context in front of another.
+  //
+  // Two distinct states, and neither is safe. A draft written for someone else
+  // is a known mismatch and blocks: R6 says never, and the composer has a way
+  // to say never that the box this replaces did not (there, both of these were
+  // red text above a live Send button). A draft with no recorded recipient is
+  // UNKNOWN rather than fine, but old rows predate the column, so that one
+  // asks instead of refusing.
+  const draftedForOther =
+    partnerDraftApplied &&
+    !!partnerDraft?.drafted_for_email &&
+    !!partnerEmail &&
+    partnerDraft.drafted_for_email.toLowerCase() !== partnerEmail.toLowerCase();
+
+  const draftUnattributed =
+    partnerDraftApplied && !!partnerDraft && !partnerDraft.drafted_for_email;
+
   // Every message in the case is context by default; the operator takes some
   // out rather than putting them in.
   const inContext = useCallback((id: string) => !excluded.has(id), [excluded]);
@@ -270,10 +426,29 @@ export function CaseComposer({
   // with the body: a retail figure in a partner subject line breaks R2 exactly
   // as much as one in the body.
   const reviewed = `${subject}\n${bodyForReview}`;
-  const verdict = useMemo(
-    () => reviewBody(reviewed, target, beforeDeposit),
-    [reviewed, target, beforeDeposit],
-  );
+  const verdict = useMemo(() => {
+    const v = reviewBody(reviewed, target, beforeDeposit);
+    // R6 rides in the same channel as R2 and R7 rather than being a notice of
+    // its own, so one place decides whether Send lights up.
+    if (draftedForOther) {
+      v.blocking.push(
+        `R6: this draft was written for ${partnerDraft?.drafted_for_email}, and the recipient is now someone else. It may carry that partner's context. Redraft for the current recipient.`,
+      );
+    }
+    if (draftUnattributed) {
+      v.confirmations.push(
+        "R6: this draft has no recorded recipient, so there is no way to tell whose context it carries. Confirm it is safe for this partner, or redraft.",
+      );
+    }
+    return v;
+  }, [
+    reviewed,
+    target,
+    beforeDeposit,
+    draftedForOther,
+    draftUnattributed,
+    partnerDraft?.drafted_for_email,
+  ]);
 
   // A new body has not been looked at yet, so any earlier acknowledgement of
   // its figures is void.
@@ -401,6 +576,9 @@ export function CaseComposer({
           setClearNonce((n) => n + 1);
         } else {
           setPartnerText("");
+          // The draft went out with the message. What is typed next is the
+          // operator's own, so the R6 check stops applying to it.
+          setPartnerDraftApplied(false);
         }
         setTimeout(() => setSentMsg(""), 4000);
       }
@@ -548,9 +726,79 @@ export function CaseComposer({
             className="mc-input"
             style={{ minHeight: 160 }}
             value={partnerText}
-            onChange={(e) => setPartnerText(e.target.value)}
+            onChange={(e) => {
+              setPartnerText(e.target.value);
+              // Emptying the box discards the draft's context along with it,
+              // so the R6 check stops applying to what is typed next.
+              if (!e.target.value.trim()) setPartnerDraftApplied(false);
+            }}
             placeholder="Γράψε το μήνυμα προς τον συνεργάτη. Το MGT-REF-ID μπαίνει αυτόματα."
           />
+
+          {/* Brain assist. Generation only: it writes into the box and never
+              sends, and the draft is scoped to the partner selected above, so
+              the recipient has to be chosen before there is anything to ask
+              for. */}
+          <div className="reply-foot" style={{ marginTop: 8 }}>
+            <button
+              className={partnerDraft ? "btn btn-sm" : "btn btn-solid btn-sm"}
+              disabled={generating || !partnerEmail}
+              onClick={generatePartnerDraft}
+            >
+              {generating
+                ? "Drafting..."
+                : partnerDraft
+                  ? "Redraft with Brain"
+                  : "Draft with Brain"}
+            </button>
+            {partnerDraft && !generating && (
+              <button className="btn btn-sm" onClick={() => applyPartnerDraft(partnerDraft)}>
+                Load Brain draft
+              </button>
+            )}
+            <span className="stamp">
+              {generating
+                ? "The Brain is writing in Greek, scoped to this partner's thread."
+                : partnerDraft
+                  ? `Draft on file, ${athensStamp(partnerDraft.last_updated)}`
+                  : "Greek, scoped to this partner's correspondence"}
+            </span>
+          </div>
+
+          {genError && (
+            <p className="text-sm text-red-600 border border-red-200 bg-red-50 rounded px-3 py-2">
+              {genError}
+            </p>
+          )}
+
+          {/* The Brain's own scan of its own output, which is a second opinion
+              on R2 rather than a repeat: this one does not depend on the
+              composer's pattern matching having caught the figure. */}
+          {partnerDraftApplied && partnerDraft?.pricing_flag && (
+            <div className="callout r2">
+              <span>
+                The Brain flagged a currency figure in this draft. Check every one before sending,
+                or replace it with <em>κατόπιν συμφωνίας</em>.
+              </span>
+            </div>
+          )}
+
+          {partnerDraft?.internal_notes && (
+            <div style={{ marginTop: 12 }}>
+              <button
+                className="btn btn-sm"
+                onClick={() => setNotesOpen((v) => !v)}
+                aria-expanded={notesOpen}
+              >
+                {notesOpen ? "Hide Brain notes" : "Brain notes"}
+              </button>
+              {notesOpen && (
+                <p className="stamp" style={{ marginTop: 8, whiteSpace: "pre-wrap" }}>
+                  {partnerDraft.internal_notes}
+                </p>
+              )}
+            </div>
+          )}
         </div>
 
         {target === "client" && (
