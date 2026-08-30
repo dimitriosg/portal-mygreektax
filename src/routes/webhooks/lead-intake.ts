@@ -16,7 +16,7 @@ import { LEAD_URGENCY_OPTIONS } from "@/lib/leads-shared";
 // on. Email replies and partner replies arrive at Make's mailhook, not this
 // route, so the "which case does this email belong to" logic MUST live in
 // the database where every channel can reach it. Having it in one SQL
-// function means the portal, the inbound mailhook, and the partner-reply
+// function means the portal, the inbound mailhook, and the partner send
 // logger all resolve cases the same way, with no risk of two numbering
 // systems drifting apart.
 //

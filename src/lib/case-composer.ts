@@ -57,10 +57,10 @@ const STAGES_PAST_THE_GATE = new Set(["Active", "Delivered", "Complete"]);
 // Stages that have not cleared it. Parked and Lost are in this list on
 // purpose: they are side states reachable from anywhere, including Quoted, so
 // a lead that was quoted and went quiet is parked without ever having paid.
-// They are also why this is a set and not a comparison against
-// getClientStageSortOrder: CLIENT_STAGES is a display order, in which Parked
-// and Lost sort after Active, and reading it as a progression switched the
-// gate off for exactly the cases that most need it.
+// They are also why this is a set and not a position in CLIENT_STAGES:
+// that array is a display order, in which Parked and Lost sort after Active,
+// and reading it as a progression switched the gate off for exactly the cases
+// that most need it.
 const STAGES_BEFORE_THE_GATE = new Set(["Potential", "Quoted", "Parked", "Lost"]);
 
 /**

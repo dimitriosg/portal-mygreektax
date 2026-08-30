@@ -22,7 +22,6 @@ import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as WebhooksSummarizeCaseRouteImport } from './routes/webhooks/summarize-case'
 import { Route as WebhooksSendApprovedRouteImport } from './routes/webhooks/send-approved'
 import { Route as WebhooksPartnerSyncRouteImport } from './routes/webhooks/partner-sync'
-import { Route as WebhooksPartnerReplyRouteImport } from './routes/webhooks/partner-reply'
 import { Route as WebhooksOpsSnapshotRouteImport } from './routes/webhooks/ops-snapshot'
 import { Route as WebhooksMailgunEventsRouteImport } from './routes/webhooks/mailgun-events'
 import { Route as WebhooksLeadIntakeRouteImport } from './routes/webhooks/lead-intake'
@@ -30,7 +29,6 @@ import { Route as WebhooksGmailSyncRouteImport } from './routes/webhooks/gmail-s
 import { Route as WebhooksGeneratePartnerDraftRouteImport } from './routes/webhooks/generate-partner-draft'
 import { Route as WebhooksGenerateDraftRouteImport } from './routes/webhooks/generate-draft'
 import { Route as WebhooksConversationLogRouteImport } from './routes/webhooks/conversation-log'
-import { Route as WebhooksCaseReplyRouteImport } from './routes/webhooks/case-reply'
 import { Route as WebhooksCaseCreateRouteImport } from './routes/webhooks/case-create'
 import { Route as WebhooksCaseActionRouteImport } from './routes/webhooks/case-action'
 import { Route as TrackTokenRouteImport } from './routes/track.$token'
@@ -113,11 +111,6 @@ const WebhooksPartnerSyncRoute = WebhooksPartnerSyncRouteImport.update({
   path: '/webhooks/partner-sync',
   getParentRoute: () => rootRouteImport,
 } as any)
-const WebhooksPartnerReplyRoute = WebhooksPartnerReplyRouteImport.update({
-  id: '/webhooks/partner-reply',
-  path: '/webhooks/partner-reply',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const WebhooksOpsSnapshotRoute = WebhooksOpsSnapshotRouteImport.update({
   id: '/webhooks/ops-snapshot',
   path: '/webhooks/ops-snapshot',
@@ -152,11 +145,6 @@ const WebhooksGenerateDraftRoute = WebhooksGenerateDraftRouteImport.update({
 const WebhooksConversationLogRoute = WebhooksConversationLogRouteImport.update({
   id: '/webhooks/conversation-log',
   path: '/webhooks/conversation-log',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const WebhooksCaseReplyRoute = WebhooksCaseReplyRouteImport.update({
-  id: '/webhooks/case-reply',
-  path: '/webhooks/case-reply',
   getParentRoute: () => rootRouteImport,
 } as any)
 const WebhooksCaseCreateRoute = WebhooksCaseCreateRouteImport.update({
@@ -266,7 +254,6 @@ export interface FileRoutesByFullPath {
   '/track/$token': typeof TrackTokenRoute
   '/webhooks/case-action': typeof WebhooksCaseActionRoute
   '/webhooks/case-create': typeof WebhooksCaseCreateRoute
-  '/webhooks/case-reply': typeof WebhooksCaseReplyRoute
   '/webhooks/conversation-log': typeof WebhooksConversationLogRoute
   '/webhooks/generate-draft': typeof WebhooksGenerateDraftRoute
   '/webhooks/generate-partner-draft': typeof WebhooksGeneratePartnerDraftRoute
@@ -274,7 +261,6 @@ export interface FileRoutesByFullPath {
   '/webhooks/lead-intake': typeof WebhooksLeadIntakeRoute
   '/webhooks/mailgun-events': typeof WebhooksMailgunEventsRoute
   '/webhooks/ops-snapshot': typeof WebhooksOpsSnapshotRoute
-  '/webhooks/partner-reply': typeof WebhooksPartnerReplyRoute
   '/webhooks/partner-sync': typeof WebhooksPartnerSyncRoute
   '/webhooks/send-approved': typeof WebhooksSendApprovedRoute
   '/webhooks/summarize-case': typeof WebhooksSummarizeCaseRoute
@@ -305,7 +291,6 @@ export interface FileRoutesByTo {
   '/track/$token': typeof TrackTokenRoute
   '/webhooks/case-action': typeof WebhooksCaseActionRoute
   '/webhooks/case-create': typeof WebhooksCaseCreateRoute
-  '/webhooks/case-reply': typeof WebhooksCaseReplyRoute
   '/webhooks/conversation-log': typeof WebhooksConversationLogRoute
   '/webhooks/generate-draft': typeof WebhooksGenerateDraftRoute
   '/webhooks/generate-partner-draft': typeof WebhooksGeneratePartnerDraftRoute
@@ -313,7 +298,6 @@ export interface FileRoutesByTo {
   '/webhooks/lead-intake': typeof WebhooksLeadIntakeRoute
   '/webhooks/mailgun-events': typeof WebhooksMailgunEventsRoute
   '/webhooks/ops-snapshot': typeof WebhooksOpsSnapshotRoute
-  '/webhooks/partner-reply': typeof WebhooksPartnerReplyRoute
   '/webhooks/partner-sync': typeof WebhooksPartnerSyncRoute
   '/webhooks/send-approved': typeof WebhooksSendApprovedRoute
   '/webhooks/summarize-case': typeof WebhooksSummarizeCaseRoute
@@ -346,7 +330,6 @@ export interface FileRoutesById {
   '/track/$token': typeof TrackTokenRoute
   '/webhooks/case-action': typeof WebhooksCaseActionRoute
   '/webhooks/case-create': typeof WebhooksCaseCreateRoute
-  '/webhooks/case-reply': typeof WebhooksCaseReplyRoute
   '/webhooks/conversation-log': typeof WebhooksConversationLogRoute
   '/webhooks/generate-draft': typeof WebhooksGenerateDraftRoute
   '/webhooks/generate-partner-draft': typeof WebhooksGeneratePartnerDraftRoute
@@ -354,7 +337,6 @@ export interface FileRoutesById {
   '/webhooks/lead-intake': typeof WebhooksLeadIntakeRoute
   '/webhooks/mailgun-events': typeof WebhooksMailgunEventsRoute
   '/webhooks/ops-snapshot': typeof WebhooksOpsSnapshotRoute
-  '/webhooks/partner-reply': typeof WebhooksPartnerReplyRoute
   '/webhooks/partner-sync': typeof WebhooksPartnerSyncRoute
   '/webhooks/send-approved': typeof WebhooksSendApprovedRoute
   '/webhooks/summarize-case': typeof WebhooksSummarizeCaseRoute
@@ -388,7 +370,6 @@ export interface FileRouteTypes {
     | '/track/$token'
     | '/webhooks/case-action'
     | '/webhooks/case-create'
-    | '/webhooks/case-reply'
     | '/webhooks/conversation-log'
     | '/webhooks/generate-draft'
     | '/webhooks/generate-partner-draft'
@@ -396,7 +377,6 @@ export interface FileRouteTypes {
     | '/webhooks/lead-intake'
     | '/webhooks/mailgun-events'
     | '/webhooks/ops-snapshot'
-    | '/webhooks/partner-reply'
     | '/webhooks/partner-sync'
     | '/webhooks/send-approved'
     | '/webhooks/summarize-case'
@@ -427,7 +407,6 @@ export interface FileRouteTypes {
     | '/track/$token'
     | '/webhooks/case-action'
     | '/webhooks/case-create'
-    | '/webhooks/case-reply'
     | '/webhooks/conversation-log'
     | '/webhooks/generate-draft'
     | '/webhooks/generate-partner-draft'
@@ -435,7 +414,6 @@ export interface FileRouteTypes {
     | '/webhooks/lead-intake'
     | '/webhooks/mailgun-events'
     | '/webhooks/ops-snapshot'
-    | '/webhooks/partner-reply'
     | '/webhooks/partner-sync'
     | '/webhooks/send-approved'
     | '/webhooks/summarize-case'
@@ -467,7 +445,6 @@ export interface FileRouteTypes {
     | '/track/$token'
     | '/webhooks/case-action'
     | '/webhooks/case-create'
-    | '/webhooks/case-reply'
     | '/webhooks/conversation-log'
     | '/webhooks/generate-draft'
     | '/webhooks/generate-partner-draft'
@@ -475,7 +452,6 @@ export interface FileRouteTypes {
     | '/webhooks/lead-intake'
     | '/webhooks/mailgun-events'
     | '/webhooks/ops-snapshot'
-    | '/webhooks/partner-reply'
     | '/webhooks/partner-sync'
     | '/webhooks/send-approved'
     | '/webhooks/summarize-case'
@@ -503,7 +479,6 @@ export interface RootRouteChildren {
   TrackTokenRoute: typeof TrackTokenRoute
   WebhooksCaseActionRoute: typeof WebhooksCaseActionRoute
   WebhooksCaseCreateRoute: typeof WebhooksCaseCreateRoute
-  WebhooksCaseReplyRoute: typeof WebhooksCaseReplyRoute
   WebhooksConversationLogRoute: typeof WebhooksConversationLogRoute
   WebhooksGenerateDraftRoute: typeof WebhooksGenerateDraftRoute
   WebhooksGeneratePartnerDraftRoute: typeof WebhooksGeneratePartnerDraftRoute
@@ -511,7 +486,6 @@ export interface RootRouteChildren {
   WebhooksLeadIntakeRoute: typeof WebhooksLeadIntakeRoute
   WebhooksMailgunEventsRoute: typeof WebhooksMailgunEventsRoute
   WebhooksOpsSnapshotRoute: typeof WebhooksOpsSnapshotRoute
-  WebhooksPartnerReplyRoute: typeof WebhooksPartnerReplyRoute
   WebhooksPartnerSyncRoute: typeof WebhooksPartnerSyncRoute
   WebhooksSendApprovedRoute: typeof WebhooksSendApprovedRoute
   WebhooksSummarizeCaseRoute: typeof WebhooksSummarizeCaseRoute
@@ -610,13 +584,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WebhooksPartnerSyncRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/webhooks/partner-reply': {
-      id: '/webhooks/partner-reply'
-      path: '/webhooks/partner-reply'
-      fullPath: '/webhooks/partner-reply'
-      preLoaderRoute: typeof WebhooksPartnerReplyRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/webhooks/ops-snapshot': {
       id: '/webhooks/ops-snapshot'
       path: '/webhooks/ops-snapshot'
@@ -664,13 +631,6 @@ declare module '@tanstack/react-router' {
       path: '/webhooks/conversation-log'
       fullPath: '/webhooks/conversation-log'
       preLoaderRoute: typeof WebhooksConversationLogRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/webhooks/case-reply': {
-      id: '/webhooks/case-reply'
-      path: '/webhooks/case-reply'
-      fullPath: '/webhooks/case-reply'
-      preLoaderRoute: typeof WebhooksCaseReplyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/webhooks/case-create': {
@@ -829,7 +789,6 @@ const rootRouteChildren: RootRouteChildren = {
   TrackTokenRoute: TrackTokenRoute,
   WebhooksCaseActionRoute: WebhooksCaseActionRoute,
   WebhooksCaseCreateRoute: WebhooksCaseCreateRoute,
-  WebhooksCaseReplyRoute: WebhooksCaseReplyRoute,
   WebhooksConversationLogRoute: WebhooksConversationLogRoute,
   WebhooksGenerateDraftRoute: WebhooksGenerateDraftRoute,
   WebhooksGeneratePartnerDraftRoute: WebhooksGeneratePartnerDraftRoute,
@@ -837,7 +796,6 @@ const rootRouteChildren: RootRouteChildren = {
   WebhooksLeadIntakeRoute: WebhooksLeadIntakeRoute,
   WebhooksMailgunEventsRoute: WebhooksMailgunEventsRoute,
   WebhooksOpsSnapshotRoute: WebhooksOpsSnapshotRoute,
-  WebhooksPartnerReplyRoute: WebhooksPartnerReplyRoute,
   WebhooksPartnerSyncRoute: WebhooksPartnerSyncRoute,
   WebhooksSendApprovedRoute: WebhooksSendApprovedRoute,
   WebhooksSummarizeCaseRoute: WebhooksSummarizeCaseRoute,

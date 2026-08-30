@@ -20,7 +20,8 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 // its own comment claiming it is admin only, so any logged in account
 // (including a partner's) passes it. This route drafts internal case reasoning
 // addressed to a business counterparty, so it uses the user_roles check that
-// partner-reply.ts already does. Fixing generate-draft.ts is a separate change.
+// the partner send path already does. Fixing generate-draft.ts is a separate
+// change.
 //
 // Env (Cloudflare Worker secrets, already set for generate-draft.ts):
 //   BRAIN_ORCHESTRATE_URL  -- the API Gateway URL ending /orchestrate
@@ -74,7 +75,8 @@ export const Route = createFileRoute("/webhooks/generate-partner-draft")({
         }
 
         // getUser() authenticates the caller; it does not authorize them. Same
-        // check, and the same reasoning, as partner-reply.ts.
+        // check, and the same reasoning, as the partner send path in
+        // send-approved.ts.
         const { data: roleRows, error: roleError } = await supabaseAdmin
           .from("user_roles")
           .select("role")
@@ -113,8 +115,9 @@ export const Route = createFileRoute("/webhooks/generate-partner-draft")({
 
         // The recipient must be an ACTIVE partner, checked here rather than
         // trusted from the browser. Same guard, and the same ILIKE-wildcard
-        // escaping, as partner-reply.ts: EMAIL_RE permits % and _, so without
-        // escaping a crafted address could pattern-match a real partner.
+        // escaping, as lib/partner-recipient.server.ts: EMAIL_RE permits %
+        // and _, so without escaping a crafted address could pattern-match a
+        // real partner.
         const escapeLike = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
 
         const { data: partnerRows, error: partnerError } = await supabaseAdmin

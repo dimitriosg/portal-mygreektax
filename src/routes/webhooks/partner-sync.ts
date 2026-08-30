@@ -10,9 +10,9 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 // mailbox to search. The list comes from partner_profiles where disabled_at is
 // null, so removing a partner there removes them from every future sync.
 //
-// Why ref_core rather than the full serial: case-reply.ts writes the reference
-// line as "MGT-REF-ID: [CS001-CLT0037]", stripping the MGT- prefix. A Gmail
-// search for the full serial would match nothing. The Make scenario searches
+// Why ref_core rather than the full serial: the outbound send path writes the
+// reference line as "MGT-REF-ID: [CS001-CLT0037]", stripping the MGT- prefix.
+// A Gmail search for the full serial would match nothing. The Make scenario searches
 //   (from:X OR to:X) "<ref_core>"
 // so only mail carrying this case's code is imported. Without that term a sync
 // would pull the partner's correspondence about every other client into this

@@ -15,12 +15,14 @@ import {
 
 // One composer for both directions of a case.
 //
-// It replaces two boxes that were built separately and drifted: the client one
-// (AiReviewDesk) knew nothing about the deposit gate, and the partner one
-// (case-partner-reply-box) carried its own gate notice and its own pricing
-// warning. The rules now live in src/lib/case-composer.ts and both targets are
-// judged by the same code, which is the point of merging them: a rule fixed
-// once is fixed for both.
+// It replaced two boxes that were built separately and drifted: the client one
+// knew nothing about the deposit gate, and the partner one carried its own
+// gate notice and its own pricing warning. Both have since been deleted, so
+// this is history rather than a pointer; AiReviewDesk on /jobs/:jobId is the
+// one survivor, and it posts to the same endpoint this composer does, so the
+// rules bind it too. The rules live in src/lib/case-composer.ts and both
+// targets are judged by the same code, which is the point of merging them: a
+// rule fixed once is fixed for both.
 //
 // The target switch changes four things at once, per the design:
 //   1. the recipient, which is always resolved on the server, never posted;
