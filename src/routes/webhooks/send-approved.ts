@@ -16,7 +16,8 @@ import { isBeforeDeposit, reviewBody, visibleText } from "@/lib/case-composer";
 // caller posts, so their contract is unchanged.
 //
 // The partner branch is not the client branch with a different address. Four
-// things differ, each deliberately, and each matching /webhooks/partner-reply:
+// things differ, each deliberately, and each carried over from the
+// /webhooks/partner-reply route this endpoint replaced:
 //
 //   1. The recipient must be an ACTIVE PARTNER, checked against
 //      partner_profiles by resolveActivePartner(). That check is what keeps a
@@ -204,11 +205,12 @@ async function sendViaMailgun(
  *
  * Partner mail goes to the partner's own mailbox and comes back through the
  * sync with no thread the portal owns, so the case code travels in the body
- * and is read back out of the reply. Byte for byte the same line
- * /webhooks/partner-reply already emits, "MGT-" prefix stripped and all: two
- * endpoints writing the marker two ways is how one of them stops matching.
- * Returns "" for a case with no serial, and the partner branch refuses to
- * send in that state rather than mailing an unmatchable message.
+ * and is read back out of the reply. Byte for byte the line the retired
+ * /webhooks/partner-reply emitted, "MGT-" prefix stripped and all: the inbound
+ * matcher reads what was written by whichever endpoint sent the message, so
+ * the shape had to survive that endpoint being replaced. Returns "" for a case
+ * with no serial, and the partner branch refuses to send in that state rather
+ * than mailing an unmatchable message.
  */
 function refLine(caseSerialId: string | null): string {
   const refCore = caseSerialId ? caseSerialId.replace(/^MGT-/i, "") : "";
@@ -270,7 +272,7 @@ export const Route = createFileRoute("/webhooks/send-approved")({
         // getUser() authenticates the caller; it does not authorize them. A
         // partner account holds a valid session and must not be able to send
         // client mail, so the admin role is checked explicitly, same as
-        // /webhooks/case-action and /webhooks/partner-reply.
+        // /webhooks/case-action.
         const { data: roleRow, error: roleError } = await supabaseAdmin
           .from("user_roles")
           .select("role")
