@@ -532,8 +532,9 @@ export function CaseComposer({
             nothing and keeps both drafts while the operator moves between
             them. */}
         <div className="field" hidden={target !== "client"}>
-          <label>Message</label>
+          <label id="composer-body-client-label">Message</label>
           <RichTextEditor
+            ariaLabelledBy="composer-body-client-label"
             key={`${currentVersion?.id ?? "none"}:${sentVersionId ?? ""}:${clearNonce}`}
             initialHtml={prefillHtml}
             onChange={setClientHtml}

@@ -106,6 +106,16 @@ interface CaseGateFacts {
   stage: string | null;
   /** clients.deposit > 0, which is how the portal records a confirmed deposit. */
   depositRecorded: boolean;
+  /**
+   * False when a lookup errored, as opposed to returning no row.
+   *
+   * The difference decides whether the send may proceed. A case with no row
+   * genuinely has no stage, and R7 does not gate on absent data. A failed read
+   * looks identical from here and must not: it would report "not before the
+   * deposit" for a case that is, and open the gate exactly when the database
+   * is least able to say otherwise.
+   */
+  readOk: boolean;
 }
 
 /**
@@ -123,28 +133,70 @@ interface CaseGateFacts {
  * parked case had already paid.
  */
 async function readCaseGateFacts(caseId: string): Promise<CaseGateFacts> {
-  const { data: conv } = await supabaseAdmin
+  const { data: conv, error: convError } = await supabaseAdmin
     .from("brain_conversations")
     .select("stage, client_id")
     .eq("id", caseId)
     .maybeSingle();
-  if (!conv) return { stage: null, depositRecorded: false };
+  if (convError) {
+    console.error("[send-approved] case lookup failed:", convError.message);
+    return { stage: null, depositRecorded: false, readOk: false };
+  }
+  if (!conv) return { stage: null, depositRecorded: false, readOk: true };
+
+  const convStage = typeof conv.stage === "string" ? conv.stage : null;
 
   if (typeof conv.client_id === "string" && conv.client_id) {
-    const { data: client } = await supabaseAdmin
+    const { data: client, error: clientError } = await supabaseAdmin
       .from("clients")
       .select("stage, deposit")
       .eq("id", conv.client_id)
       .maybeSingle();
+    if (clientError) {
+      console.error("[send-approved] client lookup failed:", clientError.message);
+      return { stage: null, depositRecorded: false, readOk: false };
+    }
     if (client) {
       const depositRecorded = typeof client.deposit === "number" && client.deposit > 0;
-      if (typeof client.stage === "string" && client.stage) {
-        return { stage: client.stage, depositRecorded };
-      }
-      return { stage: typeof conv.stage === "string" ? conv.stage : null, depositRecorded };
+      const stage = typeof client.stage === "string" && client.stage ? client.stage : convStage;
+      return { stage, depositRecorded, readOk: true };
     }
   }
-  return { stage: typeof conv.stage === "string" ? conv.stage : null, depositRecorded: false };
+  return { stage: convStage, depositRecorded: false, readOk: true };
+}
+
+/**
+ * One bounded Mailgun send, used by both targets.
+ *
+ * Without the bound a stalled Mailgun holds the worker until the platform
+ * kills it and the operator is told nothing about whether the mail went. That
+ * reasoning is not specific to either recipient, so neither is this: the
+ * client branch carries most of the traffic and had no timeout at all while
+ * the partner branch did.
+ *
+ * Throws what fetch throws, including an AbortError on timeout, so each caller
+ * keeps its own wording for the failure.
+ */
+async function sendViaMailgun(
+  domain: string,
+  mailgunKey: string,
+  form: URLSearchParams,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000);
+  try {
+    return await fetch(`https://api.eu.mailgun.net/v3/${domain}/messages`, {
+      method: "POST",
+      headers: {
+        Authorization: "Basic " + btoa("api:" + mailgunKey),
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: form.toString(),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 /**
@@ -286,7 +338,20 @@ export const Route = createFileRoute("/webhooks/send-approved")({
         // needs the caller to have confirmed it (pricing_ack), which is the
         // server-side form of the confirmation the composer asks for.
         // ---------------------------------------------------------------
-        const { stage, depositRecorded } = await readCaseGateFacts(caseId);
+        const { stage, depositRecorded, readOk } = await readCaseGateFacts(caseId);
+        if (!readOk) {
+          // Refuse rather than send. R7 cannot be applied without knowing the
+          // stage, and guessing in the permissive direction here would mean the
+          // gate fails open on precisely the requests it cannot evaluate.
+          return Response.json(
+            {
+              error: "Case stage could not be read",
+              detail:
+                "The deposit gate cannot be checked right now, so nothing is sent. Try again in a moment. The reason is in the server log.",
+            },
+            { status: 503 },
+          );
+        }
         const beforeDeposit = isBeforeDeposit(stage, depositRecorded);
         // Read the body the way its recipient will, which is not the same
         // reading for the two targets. Client mail is HTML and has to be
@@ -374,22 +439,9 @@ export const Route = createFileRoute("/webhooks/send-approved")({
             form.set("html", html);
             form.set("h:X-Mailgun-Variables", JSON.stringify({ src: "portal_composer" }));
 
-            // Bounded like partner-reply's send: without it a stalled Mailgun
-            // holds the worker until the platform kills it, and the operator
-            // is told nothing about whether the mail went.
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 10000);
             let mgRes: Response;
             try {
-              mgRes = await fetch(`https://api.eu.mailgun.net/v3/${domain}/messages`, {
-                method: "POST",
-                headers: {
-                  Authorization: "Basic " + btoa("api:" + mailgunKey),
-                  "Content-Type": "application/x-www-form-urlencoded",
-                },
-                body: form.toString(),
-                signal: controller.signal,
-              });
+              mgRes = await sendViaMailgun(domain, mailgunKey, form);
             } catch (sendError) {
               const aborted = sendError instanceof Error && sendError.name === "AbortError";
               console.error("[send-approved] partner send failed:", sendError);
@@ -402,8 +454,6 @@ export const Route = createFileRoute("/webhooks/send-approved")({
                 },
                 { status: 502 },
               );
-            } finally {
-              clearTimeout(timeoutId);
             }
             const mgText = await mgRes.text();
             if (!mgRes.ok) {
@@ -603,14 +653,22 @@ export const Route = createFileRoute("/webhooks/send-approved")({
           form.set("html", html);
           form.set("h:X-Mailgun-Variables", JSON.stringify({ src: "portal_desk" }));
 
-          const mgRes = await fetch(`https://api.eu.mailgun.net/v3/${domain}/messages`, {
-            method: "POST",
-            headers: {
-              Authorization: "Basic " + btoa("api:" + mailgunKey),
-              "Content-Type": "application/x-www-form-urlencoded",
-            },
-            body: form.toString(),
-          });
+          let mgRes: Response;
+          try {
+            mgRes = await sendViaMailgun(domain, mailgunKey, form);
+          } catch (sendError) {
+            const aborted = sendError instanceof Error && sendError.name === "AbortError";
+            console.error("[send-approved] client send failed:", sendError);
+            return Response.json(
+              {
+                error: aborted ? "Mailgun timed out" : "Mailgun unreachable",
+                detail: aborted
+                  ? "The send did not complete within 10 seconds. Check the client thread before retrying."
+                  : "The mail server could not be reached.",
+              },
+              { status: 502 },
+            );
+          }
           const mgText = await mgRes.text();
 
           if (!mgRes.ok) {
