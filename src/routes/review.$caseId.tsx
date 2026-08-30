@@ -662,7 +662,12 @@ function ReviewCase() {
         caseSerialId={conversation?.case_serial_id ?? null}
         clientName={client?.full_name ?? null}
         clientEmail={email || null}
-        clientStage={client?.stage ?? null}
+        // brain_conversations.stage is the fallback so a case with no linked
+        // client row still gates: without it clientStage is null, the gate
+        // reads "not before deposit", and R7 would let gated content through
+        // on exactly the cases we know least about. Same precedence /drafts
+        // already uses.
+        clientStage={client?.stage ?? conversation?.stage ?? null}
         events={events}
         currentVersion={currentVersion}
         onSent={load}

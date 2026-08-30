@@ -5,6 +5,7 @@ import {
   findPricingExposure,
   isBeforeDeposit,
   reviewBody,
+  visibleText,
 } from "./case-composer";
 
 describe("isBeforeDeposit", () => {
@@ -110,6 +111,28 @@ describe("findGatedContent", () => {
   });
 });
 
+describe("visibleText", () => {
+  it("does not let inline formatting split a word", () => {
+    // Bolding half a word would otherwise read as "check list" to the rules
+    // while the email still renders "checklist", walking a gated term through.
+    expect(visibleText("<p>Here is the check<strong>list</strong> to start</p>")).toBe(
+      "Here is the checklist to start",
+    );
+    expect(findGatedContent(visibleText("<p>the check<b>list</b></p>"), "client", true)).toContain(
+      "checklist",
+    );
+  });
+
+  it("keeps separate blocks apart", () => {
+    expect(visibleText("<p>one</p><p>two</p>")).toBe("one\ntwo");
+    expect(visibleText("a<br>b")).toBe("a\nb");
+  });
+
+  it("decodes entities so the rules see the rendered words", () => {
+    expect(visibleText("<p>fees &amp; costs</p>")).toBe("fees & costs");
+  });
+});
+
 describe("reviewBody", () => {
   const clean = "Thank you for chasing. We are waiting on AADE and will write as soon as it moves.";
 
@@ -137,6 +160,24 @@ describe("reviewBody", () => {
     expect(verdict.confirmations).toHaveLength(1);
     expect(verdict.confirmations[0]).toContain("120 EUR");
     expect(verdict.confirmations[0]).toContain("wholesale");
+  });
+
+  it("asks about a client figure before the deposit, without blocking it", () => {
+    // R7 withholds "locked figures beyond the quote itself", but the quote and
+    // payment logistics are exactly what a Quoted case may state, so this is a
+    // question rather than a refusal.
+    const verdict = reviewBody("The deposit is 124.50 EUR, link below.", "client", true);
+    expect(verdict.blocking).toEqual([]);
+    expect(verdict.confirmations).toHaveLength(1);
+    expect(verdict.confirmations[0]).toContain("124.50 EUR");
+    expect(verdict.confirmations[0]).toContain("R7");
+  });
+
+  it("says nothing about a client figure once the deposit has cleared", () => {
+    expect(reviewBody("Your balance is 124.50 EUR.", "client", false)).toEqual({
+      blocking: [],
+      confirmations: [],
+    });
   });
 
   it("blocks gated language in both targets before the deposit", () => {

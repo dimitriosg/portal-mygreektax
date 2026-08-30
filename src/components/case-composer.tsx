@@ -5,7 +5,7 @@ import { RichTextEditor } from "@/components/RichTextEditor";
 import { SIGNATURE_HTML } from "@/lib/signature";
 import { athensStamp, isPartnerEvent, type ThreadEvent } from "@/lib/case-thread";
 import { type DraftVersionRow } from "@/lib/case-draft-versions";
-import { isBeforeDeposit, reviewBody, type ComposerTarget } from "@/lib/case-composer";
+import { isBeforeDeposit, reviewBody, visibleText, type ComposerTarget } from "@/lib/case-composer";
 
 // One composer for both directions of a case.
 //
@@ -61,15 +61,6 @@ function plainToHtml(raw: string): string {
     .split(/\n{2,}/)
     .map((p) => `<p>${escape(p).replace(/\n/g, "<br>")}</p>`)
     .join("");
-}
-
-function visibleText(html: string): string {
-  return html
-    .replace(/<[^>]*>/g, " ")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/\s+/g, " ")
-    .trim();
 }
 
 export function CaseComposer({
@@ -228,6 +219,9 @@ export function CaseComposer({
           target,
           final_text: finalText,
           subject,
+          // The server applies the same rules and will refuse a body with
+          // unconfirmed figures, so the confirmation made here travels with it.
+          ...(pricingAcknowledged ? { pricing_ack: true } : {}),
           ...(sentMode ? { sent_mode: sentMode } : {}),
           // Which version this send corresponds to, so a resend cannot stamp
           // an older unsent one.

@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { mailgunFailureResponse } from "@/lib/mailgun-error.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { resolveActivePartner } from "@/lib/partner-recipient.server";
+import { isBeforeDeposit, reviewBody, visibleText } from "@/lib/case-composer";
 
 // POST /webhooks/send-approved
 //
@@ -88,6 +89,33 @@ function bodyToHtml(text: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/\r?\n/g, "<br>");
+}
+
+/**
+ * The case stage, read on the server rather than taken from the caller.
+ *
+ * R7 turns on this value, so it is looked up here: a body posted directly
+ * could otherwise carry any stage it liked, and the rule would hold only for
+ * callers that chose to respect it. clients.stage first, the conversation's
+ * own stage second, which is the precedence the case list already uses.
+ */
+async function readCaseStage(caseId: string): Promise<string | null> {
+  const { data: conv } = await supabaseAdmin
+    .from("brain_conversations")
+    .select("stage, client_id")
+    .eq("id", caseId)
+    .maybeSingle();
+  if (!conv) return null;
+
+  if (typeof conv.client_id === "string" && conv.client_id) {
+    const { data: client } = await supabaseAdmin
+      .from("clients")
+      .select("stage")
+      .eq("id", conv.client_id)
+      .maybeSingle();
+    if (client && typeof client.stage === "string" && client.stage) return client.stage;
+  }
+  return typeof conv.stage === "string" ? conv.stage : null;
 }
 
 function refLine(caseSerialId: string | null): string {
@@ -196,6 +224,45 @@ export const Route = createFileRoute("/webhooks/send-approved")({
 
         if (!caseId || !finalText) {
           return Response.json({ error: "case_id and final_text are required" }, { status: 400 });
+        }
+
+        // ---------------------------------------------------------------
+        // R2 AND R7, ON THE SERVER.
+        //
+        // The composer applies these before it lets the button light up, but
+        // a rule that only exists in the browser is advice, not a rule: this
+        // endpoint takes final_text from the caller and would otherwise send
+        // whatever arrived. R2 in particular is written as having no
+        // exceptions, so it is enforced where it cannot be skipped.
+        //
+        // The stage comes from the database, never from the request, and the
+        // body is read the way the recipient will read it. A currency figure
+        // needs the caller to have confirmed it (pricing_ack), which is the
+        // server-side form of the confirmation the composer asks for.
+        // ---------------------------------------------------------------
+        const stage = await readCaseStage(caseId);
+        const beforeDeposit = isBeforeDeposit(stage);
+        const verdict = reviewBody(visibleText(finalText), target, beforeDeposit);
+
+        if (verdict.blocking.length > 0) {
+          return Response.json(
+            {
+              error: "Blocked by the case rules",
+              detail: verdict.blocking.join(" "),
+              blocking: verdict.blocking,
+            },
+            { status: 422 },
+          );
+        }
+        if (verdict.confirmations.length > 0 && b.pricing_ack !== true) {
+          return Response.json(
+            {
+              error: "Confirmation required before sending",
+              detail: verdict.confirmations.join(" "),
+              confirmations: verdict.confirmations,
+            },
+            { status: 422 },
+          );
         }
 
         // ---------------------------------------------------------------

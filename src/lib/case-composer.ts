@@ -21,6 +21,36 @@ import { getClientStageSortOrder } from "./leads-shared";
 
 export type ComposerTarget = "client" | "partner";
 
+/**
+ * The words of an HTML body, as the reader will see them.
+ *
+ * Block ends become newlines and every other tag is removed WITHOUT putting a
+ * space in its place. That distinction is the whole point: replacing every tag
+ * with a space turns "check<strong>list</strong>" into "check list", which
+ * reads past a rule that is looking for "checklist" while the email still
+ * renders the word. Bolding half a word would have been enough to walk a
+ * gated term through the gate.
+ *
+ * Same shape as htmlToText in /webhooks/send-approved, which builds the plain
+ * text part of the outgoing mail, so the rules are applied to the same reading
+ * of the body that is actually sent.
+ */
+export function visibleText(html: string): string {
+  return html
+    .replace(/<\s*br\s*\/?>/gi, "\n")
+    .replace(/<\/\s*(p|div|li|h[1-6])\s*>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 // Stages at or after Active have cleared the deposit gate. Same reading the
 // partner reply box already uses, kept identical on purpose.
 const ACTIVE_STAGE_ORDER = getClientStageSortOrder("Active");
@@ -180,6 +210,22 @@ export function reviewBody(
         ? `R7: "${label}" assigns work before the deposit is confirmed.`
         : `R7: "${label}" is withheld until the deposit is confirmed.`,
     );
+  }
+
+  // R7 also withholds "locked figures beyond the quote itself" from a client
+  // before the deposit. Beyond the quote itself is the operative phrase: the
+  // quote is exactly what a Quoted case is allowed to state, and payment
+  // logistics necessarily name the amount to pay. So this asks rather than
+  // blocks, the same shape as the pricing confirmation above, because the
+  // difference between a permitted figure and a withheld one is a judgement
+  // about which figure it is, not something the text can settle.
+  if (target === "client" && beforeDeposit) {
+    const figures = findCurrencyFigures(text);
+    if (figures.length > 0) {
+      confirmations.push(
+        `R7: this case is before the deposit, so confirm ${figures.length === 1 ? "this figure is" : "these figures are"} the quote or payment logistics, not a locked figure beyond it: ${figures.join(", ")}.`,
+      );
+    }
   }
 
   return { blocking, confirmations };
