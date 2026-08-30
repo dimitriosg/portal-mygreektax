@@ -49,9 +49,18 @@ const SWATCHES = [
 interface RichTextEditorProps {
   initialHtml: string;
   onChange: (html: string) => void;
+  /**
+   * id of the element naming this editor.
+   *
+   * TipTap renders a contenteditable div, which a <label htmlFor> cannot
+   * point at, so the label carries an id and the editor points back at it.
+   * Without this a screen reader announces an unnamed editing area next to an
+   * orphaned label.
+   */
+  ariaLabelledBy?: string;
 }
 
-export function RichTextEditor({ initialHtml, onChange }: RichTextEditorProps) {
+export function RichTextEditor({ initialHtml, onChange, ariaLabelledBy }: RichTextEditorProps) {
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState("");
 
@@ -89,6 +98,7 @@ export function RichTextEditor({ initialHtml, onChange }: RichTextEditorProps) {
         // editor view matches the sent email.
         class:
           "mgt-editor min-h-[200px] w-full rounded-md border border-slate-200 bg-white p-3 text-sm text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500",
+        ...(ariaLabelledBy ? { "aria-labelledby": ariaLabelledBy } : {}),
       },
     },
     onUpdate: ({ editor }) => {

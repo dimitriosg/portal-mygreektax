@@ -3,17 +3,15 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { AiReviewDesk } from "@/components/AiReviewDesk";
-import { CaseReplyBox } from "@/components/case-reply-box";
 import { updateLead } from "@/lib/leads.functions";
 import { CLIENT_STAGES } from "@/lib/leads-shared";
 import { CaseSummary } from "@/components/case-summary";
 import { CaseNotes } from "@/components/CaseNotes";
-import { CasePartnerReplyBox } from "@/components/case-partner-reply-box";
 import { CaseThread } from "@/components/case-thread";
 import { CaseRail } from "@/components/case-rail";
 import { CaseDraftDesk } from "@/components/case-draft-desk";
 import { CaseKnowledge } from "@/components/case-knowledge";
+import { CaseComposer } from "@/components/case-composer";
 import { getCaseRail, type CaseRailData } from "@/lib/case-workspace.functions";
 import { isPartnerEvent, type ThreadEvent } from "@/lib/case-thread";
 import type { DraftVersionRow } from "@/lib/case-draft-versions";
@@ -24,8 +22,8 @@ import { getErrorMessage } from "@/lib/auth-errors";
 // One screen, three zones: a left rail (who the client is, the money, the open
 // items), a centre conversation built from brain_events with tabbed Client /
 // Partner / All threads, and a right desk (draft, notes, summary, knowledge).
-// The reply forms and the review desk sit below the workspace; a single docked
-// composer replaces them in a later change.
+// One composer sits below the workspace and can write to either party, with
+// the same rules binding both.
 //
 // The header exposes the linked lead's Stage / Next action / Next action date.
 // These are the same public.clients columns the /leads page edits, saved
@@ -104,6 +102,10 @@ function ReviewCase() {
   // generation the version trigger failed to record is visible rather than
   // silently presented as the current draft.
   const [draftText, setDraftText] = useState<string>("");
+  // case_drafts.is_approved: this draft has already been sent. The Brain's
+  // upsert resets it to false on every regeneration, so it describes the draft
+  // currently in the row rather than the case as a whole.
+  const [draftApproved, setDraftApproved] = useState(false);
   const [draftStamp, setDraftStamp] = useState<string>("none");
   // The newest case_draft_versions row, reported up by the Draft tab so the
   // Knowledge tab can show what that version drew on.
@@ -176,7 +178,7 @@ function ReviewCase() {
     // Does a draft already exist for this case?
     const { data: draftData } = await supabase
       .from("case_drafts")
-      .select("case_id, proposed_draft, last_updated")
+      .select("case_id, proposed_draft, last_updated, is_approved")
       .eq("case_id", caseId)
       .maybeSingle();
 
@@ -189,6 +191,7 @@ function ReviewCase() {
     setEventsTruncated(total > rows.length);
     setHasDraft(!!draftData?.proposed_draft);
     setDraftText((draftData?.proposed_draft as string) || "");
+    setDraftApproved(Boolean(draftData?.is_approved));
     setDraftStamp((draftData?.last_updated as string) || "none");
     setLoading(false);
   }, [caseId]);
@@ -453,9 +456,6 @@ function ReviewCase() {
     }
   };
 
-  // The reply box replies on the latest client-thread subject.
-  const clientEvents = useMemo(() => events.filter((e) => !isPartnerEvent(e)), [events]);
-
   const syncSlot = (
     <button
       className="icon-btn"
@@ -592,6 +592,7 @@ function ReviewCase() {
                 refreshKey={draftStamp}
                 currentDraftText={draftText}
                 currentDraftUpdatedAt={draftStamp === "none" ? null : draftStamp}
+                draftApproved={draftApproved}
                 onCurrentVersionChange={setCurrentVersion}
                 generateSlot={
                   <>
@@ -654,33 +655,43 @@ function ReviewCase() {
         </aside>
       </div>
 
-      {/* The send forms, unchanged until the docked composer replaces them. */}
-      <CaseReplyBox
-        conversationId={caseId}
-        clientEmail={email}
-        clientName={client?.full_name ?? undefined}
-        caseSerialId={conversation?.case_serial_id ?? undefined}
-        replyToSubject={
-          clientEvents.length
-            ? (clientEvents[clientEvents.length - 1].subject ?? undefined)
-            : undefined
-        }
-        onSent={load}
-      />
-
-      {/* Follow up with partner: compose by hand or draft with the Brain (in
-          Greek, mode "partner"). Logs as partner_email_sent. clientStage feeds
-          the R7 deposit-gate notice. */}
-      <CasePartnerReplyBox
+      {/* One composer for both directions. It replaces the separate client and
+          partner boxes: the same R2 and R7 checks bind whichever target is
+          selected, which is the reason for merging them. The old boxes and the
+          review desk are superseded and removed in PR 4, once nothing else
+          depends on them. */}
+      {/* Keyed on the case so none of the composer's state can outlive it.
+          The route component is reused when :caseId changes, and everything
+          the composer holds is case-specific: a half-written body, a loaded
+          Brain draft, an in-flight generate poll. Carrying any of that into
+          another case would mean writing to one client and sending to the
+          next. No link in the app goes case to case today, so this is not a
+          live path; it costs one attribute to make it impossible before one
+          exists. */}
+      <CaseComposer
+        key={caseId}
         conversationId={caseId}
         caseSerialId={conversation?.case_serial_id ?? null}
-        clientStage={client?.stage ?? null}
+        clientName={client?.full_name ?? null}
+        clientEmail={email || null}
+        // brain_conversations.stage is the fallback so a case with no linked
+        // client row still gates: without it clientStage is null, the gate
+        // reads "not before deposit", and R7 would let gated content through
+        // on exactly the cases we know least about. Same precedence /drafts
+        // already uses.
+        clientStage={client?.stage ?? conversation?.stage ?? null}
+        // A recorded deposit opens the gate whatever the stage says, which is
+        // what keeps a paid case that was later parked from being gated.
+        clientDeposit={client?.deposit ?? null}
+        events={events}
+        // case_drafts.proposed_draft is what the send path sends, and it is
+        // the only one of the two that always exists for a drafted case. The
+        // version row is passed alongside it purely to attribute the send.
+        currentDraftText={draftText}
+        currentDraftApproved={draftApproved}
+        currentVersion={currentVersion}
         onSent={load}
       />
-
-      {/* When a draft exists, the desk shows it for edit + approve + send.
-          Generate and Regenerate live in the Draft tab of the workspace. */}
-      {hasDraft && <AiReviewDesk key={draftStamp} jobId={caseId} />}
     </div>
   );
 }

@@ -1,13 +1,36 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { mailgunFailureResponse } from "@/lib/mailgun-error.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { resolveActivePartner } from "@/lib/partner-recipient.server";
+import { isBeforeDeposit, reviewBody, visibleText } from "@/lib/case-composer";
 
 // POST /webhooks/send-approved
 //
-// Called by the AiReviewDesk button. Marks the draft approved, resolves the
-// recipient server side, sends via Mailgun's EU API directly (same path as
-// case-reply.ts, no Make hop), then logs the outbound message and stamps the
-// draft version history.
+// Called by the case composer (and still by the AiReviewDesk button). Marks
+// the draft approved, resolves the recipient server side, sends via Mailgun's
+// EU API directly (same path as case-reply.ts, no Make hop), then logs the
+// outbound message and stamps the draft version history.
+//
+// TARGET. The composer can write to the client or to the partner, so the body
+// carries `target`. It defaults to "client", which is what every existing
+// caller posts, so their contract is unchanged.
+//
+// The partner branch is not the client branch with a different address. Four
+// things differ, each deliberately, and each matching /webhooks/partner-reply:
+//
+//   1. The recipient must be an ACTIVE PARTNER, checked against
+//      partner_profiles by resolveActivePartner(). That check is what keeps a
+//      partner send from being pointed at a client, and it lives in a shared
+//      module precisely so the two endpoints cannot drift apart on it.
+//   2. NO BCC to hello@. hello@ forwards into the same Gmail the partner sync
+//      searches, so a BCC would re-import as a duplicate of the message.
+//   3. NO SIGNATURE. Partner mail carries none: these are working exchanges
+//      with a counterparty, not client correspondence.
+//   4. The body arrives as PLAIN TEXT and is escaped here, where client mail
+//      arrives as sanitized HTML with the signature already stitched in.
+//
+// The MGT-REF-ID line is appended in both directions: it is the token the
+// inbound sync matches a reply back to the case with.
 //
 // The Make relay was removed: it ACKed the webhook instantly and sent the mail
 // afterwards, so a Mailgun failure inside Make surfaced as a success here. One
@@ -49,6 +72,152 @@ function readSentMode(value: unknown): SentMode | null {
 
 const BASE_FONT_OPEN =
   '<div style="font-family: Arial, Helvetica, sans-serif; font-size: 14px; color: #1E2A3A; line-height: 1.6;">';
+
+const TARGETS = ["client", "partner"] as const;
+type Target = (typeof TARGETS)[number];
+
+/**
+ * The target, or null when one was supplied that is not a target.
+ *
+ * Absent means "client", because every caller that predates the composer posts
+ * no target at all. A value that is present but unrecognised is an error and
+ * not a client send: coercing "Partner" to the client branch would put Greek
+ * partner text, unescaped and with a client's address resolved for it, into a
+ * client's inbox.
+ */
+function readTarget(value: unknown): Target | null {
+  if (value === undefined || value === null) return "client";
+  return typeof value === "string" && (TARGETS as readonly string[]).includes(value)
+    ? (value as Target)
+    : null;
+}
+
+/** Partner bodies arrive as plain text, so they are escaped, never trusted. */
+function bodyToHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\r?\n/g, "<br>");
+}
+
+/** What the deposit gate needs to know about a case, read from the database. */
+interface CaseGateFacts {
+  stage: string | null;
+  /** clients.deposit > 0, which is how the portal records a confirmed deposit. */
+  depositRecorded: boolean;
+  /**
+   * False when a lookup errored, as opposed to returning no row.
+   *
+   * The difference decides whether the send may proceed. A case with no row
+   * genuinely has no stage, and R7 does not gate on absent data. A failed read
+   * looks identical from here and must not: it would report "not before the
+   * deposit" for a case that is, and open the gate exactly when the database
+   * is least able to say otherwise.
+   */
+  readOk: boolean;
+}
+
+/**
+ * The stage and the deposit, read on the server rather than taken from the
+ * caller.
+ *
+ * R7 turns on these values, so they are looked up here: a body posted directly
+ * could otherwise carry any stage it liked, and the rule would hold only for
+ * callers that chose to respect it. clients.stage first, the conversation's
+ * own stage second, which is the precedence the case list already uses.
+ *
+ * The deposit is read alongside it because the stage alone cannot answer the
+ * question for a case in a side state: Parked and Lost are reachable from
+ * Quoted, so they gate, and clients.deposit is what says this particular
+ * parked case had already paid.
+ */
+async function readCaseGateFacts(caseId: string): Promise<CaseGateFacts> {
+  const { data: conv, error: convError } = await supabaseAdmin
+    .from("brain_conversations")
+    .select("stage, client_id")
+    .eq("id", caseId)
+    .maybeSingle();
+  if (convError) {
+    console.error("[send-approved] case lookup failed:", convError.message);
+    return { stage: null, depositRecorded: false, readOk: false };
+  }
+  if (!conv) return { stage: null, depositRecorded: false, readOk: true };
+
+  const convStage = typeof conv.stage === "string" ? conv.stage : null;
+
+  if (typeof conv.client_id === "string" && conv.client_id) {
+    const { data: client, error: clientError } = await supabaseAdmin
+      .from("clients")
+      .select("stage, deposit")
+      .eq("id", conv.client_id)
+      .maybeSingle();
+    if (clientError) {
+      console.error("[send-approved] client lookup failed:", clientError.message);
+      return { stage: null, depositRecorded: false, readOk: false };
+    }
+    if (client) {
+      const depositRecorded = typeof client.deposit === "number" && client.deposit > 0;
+      const stage = typeof client.stage === "string" && client.stage ? client.stage : convStage;
+      return { stage, depositRecorded, readOk: true };
+    }
+  }
+  return { stage: convStage, depositRecorded: false, readOk: true };
+}
+
+/**
+ * One bounded Mailgun send, used by both targets.
+ *
+ * Without the bound a stalled Mailgun holds the worker until the platform
+ * kills it and the operator is told nothing about whether the mail went. That
+ * reasoning is not specific to either recipient, so neither is this: the
+ * client branch carries most of the traffic and had no timeout at all while
+ * the partner branch did.
+ *
+ * Throws what fetch throws, including an AbortError on timeout, so each caller
+ * keeps its own wording for the failure.
+ */
+async function sendViaMailgun(
+  domain: string,
+  mailgunKey: string,
+  form: URLSearchParams,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000);
+  try {
+    return await fetch(`https://api.eu.mailgun.net/v3/${domain}/messages`, {
+      method: "POST",
+      headers: {
+        Authorization: "Basic " + btoa("api:" + mailgunKey),
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: form.toString(),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+/**
+ * The MGT-REF-ID footer, which is how a partner's reply finds its way back.
+ *
+ * Partner mail goes to the partner's own mailbox and comes back through the
+ * sync with no thread the portal owns, so the case code travels in the body
+ * and is read back out of the reply. Byte for byte the same line
+ * /webhooks/partner-reply already emits, "MGT-" prefix stripped and all: two
+ * endpoints writing the marker two ways is how one of them stops matching.
+ * Returns "" for a case with no serial, and the partner branch refuses to
+ * send in that state rather than mailing an unmatchable message.
+ */
+function refLine(caseSerialId: string | null): string {
+  const refCore = caseSerialId ? caseSerialId.replace(/^MGT-/i, "") : "";
+  return refCore
+    ? '<div style="font-family: Arial, Helvetica, sans-serif; font-size: 12px; color: #9ca3af; margin-top: 16px;">MGT-REF-ID: [' +
+        refCore +
+        "]</div>"
+    : "";
+}
 
 // The desk posts final_text as sanitized HTML with the signature already in it,
 // so we never append a signature here.
@@ -140,13 +309,227 @@ export const Route = createFileRoute("/webhooks/send-approved")({
         const finalText = readString(b.final_text, 100000);
         const subject = readString(b.subject, 500) || DEFAULT_SUBJECT;
         const sentMode = readSentMode(b.sent_mode);
+        const target = readTarget(b.target);
+        if (target === null) {
+          return Response.json(
+            { error: "Unknown target", detail: 'target must be "client" or "partner".' },
+            { status: 400 },
+          );
+        }
+        // The version this send corresponds to, chosen by the composer. See
+        // the stamping step for why the server no longer picks one itself.
+        const draftVersionId = readString(b.draft_version_id, 100);
 
         if (!caseId || !finalText) {
           return Response.json({ error: "case_id and final_text are required" }, { status: 400 });
         }
 
+        // ---------------------------------------------------------------
+        // R2 AND R7, ON THE SERVER.
+        //
+        // The composer applies these before it lets the button light up, but
+        // a rule that only exists in the browser is advice, not a rule: this
+        // endpoint takes final_text from the caller and would otherwise send
+        // whatever arrived. R2 in particular is written as having no
+        // exceptions, so it is enforced where it cannot be skipped.
+        //
+        // The stage comes from the database, never from the request, and the
+        // body is read the way the recipient will read it. A currency figure
+        // needs the caller to have confirmed it (pricing_ack), which is the
+        // server-side form of the confirmation the composer asks for.
+        // ---------------------------------------------------------------
+        const { stage, depositRecorded, readOk } = await readCaseGateFacts(caseId);
+        if (!readOk) {
+          // Refuse rather than send. R7 cannot be applied without knowing the
+          // stage, and guessing in the permissive direction here would mean the
+          // gate fails open on precisely the requests it cannot evaluate.
+          return Response.json(
+            {
+              error: "Case stage could not be read",
+              detail:
+                "The deposit gate cannot be checked right now, so nothing is sent. Try again in a moment. The reason is in the server log.",
+            },
+            { status: 503 },
+          );
+        }
+        const beforeDeposit = isBeforeDeposit(stage, depositRecorded);
+        // Read the body the way its recipient will, which is not the same
+        // reading for the two targets. Client mail is HTML and has to be
+        // stripped to its words. Partner mail is plain text and is escaped on
+        // delivery by bodyToHtml, so stripping it would delete every span
+        // between a "<" and the next ">" from the check while the partner
+        // still receives it: "η τιμή πελάτη <249 EUR> ok" would be reviewed as
+        // "η τιμή πελάτη ok". A stray "less than" sign was enough.
+        const bodyForReview = target === "partner" ? finalText : visibleText(finalText);
+        // The subject is sent in the same message and is read first, so it is
+        // judged with the body. A retail figure in a partner subject line is
+        // exactly as much an R2 breach as one in the body.
+        const verdict = reviewBody(`${subject}\n${bodyForReview}`, target, beforeDeposit);
+
+        if (verdict.blocking.length > 0) {
+          return Response.json(
+            {
+              error: "Blocked by the case rules",
+              detail: verdict.blocking.join(" "),
+              blocking: verdict.blocking,
+            },
+            { status: 422 },
+          );
+        }
+        if (verdict.confirmations.length > 0 && b.pricing_ack !== true) {
+          return Response.json(
+            {
+              error: "Confirmation required before sending",
+              detail: verdict.confirmations.join(" "),
+              confirmations: verdict.confirmations,
+            },
+            { status: 422 },
+          );
+        }
+
+        // ---------------------------------------------------------------
+        // PARTNER TARGET. Handled entirely here and returned, so none of the
+        // client-only steps below (draft row required, client recipient
+        // resolution, BCC, version stamping) can run against partner mail.
+        // ---------------------------------------------------------------
+        if (target === "partner") {
+          try {
+            const partnerLookup = await resolveActivePartner(
+              supabaseAdmin,
+              readString(b.partner_email, 320) ?? "",
+            );
+            if (!partnerLookup.ok) {
+              return Response.json(
+                { error: partnerLookup.error, detail: partnerLookup.detail },
+                { status: partnerLookup.status },
+              );
+            }
+            const partnerEmail = partnerLookup.partner.email;
+
+            const { data: convRow } = await supabaseAdmin
+              .from("brain_conversations")
+              .select("id, case_serial_id")
+              .eq("id", caseId)
+              .maybeSingle();
+            if (!convRow) {
+              return Response.json({ error: "Case not found" }, { status: 404 });
+            }
+            const serial =
+              typeof convRow.case_serial_id === "string" ? convRow.case_serial_id : null;
+            if (!serial) {
+              return Response.json(
+                {
+                  error: "Conversation has no case serial",
+                  detail:
+                    "Without a MGT-REF-ID line the partner's reply cannot be matched back to this case. Assign a case code first.",
+                },
+                { status: 422 },
+              );
+            }
+
+            // No signature, by design. Body, then the ref line.
+            const html = BASE_FONT_OPEN + bodyToHtml(finalText) + "</div>" + refLine(serial);
+
+            // No BCC: hello@ feeds the same mailbox the partner sync reads, and
+            // the copy would re-import as a duplicate of this message.
+            const form = new URLSearchParams();
+            form.set("from", "MyGreekTax <hello@mygreektax.eu>");
+            form.set("to", partnerEmail);
+            form.set("subject", subject);
+            form.set("html", html);
+            form.set("h:X-Mailgun-Variables", JSON.stringify({ src: "portal_composer" }));
+
+            let mgRes: Response;
+            try {
+              mgRes = await sendViaMailgun(domain, mailgunKey, form);
+            } catch (sendError) {
+              const aborted = sendError instanceof Error && sendError.name === "AbortError";
+              console.error("[send-approved] partner send failed:", sendError);
+              return Response.json(
+                {
+                  error: aborted ? "Mailgun timed out" : "Mailgun unreachable",
+                  detail: aborted
+                    ? "The send did not complete within 10 seconds. Check the partner thread before retrying."
+                    : "The mail server could not be reached.",
+                },
+                { status: 502 },
+              );
+            }
+            const mgText = await mgRes.text();
+            if (!mgRes.ok) {
+              return mailgunFailureResponse(
+                "send-approved(partner)",
+                mgRes.status,
+                mgText,
+                mgRes.headers.get("retry-after"),
+              );
+            }
+
+            let mgId: string | undefined;
+            try {
+              mgId = (JSON.parse(mgText) as { id?: string }).id;
+            } catch {
+              /* ignore */
+            }
+
+            // Logged as a PARTNER event so it renders in the partner pane and
+            // never in the client one.
+            let logged = true;
+            let logError: string | null = null;
+            const { error: insErr } = await supabaseAdmin.from("brain_events").insert({
+              conversation_id: caseId,
+              external_event_id: mgId || `portal-composer-partner-${crypto.randomUUID()}`,
+              event_type: "partner_email_sent",
+              actor: "dimitris",
+              direction: "outbound",
+              provider: "mailgun",
+              provider_message_id: mgId || null,
+              from_email: "hello@mygreektax.eu",
+              to_emails: [partnerEmail],
+              subject,
+              body_text: finalText,
+              metadata: { via: "portal_composer" },
+            });
+            if (insErr) {
+              console.error("[send-approved] partner log failed (mail already sent):", insErr);
+              logged = false;
+              logError = LOG_FAILURE_MESSAGE;
+            }
+
+            console.log(`[send-approved] partner send for case ${caseId} to ${partnerEmail}`);
+            return Response.json({
+              ok: true,
+              target: "partner",
+              sent_to: partnerEmail,
+              messageId: mgId ?? null,
+              logged,
+              logError,
+            });
+          } catch (error) {
+            console.error("[send-approved] partner send failed", { error });
+            return Response.json(
+              {
+                error: "Failed to send to partner",
+                detail: error instanceof Error ? error.message : String(error),
+              },
+              { status: 500 },
+            );
+          }
+        }
+
         try {
-          // 1. The draft must exist before anything is sent.
+          // 1. A draft row is no longer required to send.
+          //
+          // This used to 404 without one, which was right while the only
+          // caller was the approve button on a generated draft. The composer
+          // is now the only way to write to a client from the case page, and
+          // it replaced a reply box that never needed a draft, so refusing
+          // here would mean a case the Brain has never drafted for cannot be
+          // replied to at all.
+          //
+          // What the row still decides is whether this send is APPROVING a
+          // draft: the approval flag and the version stamp below only apply
+          // when there is one and the caller says the draft is what it sent.
           const { data: draftRow, error: draftError } = await supabaseAdmin
             .from("case_drafts")
             .select("case_id, is_approved")
@@ -154,9 +537,27 @@ export const Route = createFileRoute("/webhooks/send-approved")({
             .maybeSingle();
 
           if (draftError) throw draftError;
-          if (!draftRow) {
-            return Response.json({ error: "No draft found for this case" }, { status: 404 });
-          }
+
+          // Two separate questions, which used to be one.
+          //
+          // Did the Brain's draft go out? That is what is_approved records, and
+          // the composer answers it with sending_draft. An ad-hoc reply the
+          // operator wrote is not an approval, so it says nothing.
+          //
+          // Is this send attributable to a recorded version? Only then is the
+          // history stamped. A draft the version trigger never recorded, or one
+          // whose row has since been superseded, is a real send of a real draft
+          // that simply has no row to write to; stamping the nearest row would
+          // put this text on a version that never held it.
+          //
+          // Conflating the two meant a send of an unrecorded draft left
+          // is_approved false, and is_approved is the only durable record of
+          // that send: it is written before the stamp, so it survives the stamp
+          // failing, which is exactly when the composer would otherwise offer
+          // the same draft again after a reload.
+          const sendsDraft = b.sending_draft === true;
+          const approvesDraft = !!draftRow && (!!draftVersionId || sentMode !== null || sendsDraft);
+          const stampsVersion = approvesDraft && (!!draftVersionId || sentMode !== null);
 
           // 2. Resolve the recipient. Unchanged from the Make version.
           let clientRow: { id: string; full_name: string | null; email: string | null } | null =
@@ -266,14 +667,22 @@ export const Route = createFileRoute("/webhooks/send-approved")({
           form.set("html", html);
           form.set("h:X-Mailgun-Variables", JSON.stringify({ src: "portal_desk" }));
 
-          const mgRes = await fetch(`https://api.eu.mailgun.net/v3/${domain}/messages`, {
-            method: "POST",
-            headers: {
-              Authorization: "Basic " + btoa("api:" + mailgunKey),
-              "Content-Type": "application/x-www-form-urlencoded",
-            },
-            body: form.toString(),
-          });
+          let mgRes: Response;
+          try {
+            mgRes = await sendViaMailgun(domain, mailgunKey, form);
+          } catch (sendError) {
+            const aborted = sendError instanceof Error && sendError.name === "AbortError";
+            console.error("[send-approved] client send failed:", sendError);
+            return Response.json(
+              {
+                error: aborted ? "Mailgun timed out" : "Mailgun unreachable",
+                detail: aborted
+                  ? "The send did not complete within 10 seconds. Check the client thread before retrying."
+                  : "The mail server could not be reached.",
+              },
+              { status: 502 },
+            );
+          }
           const mgText = await mgRes.text();
 
           if (!mgRes.ok) {
@@ -308,19 +717,21 @@ export const Route = createFileRoute("/webhooks/send-approved")({
           //
           // What was sent now lives in case_draft_versions.sent_text, which is
           // the column that exists for it. proposed_draft stays the Brain's.
-          const { error: updateError } = await supabaseAdmin
-            .from("case_drafts")
-            .update({
-              is_approved: true,
-              last_updated: new Date().toISOString(),
-            })
-            .eq("case_id", caseId);
+          if (approvesDraft) {
+            const { error: updateError } = await supabaseAdmin
+              .from("case_drafts")
+              .update({
+                is_approved: true,
+                last_updated: new Date().toISOString(),
+              })
+              .eq("case_id", caseId);
 
-          if (updateError) {
-            console.error(
-              "[send-approved] approval update failed (mail already sent):",
-              updateError,
-            );
+            if (updateError) {
+              console.error(
+                "[send-approved] approval update failed (mail already sent):",
+                updateError,
+              );
+            }
           }
 
           // 6. Stamp the draft version history.
@@ -333,27 +744,44 @@ export const Route = createFileRoute("/webhooks/send-approved")({
           // noise. The browser is the only place that still holds both sides
           // of that comparison, so sent_mode arrives from the desk.
           //
-          // The row stamped is the newest one that has not been sent yet. A
-          // resend therefore finds nothing to stamp and leaves the first send
-          // standing, which is the reading we want: the metric is about
-          // whether the Brain's draft survived review, and only the first send
-          // answers that.
+          // WHICH row is stamped, and why this changed.
+          //
+          // It used to be "the newest row that has not been sent yet", with the
+          // reasoning that a resend would find nothing to stamp. That only held
+          // if every earlier version had also been sent. In the ordinary flow
+          // (generate v1, regenerate v2, send v2) v1 is left permanently
+          // unsent, so it was the row a resend found, and the resend wrote v2's
+          // text and a send time onto v1. One email then showed as two sends,
+          // and the as-is against edited ratio, which is the only quality
+          // metric this project has, was counted twice from it.
+          //
+          // The composer now posts the id of the version it is actually
+          // sending, so there is nothing to infer. A caller that does not send
+          // one (the older desk) keeps the previous behaviour, narrowed to the
+          // newest row overall so it can never reach back past a sent version.
           //
           // Failure here never fails the request. The mail has gone, and a
           // missing metric row is not something the sender can act on.
           let versionStamped = false;
-          if (isNewSpine) {
-            const { data: versionRow, error: versionLookupError } = await supabaseAdmin
-              .from("case_draft_versions")
-              .select("id")
-              .eq("conversation_id", caseId)
-              .is("sent_at", null)
-              .order("version_no", { ascending: false })
-              .limit(1)
-              .maybeSingle();
+          if (isNewSpine && stampsVersion) {
+            const query = supabaseAdmin.from("case_draft_versions").select("id, sent_at");
+            const { data: versionRow, error: versionLookupError } = draftVersionId
+              ? await query.eq("id", draftVersionId).eq("conversation_id", caseId).maybeSingle()
+              : await query
+                  .eq("conversation_id", caseId)
+                  .order("version_no", { ascending: false })
+                  .limit(1)
+                  .maybeSingle();
 
             if (versionLookupError) {
               console.error("[send-approved] draft version lookup failed:", versionLookupError);
+            } else if (versionRow && (versionRow as { sent_at: string | null }).sent_at) {
+              // Already stamped. A resend is a real thing an operator may do,
+              // but the first send is what the metric is about, so the earlier
+              // stamp stands and this one is recorded as not stamped.
+              console.log(
+                `[send-approved] version ${(versionRow as { id: string }).id} already stamped; leaving the first send standing`,
+              );
             } else if (versionRow) {
               const { error: versionUpdateError } = await supabaseAdmin
                 .from("case_draft_versions")
