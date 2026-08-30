@@ -538,12 +538,26 @@ export const Route = createFileRoute("/webhooks/send-approved")({
 
           if (draftError) throw draftError;
 
-          // An ad-hoc reply is not an approval. The composer posts a version
-          // id (or a sent_mode) only when the body it is sending came from the
-          // draft; without either, this is a message the operator wrote, and
-          // marking the Brain's draft approved and sent for it would put a
-          // send into the quality metric that never happened.
-          const approvesDraft = !!draftRow && (!!draftVersionId || sentMode !== null);
+          // Two separate questions, which used to be one.
+          //
+          // Did the Brain's draft go out? That is what is_approved records, and
+          // the composer answers it with sending_draft. An ad-hoc reply the
+          // operator wrote is not an approval, so it says nothing.
+          //
+          // Is this send attributable to a recorded version? Only then is the
+          // history stamped. A draft the version trigger never recorded, or one
+          // whose row has since been superseded, is a real send of a real draft
+          // that simply has no row to write to; stamping the nearest row would
+          // put this text on a version that never held it.
+          //
+          // Conflating the two meant a send of an unrecorded draft left
+          // is_approved false, and is_approved is the only durable record of
+          // that send: it is written before the stamp, so it survives the stamp
+          // failing, which is exactly when the composer would otherwise offer
+          // the same draft again after a reload.
+          const sendsDraft = b.sending_draft === true;
+          const approvesDraft = !!draftRow && (!!draftVersionId || sentMode !== null || sendsDraft);
+          const stampsVersion = approvesDraft && (!!draftVersionId || sentMode !== null);
 
           // 2. Resolve the recipient. Unchanged from the Make version.
           let clientRow: { id: string; full_name: string | null; email: string | null } | null =
@@ -749,7 +763,7 @@ export const Route = createFileRoute("/webhooks/send-approved")({
           // Failure here never fails the request. The mail has gone, and a
           // missing metric row is not something the sender can act on.
           let versionStamped = false;
-          if (isNewSpine && approvesDraft) {
+          if (isNewSpine && stampsVersion) {
             const query = supabaseAdmin.from("case_draft_versions").select("id, sent_at");
             const { data: versionRow, error: versionLookupError } = draftVersionId
               ? await query.eq("id", draftVersionId).eq("conversation_id", caseId).maybeSingle()

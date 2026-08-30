@@ -102,6 +102,10 @@ function ReviewCase() {
   // generation the version trigger failed to record is visible rather than
   // silently presented as the current draft.
   const [draftText, setDraftText] = useState<string>("");
+  // case_drafts.is_approved: this draft has already been sent. The Brain's
+  // upsert resets it to false on every regeneration, so it describes the draft
+  // currently in the row rather than the case as a whole.
+  const [draftApproved, setDraftApproved] = useState(false);
   const [draftStamp, setDraftStamp] = useState<string>("none");
   // The newest case_draft_versions row, reported up by the Draft tab so the
   // Knowledge tab can show what that version drew on.
@@ -174,7 +178,7 @@ function ReviewCase() {
     // Does a draft already exist for this case?
     const { data: draftData } = await supabase
       .from("case_drafts")
-      .select("case_id, proposed_draft, last_updated")
+      .select("case_id, proposed_draft, last_updated, is_approved")
       .eq("case_id", caseId)
       .maybeSingle();
 
@@ -187,6 +191,7 @@ function ReviewCase() {
     setEventsTruncated(total > rows.length);
     setHasDraft(!!draftData?.proposed_draft);
     setDraftText((draftData?.proposed_draft as string) || "");
+    setDraftApproved(Boolean(draftData?.is_approved));
     setDraftStamp((draftData?.last_updated as string) || "none");
     setLoading(false);
   }, [caseId]);
@@ -673,6 +678,7 @@ function ReviewCase() {
         // the only one of the two that always exists for a drafted case. The
         // version row is passed alongside it purely to attribute the send.
         currentDraftText={draftText}
+        currentDraftApproved={draftApproved}
         currentVersion={currentVersion}
         onSent={load}
       />

@@ -76,6 +76,14 @@ interface Props {
    */
   currentDraftText?: string | null;
   /**
+   * case_drafts.is_approved: this draft has already been sent.
+   *
+   * The durable half of "do not offer it again". case_draft_versions.sent_at
+   * says the same thing but is written after it and can fail on its own, and
+   * an unrecorded draft has no version row to carry it at all.
+   */
+  currentDraftApproved?: boolean;
+  /**
    * The newest recorded version, used to attribute a send to the metric.
    * Only that: a version whose text has been superseded is not what goes out.
    */
@@ -120,6 +128,7 @@ export function CaseComposer({
   clientDeposit,
   events,
   currentDraftText,
+  currentDraftApproved,
   currentVersion,
   onSent,
 }: Props) {
@@ -215,6 +224,10 @@ export function CaseComposer({
     // the only one of the two that is guaranteed to exist for a drafted case.
     const text = currentDraftText || currentVersion?.draft_text || "";
     if (!text) return "";
+    // Already sent, on the record that is written first and so outlives the
+    // version stamp. Without this, a stamp that failed left sent_at null and a
+    // reload put the just-sent draft back in the box, ready to go again.
+    if (currentDraftApproved) return "";
     // Once a version has been sent, it stops being an offer to send again.
     // sent_at on the row is the authoritative answer and survives a reload,
     // a second tab and a second operator; the local id only covers the moment
@@ -225,7 +238,14 @@ export function CaseComposer({
     if (versionIsCurrent && sentVersionId && sentVersionId === currentVersion?.id) return "";
     if (!versionIsCurrent && sentDraftText !== null && sentDraftText === text) return "";
     return plainToHtml(text);
-  }, [currentDraftText, currentVersion, sentVersionId, sentDraftText, versionIsCurrent]);
+  }, [
+    currentDraftText,
+    currentDraftApproved,
+    currentVersion,
+    sentVersionId,
+    sentDraftText,
+    versionIsCurrent,
+  ]);
 
   // A client reply carries "Re: <the subject they last wrote under>", which is
   // what puts it in their existing thread rather than starting a new one. The
@@ -531,6 +551,12 @@ export function CaseComposer({
           ...(sendingRecordedVersion && currentVersion
             ? { draft_version_id: currentVersion.id }
             : {}),
+          // That the draft went out at all, which is a different question from
+          // which version it was. This is what marks case_drafts approved, and
+          // that flag is the only record of the send that survives the version
+          // stamp failing, so it is also what stops a reload offering the same
+          // draft back.
+          ...(sendingDraft ? { sending_draft: true } : {}),
           ...(target === "partner" ? { partner_email: partnerEmail } : {}),
         }),
       });
