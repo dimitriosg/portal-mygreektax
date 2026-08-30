@@ -46,6 +46,8 @@ interface Props {
   clientEmail?: string | null;
   /** The linked lead's stage, which decides whether the deposit gate is shut. */
   clientStage?: string | null;
+  /** clients.deposit. A recorded deposit opens the gate whatever the stage. */
+  clientDeposit?: number | null;
   /** The whole case timeline, for the context panel. */
   events: ThreadEvent[];
   /** The newest draft version, used to prefill the client body. */
@@ -69,13 +71,23 @@ export function CaseComposer({
   clientName,
   clientEmail,
   clientStage,
+  clientDeposit,
   events,
   currentVersion,
   onSent,
 }: Props) {
   const [target, setTarget] = useState<ComposerTarget>("client");
-  const [subject, setSubject] = useState("");
-  const subjectTouched = useRef(false);
+
+  // One subject per target rather than one shared field. A target flip is
+  // exactly when the subject should be reconsidered, and a single field
+  // carried "Your 2025 return" onto a partner send, or the internal case
+  // serial onto a client one.
+  const [clientSubject, setClientSubject] = useState("");
+  const [partnerSubject, setPartnerSubject] = useState("");
+  const subjectTouched = useRef<Record<ComposerTarget, boolean>>({
+    client: false,
+    partner: false,
+  });
 
   // Client mail is HTML from the rich editor; partner mail is plain text,
   // which is what the partner send path has always taken.
@@ -83,20 +95,32 @@ export function CaseComposer({
   // The version already sent from this composer, so its text stops being
   // offered back as a prefill and the editor comes up empty afterwards.
   const [sentVersionId, setSentVersionId] = useState<string | null>(null);
+  // Bumped on every send that clears the editor. The version id alone cannot
+  // express "cleared": an ad-hoc reply on a case with no draft leaves it null
+  // before and after, the key never changes, and the text that was just mailed
+  // stays on screen for one keystroke to re-arm.
+  const [clearNonce, setClearNonce] = useState(0);
   const [partnerText, setPartnerText] = useState("");
 
   const [partners, setPartners] = useState<PartnerOption[]>([]);
   const [partnerEmail, setPartnerEmail] = useState("");
+  const [partnerError, setPartnerError] = useState("");
 
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
   const [contextOpen, setContextOpen] = useState(false);
   const [pricingAcknowledged, setPricingAcknowledged] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [sending, setSending] = useState(false);
+  // A send that went out but was not written to the case thread. The body is
+  // still on screen so it can be copied into a note, which means the one
+  // visible button would otherwise mail the client a second time. Holding it
+  // behind an explicit click is what the old desk did with its own
+  // sent-unlogged state, for the same reason.
+  const [sentUnlogged, setSentUnlogged] = useState(false);
   const [error, setError] = useState("");
   const [sentMsg, setSentMsg] = useState("");
 
-  const beforeDeposit = isBeforeDeposit(clientStage);
+  const beforeDeposit = isBeforeDeposit(clientStage, (clientDeposit ?? 0) > 0);
 
   // The prefill is derived, not stored, and the editor is keyed on it.
   //
@@ -120,10 +144,26 @@ export function CaseComposer({
     return plainToHtml(text);
   }, [currentVersion, sentVersionId]);
 
+  // A client reply carries "Re: <the subject they last wrote under>", which is
+  // what puts it in their existing thread rather than starting a new one. The
+  // old reply box derived it the same way; losing it split every client
+  // conversation into a thread per message.
+  const clientSubjectDefault = useMemo(() => {
+    const last = [...events].reverse().find((e) => !isPartnerEvent(e) && e.subject);
+    const base = (last?.subject ?? "").replace(/^(re:\s*)+/i, "").trim();
+    if (base) return `Re: ${base}`;
+    return caseSerialId ? `Re: ${caseSerialId}` : "";
+  }, [events, caseSerialId]);
+
   useEffect(() => {
-    if (subjectTouched.current) return;
-    setSubject(target === "partner" && caseSerialId ? `${caseSerialId}: ` : "");
-  }, [target, caseSerialId]);
+    if (subjectTouched.current.partner) return;
+    setPartnerSubject(caseSerialId ? `${caseSerialId}: ` : "");
+  }, [caseSerialId]);
+
+  useEffect(() => {
+    if (subjectTouched.current.client) return;
+    setClientSubject(clientSubjectDefault);
+  }, [clientSubjectDefault]);
 
   useEffect(() => {
     let cancelled = false;
@@ -135,7 +175,10 @@ export function CaseComposer({
         .order("full_name");
       if (cancelled) return;
       if (err) {
-        setError(`Could not load partners: ${err.message}`);
+        // Its own slot, not the send slot. A late rejection here used to
+        // overwrite the send's own outcome, including the one message that
+        // must never be lost: "sent but not written to the case thread".
+        setPartnerError(`Could not load partners: ${err.message}`);
         return;
       }
       const rows = ((data as PartnerOption[] | null) ?? []).filter((p) => !!p.email);
@@ -163,6 +206,8 @@ export function CaseComposer({
       return next;
     });
   };
+
+  const subject = target === "client" ? clientSubject : partnerSubject;
 
   // The text the rules are applied to: what a reader would see, in both modes.
   const bodyForReview = target === "partner" ? partnerText : visibleText(clientHtml || prefillHtml);
@@ -194,6 +239,7 @@ export function CaseComposer({
     !!subject.trim() &&
     verdict.blocking.length === 0 &&
     !needsAcknowledgement &&
+    !sentUnlogged &&
     !sending;
 
   const send = async () => {
@@ -266,21 +312,30 @@ export function CaseComposer({
       if (payload.logged === false) {
         // The mail went but the case did not record it. Saying "Sent" and
         // nothing else is how an empty case thread went unnoticed before.
+        //
+        // The body deliberately stays on screen here. The operator is being
+        // asked to put this message into the case by hand, and clearing it
+        // would take away the only copy they have: the thread does not hold it
+        // either, by definition of logged:false.
         setError(
-          `Sent to ${to}, but it was not written to the case thread. ${payload.logError ?? ""}`.trim(),
+          `Sent to ${to}, but it was not written to the case thread. Copy the message into a note before leaving this page. ${payload.logError ?? ""}`.trim(),
         );
+        setSentUnlogged(true);
       } else {
         setSentMsg(`Sent to ${to}.`);
-      }
-      if (target === "client") {
-        setClientHtml("");
-        setSentVersionId(currentVersion?.id ?? null);
-      } else {
-        setPartnerText("");
+        if (target === "client") {
+          setClientHtml("");
+          setSentVersionId(currentVersion?.id ?? null);
+          // Remounts the editor even when there is no version id to change,
+          // which is every ad-hoc reply.
+          setClearNonce((n) => n + 1);
+        } else {
+          setPartnerText("");
+        }
+        setTimeout(() => setSentMsg(""), 4000);
       }
       setConfirming(false);
       onSent?.();
-      setTimeout(() => setSentMsg(""), 4000);
     } catch (err) {
       setError(`Could not reach the server: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
@@ -377,6 +432,9 @@ export function CaseComposer({
               ))}
             </select>
           )}
+          {target === "partner" && partnerError && (
+            <p className="text-sm text-red-600">{partnerError}</p>
+          )}
         </div>
 
         <div className="field">
@@ -386,10 +444,13 @@ export function CaseComposer({
             className="mc-input"
             value={subject}
             onChange={(e) => {
-              subjectTouched.current = true;
-              setSubject(e.target.value);
+              subjectTouched.current[target] = true;
+              if (target === "client") setClientSubject(e.target.value);
+              else setPartnerSubject(e.target.value);
             }}
-            placeholder={target === "partner" ? `${caseSerialId ?? ""}: ` : "Update on your case"}
+            placeholder={
+              target === "partner" ? `${caseSerialId ?? ""}: ` : clientSubjectDefault || "Update"
+            }
           />
         </div>
 
@@ -403,7 +464,7 @@ export function CaseComposer({
         <div className="field" hidden={target !== "client"}>
           <label>Message</label>
           <RichTextEditor
-            key={`${currentVersion?.id ?? "none"}:${sentVersionId ?? ""}`}
+            key={`${currentVersion?.id ?? "none"}:${sentVersionId ?? ""}:${clearNonce}`}
             initialHtml={prefillHtml}
             onChange={setClientHtml}
           />
@@ -487,7 +548,17 @@ export function CaseComposer({
         {sentMsg && <p className="stamp">{sentMsg}</p>}
 
         <div className="reply-foot">
-          {!confirming ? (
+          {sentUnlogged ? (
+            <button
+              className="btn btn-sm"
+              onClick={() => {
+                setSentUnlogged(false);
+                setError("");
+              }}
+            >
+              Send another email anyway
+            </button>
+          ) : !confirming ? (
             <button
               className="btn btn-solid"
               disabled={!canSend}

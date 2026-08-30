@@ -17,10 +17,23 @@ describe("isBeforeDeposit", () => {
     expect(isBeforeDeposit("Complete")).toBe(false);
   });
 
+  it("gates Parked and Lost, which are reachable from Quoted", () => {
+    // These sort after Active in CLIENT_STAGES, which is a display order and
+    // not a progression. Reading it as one switched the gate off for a lead
+    // that was quoted, went quiet and was parked without ever paying.
+    expect(isBeforeDeposit("Parked")).toBe(true);
+    expect(isBeforeDeposit("Lost")).toBe(true);
+  });
+
+  it("lets a recorded deposit open the gate whatever the stage", () => {
+    // A case that paid and was later parked is not before its deposit.
+    expect(isBeforeDeposit("Parked", true)).toBe(false);
+    expect(isBeforeDeposit("Quoted", true)).toBe(false);
+  });
+
   it("does not gate on a missing or unknown stage", () => {
-    // An unknown stage sorts past every known one, and a case with no stage at
-    // all is not evidence of an unpaid deposit. Blocking on absent data would
-    // stop ordinary work for no reason.
+    // A case with no stage at all is not evidence of an unpaid deposit.
+    // Blocking on absent data would stop ordinary work for no reason.
     expect(isBeforeDeposit(null)).toBe(false);
     expect(isBeforeDeposit(undefined)).toBe(false);
     expect(isBeforeDeposit("")).toBe(false);
@@ -42,6 +55,27 @@ describe("findCurrencyFigures", () => {
   it("finds the Greek form, which partner mail actually uses", () => {
     expect(findCurrencyFigures("Το κόστος είναι 120 ευρώ.")).toEqual(["120 ευρώ"]);
     expect(findCurrencyFigures("40 euros per filing")).toEqual(["40 euros"]);
+  });
+
+  it("finds the Greek form written without its accent, and in capitals", () => {
+    // Greek capitals drop the accent by orthographic convention, so ΕΥΡΩ does
+    // not case-fold onto ευρώ and was invisible to the rule.
+    expect(findCurrencyFigures("Η αμοιβή είναι 60 ευρω ανά δήλωση.")).toEqual(["60 ευρω"]);
+    expect(findCurrencyFigures("ΚΟΣΤΟΣ 250 ΕΥΡΩ")).toEqual(["250 ΕΥΡΩ"]);
+  });
+
+  it("finds a figure written with no space, which \\b could not", () => {
+    // \b never falls between a digit and a letter, so every one of these
+    // produced no match at all and no confirmation was ever asked for.
+    expect(findCurrencyFigures("Ο πελάτης πλήρωσε 249EUR συνολικά.")).toEqual(["249EUR"]);
+    expect(findCurrencyFigures("EUR249 total")).toEqual(["EUR249"]);
+    expect(findCurrencyFigures("249,50EUR")).toEqual(["249,50EUR"]);
+    expect(findCurrencyFigures("249eur")).toEqual(["249eur"]);
+  });
+
+  it("does not read a currency out of a longer word", () => {
+    expect(findCurrencyFigures("Η οδηγία 2016 ευρωπαϊκή ισχύει")).toEqual([]);
+    expect(findCurrencyFigures("Flight to EUROPE in 2026")).toEqual([]);
   });
 
   it("does not flag the numbers Greek tax work is full of", () => {
@@ -70,6 +104,16 @@ describe("findPricingExposure", () => {
     expect(findPricingExposure("we charge 249 for the bundle").retailTerms).toContain(
       "what we charge",
     );
+    expect(findPricingExposure("our price for the bundle").retailTerms).toContain("our price");
+  });
+
+  it("lets us ask a partner about their own rate", () => {
+    // R2 permits a figure the partner themselves proposed, and the second
+    // person in partner-facing text addresses the partner.
+    expect(
+      findPricingExposure("You quoted 40 EUR for this last time, is that still right?").retailTerms,
+    ).toEqual([]);
+    expect(findPricingExposure("Do you charge per filing or per hour?").retailTerms).toEqual([]);
   });
 
   it("leaves ordinary partner prose alone", () => {
@@ -99,6 +143,16 @@ describe("findGatedContent", () => {
   it("withholds a partner assignment before the deposit", () => {
     expect(findGatedContent("Σου στέλνω την ανάθεση", "partner", true)).toContain("ανάθεση");
     expect(findGatedContent("Please start on this today", "partner", true)).toContain(
+      "instruction to start",
+    );
+  });
+
+  it("is not defeated by a line break inside the phrase", () => {
+    // visibleText keeps block structure as newlines, so a literal space in a
+    // rule did not match a phrase the reader still sees as one sentence.
+    const wrapped = visibleText("<p>Here are the required<br>documents for your filing.</p>");
+    expect(findGatedContent(wrapped, "client", true)).toContain("required documents");
+    expect(findGatedContent("Please\nstart on this", "partner", true)).toContain(
       "instruction to start",
     );
   });
@@ -186,6 +240,16 @@ describe("reviewBody", () => {
 
     const toPartner = reviewBody("Σου στέλνω την ανάθεση.", "partner", true);
     expect(toPartner.blocking.some((b) => b.startsWith("R7"))).toBe(true);
+  });
+
+  it("must read partner mail as written, not through the HTML stripper", () => {
+    // Partner mail is plain text and is escaped on delivery, so a "<" is a
+    // less-than sign the partner will see. Reading it through visibleText
+    // deletes everything up to the next ">" and hides the figure from R2
+    // while it still goes out. Both callers pass the raw text for this target.
+    const raw = "Η αμοιβή σου είναι κάτω από <50 EUR. Στείλε το στο <a@b.gr> όταν τελειώσεις.";
+    expect(reviewBody(raw, "partner", false).confirmations).toHaveLength(1);
+    expect(reviewBody(visibleText(raw), "partner", false).confirmations).toEqual([]);
   });
 
   it("reports both rules at once when both are broken", () => {

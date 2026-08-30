@@ -451,9 +451,6 @@ function ReviewCase() {
     }
   };
 
-  // The reply box replies on the latest client-thread subject.
-  const clientEvents = useMemo(() => events.filter((e) => !isPartnerEvent(e)), [events]);
-
   const syncSlot = (
     <button
       className="icon-btn"
@@ -668,6 +665,9 @@ function ReviewCase() {
         // on exactly the cases we know least about. Same precedence /drafts
         // already uses.
         clientStage={client?.stage ?? conversation?.stage ?? null}
+        // A recorded deposit opens the gate whatever the stage says, which is
+        // what keeps a paid case that was later parked from being gated.
+        clientDeposit={client?.deposit ?? null}
         events={events}
         currentVersion={currentVersion}
         onSent={load}

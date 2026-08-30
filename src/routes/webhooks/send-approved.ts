@@ -101,31 +101,50 @@ function bodyToHtml(text: string): string {
     .replace(/\r?\n/g, "<br>");
 }
 
+/** What the deposit gate needs to know about a case, read from the database. */
+interface CaseGateFacts {
+  stage: string | null;
+  /** clients.deposit > 0, which is how the portal records a confirmed deposit. */
+  depositRecorded: boolean;
+}
+
 /**
- * The case stage, read on the server rather than taken from the caller.
+ * The stage and the deposit, read on the server rather than taken from the
+ * caller.
  *
- * R7 turns on this value, so it is looked up here: a body posted directly
+ * R7 turns on these values, so they are looked up here: a body posted directly
  * could otherwise carry any stage it liked, and the rule would hold only for
  * callers that chose to respect it. clients.stage first, the conversation's
  * own stage second, which is the precedence the case list already uses.
+ *
+ * The deposit is read alongside it because the stage alone cannot answer the
+ * question for a case in a side state: Parked and Lost are reachable from
+ * Quoted, so they gate, and clients.deposit is what says this particular
+ * parked case had already paid.
  */
-async function readCaseStage(caseId: string): Promise<string | null> {
+async function readCaseGateFacts(caseId: string): Promise<CaseGateFacts> {
   const { data: conv } = await supabaseAdmin
     .from("brain_conversations")
     .select("stage, client_id")
     .eq("id", caseId)
     .maybeSingle();
-  if (!conv) return null;
+  if (!conv) return { stage: null, depositRecorded: false };
 
   if (typeof conv.client_id === "string" && conv.client_id) {
     const { data: client } = await supabaseAdmin
       .from("clients")
-      .select("stage")
+      .select("stage, deposit")
       .eq("id", conv.client_id)
       .maybeSingle();
-    if (client && typeof client.stage === "string" && client.stage) return client.stage;
+    if (client) {
+      const depositRecorded = typeof client.deposit === "number" && client.deposit > 0;
+      if (typeof client.stage === "string" && client.stage) {
+        return { stage: client.stage, depositRecorded };
+      }
+      return { stage: typeof conv.stage === "string" ? conv.stage : null, depositRecorded };
+    }
   }
-  return typeof conv.stage === "string" ? conv.stage : null;
+  return { stage: typeof conv.stage === "string" ? conv.stage : null, depositRecorded: false };
 }
 
 function refLine(caseSerialId: string | null): string {
@@ -256,12 +275,20 @@ export const Route = createFileRoute("/webhooks/send-approved")({
         // needs the caller to have confirmed it (pricing_ack), which is the
         // server-side form of the confirmation the composer asks for.
         // ---------------------------------------------------------------
-        const stage = await readCaseStage(caseId);
-        const beforeDeposit = isBeforeDeposit(stage);
+        const { stage, depositRecorded } = await readCaseGateFacts(caseId);
+        const beforeDeposit = isBeforeDeposit(stage, depositRecorded);
+        // Read the body the way its recipient will, which is not the same
+        // reading for the two targets. Client mail is HTML and has to be
+        // stripped to its words. Partner mail is plain text and is escaped on
+        // delivery by bodyToHtml, so stripping it would delete every span
+        // between a "<" and the next ">" from the check while the partner
+        // still receives it: "η τιμή πελάτη <249 EUR> ok" would be reviewed as
+        // "η τιμή πελάτη ok". A stray "less than" sign was enough.
+        const bodyForReview = target === "partner" ? finalText : visibleText(finalText);
         // The subject is sent in the same message and is read first, so it is
         // judged with the body. A retail figure in a partner subject line is
         // exactly as much an R2 breach as one in the body.
-        const verdict = reviewBody(`${subject}\n${visibleText(finalText)}`, target, beforeDeposit);
+        const verdict = reviewBody(`${subject}\n${bodyForReview}`, target, beforeDeposit);
 
         if (verdict.blocking.length > 0) {
           return Response.json(
