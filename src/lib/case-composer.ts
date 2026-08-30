@@ -148,12 +148,25 @@ export function draftToOffer(input: DraftOfferInput): DraftOffer {
     currentDraftText.length > 0 &&
     version.draft_text === currentDraftText;
 
+  // Whether the text on offer is the version's own, which is a different
+  // question from whether the version is current, and the one the sent checks
+  // below actually turn on.
+  //
+  // They come apart on reload. case_drafts and case_draft_versions are fetched
+  // by different components, so there is a window where currentDraftText is
+  // still empty and the version alone supplies the text. versionIsCurrent is
+  // false there (nothing yet confirms the version is current), and gating the
+  // sent checks on it meant an already-sent version was offered straight back
+  // during that window, with the editor keyed on the version id so it kept the
+  // sent text even after case_drafts arrived and withdrew the offer.
+  const versionSuppliesText = !!version && text === version.draft_text;
+
   if (!text) return { text: "", versionIsCurrent, reason: "no-draft" };
   if (currentDraftApproved) return { text: "", versionIsCurrent, reason: "already-approved" };
-  if (versionIsCurrent && version?.sent_at) {
+  if (versionSuppliesText && version?.sent_at) {
     return { text: "", versionIsCurrent, reason: "version-already-sent" };
   }
-  if (versionIsCurrent && sentVersionId && sentVersionId === version?.id) {
+  if (versionSuppliesText && sentVersionId && sentVersionId === version?.id) {
     return { text: "", versionIsCurrent, reason: "sent-this-session" };
   }
   if (!versionIsCurrent && sentDraftText != null && sentDraftText === text) {

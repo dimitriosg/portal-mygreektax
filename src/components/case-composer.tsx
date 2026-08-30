@@ -183,6 +183,14 @@ export function CaseComposer({
   // applied says nothing about a message the operator typed themselves.
   const [partnerDraftApplied, setPartnerDraftApplied] = useState(false);
   const [generating, setGenerating] = useState(false);
+  // Read by the generate poll, which runs long enough to outlive the composer.
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const [genError, setGenError] = useState("");
   const [notesOpen, setNotesOpen] = useState(false);
 
@@ -359,6 +367,11 @@ export function CaseComposer({
 
       while (Date.now() - startedAt < GEN_TIMEOUT_MS) {
         await new Promise((r) => setTimeout(r, GEN_POLL_MS));
+        // The poll outlives almost anything: three minutes of waiting on the
+        // Brain. Keying this component on the case already means a case change
+        // unmounts it, but the loop closes over the old conversationId and
+        // would keep running and writing for the rest of that window.
+        if (!mounted.current) return;
         const { row: fresh, error: readError } = await loadPartnerDraft();
         // Stop on a read failure rather than polling out. The Brain may well
         // have written the draft; what is broken is our ability to read it.

@@ -49,6 +49,14 @@ interface Props {
    * panel looking inert. This is what lets it say a run happened.
    */
   currentDraftUpdatedAt?: string | null;
+  /**
+   * case_drafts.is_approved: the draft in the row has already been sent.
+   *
+   * Only affects the wording of the two recovery notices below. Both describe
+   * what the composer will do with an unrecorded or superseded draft, and once
+   * it is approved the composer will not offer it at all.
+   */
+  draftApproved?: boolean;
   /** Reports the current version to the route, for the Knowledge tab. */
   onCurrentVersionChange?: (version: DraftVersionRow | null) => void;
   /** The Generate / Regenerate control, owned by the route. */
@@ -66,6 +74,7 @@ export function CaseDraftDesk({
   refreshKey,
   currentDraftText = null,
   currentDraftUpdatedAt = null,
+  draftApproved = false,
   onCurrentVersionChange,
   generateSlot,
 }: Props) {
@@ -184,18 +193,21 @@ export function CaseDraftDesk({
 
       {!loading && !error && inStep && versions.length === 0 && hasCurrentDraftRow && (
         <p className="empty">
-          This case has a draft, but it predates the version history and was never recorded here. It
-          is still loaded in the composer and can be sent; it just will not be counted. Regenerating
-          records a version.
+          This case has a draft, but it predates the version history and was never recorded here.{" "}
+          {draftApproved
+            ? "It has already been sent, so the composer will not offer it again. Regenerating records a version."
+            : "It is still loaded in the composer and can be sent; it just will not be counted. Regenerating records a version."}
         </p>
       )}
 
       {current && diverged && (
         <div className="callout">
           <span>
-            The draft loaded in the composer is not this version. A generation was not recorded
-            here, so v{current.version_no} is the newest one on record, not the newest one written.
-            The composer sends the newer one, and does not count it against this version.
+            The draft on this case is not this version. A generation was not recorded here, so v
+            {current.version_no} is the newest one on record, not the newest one written.{" "}
+            {draftApproved
+              ? "That newer draft has already been sent, and the send was not counted against this version."
+              : "The composer sends the newer one, and does not count it against this version."}{" "}
             Regenerating records a version and brings the two back into step.
           </span>
         </div>

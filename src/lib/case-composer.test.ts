@@ -75,6 +75,25 @@ describe("draftToOffer", () => {
     expect(out.reason).toBe("version-already-sent");
   });
 
+  it("does not offer a sent version during the reload window", () => {
+    // case_drafts and case_draft_versions are fetched by different components,
+    // so on reload there is a moment where the version alone supplies the text.
+    // Gating the sent check on versionIsCurrent offered the sent message back,
+    // and the editor was keyed on the version id so it kept it afterwards.
+    const out = draftToOffer({
+      currentDraftText: "",
+      version: v({ draft_text: "the message already emailed", sent_at: "2026-08-30T10:00:00Z" }),
+    });
+    expect(out.text).toBe("");
+    expect(out.reason).toBe("version-already-sent");
+  });
+
+  it("does not offer a version sent this session during that same window", () => {
+    const out = draftToOffer({ currentDraftText: "", version: v(), sentVersionId: "v2" });
+    expect(out.text).toBe("");
+    expect(out.reason).toBe("sent-this-session");
+  });
+
   it("keeps offering a newer draft even when the version behind it was sent", () => {
     // A regeneration the trigger missed, on top of a version that did send.
     // The new text is unsent whatever the older row says.

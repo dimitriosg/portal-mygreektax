@@ -592,6 +592,7 @@ function ReviewCase() {
                 refreshKey={draftStamp}
                 currentDraftText={draftText}
                 currentDraftUpdatedAt={draftStamp === "none" ? null : draftStamp}
+                draftApproved={draftApproved}
                 onCurrentVersionChange={setCurrentVersion}
                 generateSlot={
                   <>
@@ -659,7 +660,16 @@ function ReviewCase() {
           selected, which is the reason for merging them. The old boxes and the
           review desk are superseded and removed in PR 4, once nothing else
           depends on them. */}
+      {/* Keyed on the case so none of the composer's state can outlive it.
+          The route component is reused when :caseId changes, and everything
+          the composer holds is case-specific: a half-written body, a loaded
+          Brain draft, an in-flight generate poll. Carrying any of that into
+          another case would mean writing to one client and sending to the
+          next. No link in the app goes case to case today, so this is not a
+          live path; it costs one attribute to make it impossible before one
+          exists. */}
       <CaseComposer
+        key={caseId}
         conversationId={caseId}
         caseSerialId={conversation?.case_serial_id ?? null}
         clientName={client?.full_name ?? null}
