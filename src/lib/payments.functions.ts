@@ -4,6 +4,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { requireAdminAccess } from "./access-context.server";
+import { OPEN_JOB_STATUSES } from "./case-workspace.functions";
 import { buildPaymentNote } from "./payments-shared";
 
 // Payment links, slice 1. Tokens carry the amount (clients.deposit means
@@ -204,6 +205,42 @@ export const listPaymentClients = createServerFn({ method: "GET" })
     return { clients: (data ?? []) as PaymentClientOption[] };
   });
 
+// The job a payment link is for. Read from the Supabase `jobs` table, never
+// from the Airtable-backed listJobs in jobs.functions.ts: payment_tokens.job_id
+// is a foreign key to jobs.id, and an Airtable record id would fail it.
+export type MintableJob = {
+  id: string; // Supabase jobs.id uuid — this is what goes in job_id
+  job_code: string | null;
+  status: string | null;
+  client_fee: number | null;
+};
+
+// Same read as getCaseRail's job query: one client, open statuses only,
+// newest first. client_fee travels so the mint form can prefill the amount
+// from the job instead of having it retyped, and mistyped, by hand.
+export const listMintableJobs = createServerFn({ method: "GET" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d: { clientId: string }) =>
+    z.object({ clientId: z.string().uuid("Invalid client id") }).parse(d),
+  )
+  .handler(async ({ data, context }): Promise<{ jobs: MintableJob[] }> => {
+    await requireAdminAccess({
+      userId: context.userId,
+      email: context.claims.email as string | undefined,
+    });
+    const { data: rows, error } = await supabaseAdmin
+      .from("jobs")
+      .select("id, job_code, status, client_fee")
+      .eq("client_id", data.clientId)
+      .in("status", OPEN_JOB_STATUSES)
+      .order("created_at", { ascending: false });
+    if (error) {
+      console.error("[listMintableJobs] query failed", { message: error.message });
+      throw new Error("A database error occurred. Please try again.");
+    }
+    return { jobs: rows ?? [] };
+  });
+
 export const createPaymentToken = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator(
@@ -215,6 +252,7 @@ export const createPaymentToken = createServerFn({ method: "POST" })
       note?: string;
       currency?: string;
       method?: PaymentMethod;
+      jobId?: string;
       regeneratedFromToken?: string;
     }) =>
       z
@@ -233,6 +271,10 @@ export const createPaymentToken = createServerFn({ method: "POST" })
           // rather than silently resetting it to the default.
           currency: z.string().trim().length(3).toUpperCase().optional(),
           method: z.enum(PAYMENT_METHODS).optional(),
+          // The Supabase jobs.id this link pays for, when one was picked. Left
+          // unset for a case-level payment, which is every token minted before
+          // the column existed; confirm_payment then marks no job Paid.
+          jobId: z.string().uuid("Invalid job id").optional(),
           // Set when this mint replaces an existing token at a corrected
           // amount: payment_tokens.regenerated_from_token exists for exactly
           // this, so "I picked the wrong figure" never becomes an in-place
@@ -257,6 +299,24 @@ export const createPaymentToken = createServerFn({ method: "POST" })
       throw new Error("A database error occurred. Please try again.");
     }
     if (!client) throw new Error("Client not found.");
+
+    // The foreign key only proves the job exists. It must also be this
+    // client's: confirm_payment marks the linked job Paid and the trigger moves
+    // that job's client to Active, so a job from another client would move the
+    // wrong case on the strength of this client's money.
+    if (data.jobId) {
+      const { data: job, error: jobError } = await supabaseAdmin
+        .from("jobs")
+        .select("id")
+        .eq("id", data.jobId)
+        .eq("client_id", client.id)
+        .maybeSingle();
+      if (jobError) {
+        console.error("[createPaymentToken] job lookup failed", { message: jobError.message });
+        throw new Error("A database error occurred. Please try again.");
+      }
+      if (!job) throw new Error("That job does not belong to this client.");
+    }
 
     // Authoritative: unless the admin overrode it, the server builds the note.
     // It reaches the Revolut transaction record, so the case serial and the
@@ -288,6 +348,7 @@ export const createPaymentToken = createServerFn({ method: "POST" })
       regenerated_from_token: data.regeneratedFromToken ?? null,
       ...(data.currency ? { currency: data.currency } : {}),
       ...(data.method ? { method: data.method } : {}),
+      ...(data.jobId ? { job_id: data.jobId } : {}),
     });
     if (insertError) {
       console.error("[createPaymentToken] insert failed", { message: insertError.message });
@@ -307,6 +368,8 @@ export type PaymentTokenSummary = {
   currency: string;
   kind: string;
   method: PaymentMethod;
+  job_id: string | null;
+  job_code: string | null;
   note: string | null;
   created_at: string;
   expires_at: string | null;
@@ -340,7 +403,7 @@ export const listPaymentTokens = createServerFn({ method: "GET" })
 
     const { data: rows, error } = await supabaseAdmin
       .from("payment_tokens")
-      .select("*, clients(full_name)")
+      .select("*, clients(full_name), jobs(job_code)")
       .order("created_at", { ascending: false })
       .limit(200);
     if (error) {
@@ -428,6 +491,10 @@ export const listPaymentTokens = createServerFn({ method: "GET" })
           currency: row.currency,
           kind: row.kind,
           method: row.method as PaymentMethod,
+          job_id: row.job_id,
+          // A to-one embed on a nullable column: an object, or null when the
+          // token has no job (or the job was deleted, which nulls job_id).
+          job_code: row.jobs?.job_code ?? null,
           note: row.note,
           created_at: row.created_at,
           expires_at: row.expires_at,

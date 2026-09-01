@@ -6,6 +6,7 @@ import {
   confirmPaymentToken,
   correctPaymentAmount,
   createPaymentToken,
+  listMintableJobs,
   listPaymentClients,
   listPaymentTokens,
   revokePaymentToken,
@@ -125,6 +126,7 @@ function PaymentsPage() {
 
   const fetchClients = useServerFn(listPaymentClients);
   const fetchTokens = useServerFn(listPaymentTokens);
+  const fetchJobs = useServerFn(listMintableJobs);
   const createFn = useServerFn(createPaymentToken);
   const revokeFn = useServerFn(revokePaymentToken);
   const qc = useQueryClient();
@@ -140,15 +142,13 @@ function PaymentsPage() {
     enabled: !!isAdmin && sessionReady,
   });
 
-  useEffect(() => {
-    const authError = [clientsQ.error, tokensQ.error].find(isAuthSessionError);
-    if (authError) navigate({ to: "/login", replace: true });
-  }, [clientsQ.error, tokensQ.error, navigate]);
-
   const [clientId, setClientId] = useState("");
   const [amount, setAmount] = useState("");
+  const [amountTouched, setAmountTouched] = useState(false);
   const [kind, setKind] = useState<PaymentKind>("deposit");
   const [method, setMethod] = useState<PaymentMethod>("revolut");
+  // Supabase jobs.id, or "" for a case-level payment. Never an Airtable id.
+  const [jobId, setJobId] = useState("");
   const [expiresInDays, setExpiresInDays] = useState<number | "">("");
   const [note, setNote] = useState("");
   const [noteTouched, setNoteTouched] = useState(false);
@@ -166,6 +166,20 @@ function PaymentsPage() {
     () => clientsQ.data?.clients.find((c) => c.id === clientId),
     [clientsQ.data, clientId],
   );
+
+  // The job picker depends on the client: nothing to offer until one is
+  // chosen, and a fresh list for each, so a job from the previous client is
+  // never on offer for the next.
+  const jobsQ = useQuery({
+    queryKey: ["mintable-jobs", clientId],
+    queryFn: () => fetchJobs({ data: { clientId } }),
+    enabled: !!isAdmin && sessionReady && !!clientId,
+  });
+
+  useEffect(() => {
+    const authError = [clientsQ.error, tokensQ.error, jobsQ.error].find(isAuthSessionError);
+    if (authError) navigate({ to: "/login", replace: true });
+  }, [clientsQ.error, tokensQ.error, jobsQ.error, navigate]);
 
   // Display order only — no filtering, nothing hidden. Rows that can be acted
   // on come first, so the list opens on the work rather than on history.
@@ -207,8 +221,8 @@ function PaymentsPage() {
     );
   }, [selectedClient, parsedAmount, noteTouched]);
 
-  // Prefill from the token being replaced: same client, kind and note, only
-  // the amount is meant to change.
+  // Prefill from the token being replaced: same client, kind, method, job and
+  // note, only the amount is meant to change.
   useEffect(() => {
     if (!regeneratingFrom) return;
     setClientId(regeneratingFrom.client_id);
@@ -218,6 +232,10 @@ function PaymentsPage() {
         : "other",
     );
     setMethod(regeneratingFrom.method);
+    setJobId(regeneratingFrom.job_id ?? "");
+    // Counts as touched: the carried amount is the one being corrected, and a
+    // job pick must not quietly swap it for the job's fee underneath.
+    setAmountTouched(true);
     setAmount(String(regeneratingFrom.amount));
     setNoteTouched(true);
     setNote(regeneratingFrom.note ?? "");
@@ -242,6 +260,7 @@ function PaymentsPage() {
           amount: parsedAmount,
           kind,
           method,
+          jobId: jobId || undefined,
           expiresInDays: expiresInDays === "" ? undefined : expiresInDays,
           note: note.trim() || undefined,
           currency: regeneratingFrom?.currency,
@@ -325,7 +344,12 @@ function PaymentsPage() {
               <span>Client / case</span>
               <select
                 value={clientId}
-                onChange={(e) => setClientId(e.target.value)}
+                onChange={(e) => {
+                  setClientId(e.target.value);
+                  // Jobs belong to a client, so a job picked for the previous
+                  // one must not ride along onto the next.
+                  setJobId("");
+                }}
                 className="w-full rounded border border-input bg-background px-2 py-2 text-sm text-foreground"
               >
                 <option value="">
@@ -347,7 +371,10 @@ function PaymentsPage() {
                 placeholder="150.00"
                 aria-invalid={amountInvalid}
                 value={amount}
-                onChange={(e) => setAmount(e.target.value)}
+                onChange={(e) => {
+                  setAmountTouched(true);
+                  setAmount(e.target.value);
+                }}
               />
               {amountInvalid && (
                 <span className="block text-destructive">
@@ -379,6 +406,50 @@ function PaymentsPage() {
                 {PAYMENT_METHODS.map((m) => (
                   <option key={m} value={m}>
                     {METHOD_LABELS[m]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {/* Two columns: "JOB-2026-0042 · In Progress" does not fit one, and
+                it keeps every lg row full (2+1+1, 1+2+1, 2+2). Optional on
+                purpose — a payment can cover a case rather than one job, and
+                every token minted before job_id existed has none. */}
+            <label className="space-y-1 text-xs text-muted-foreground lg:col-span-2">
+              <span>Job (optional)</span>
+              <select
+                value={jobId}
+                disabled={!clientId}
+                onChange={(e) => {
+                  const nextJobId = e.target.value;
+                  setJobId(nextJobId);
+                  // Prefill the amount from the job's fee unless the admin has
+                  // already typed one: the picker exists to remove the retype,
+                  // not to overwrite a figure that was chosen on purpose.
+                  const job = jobsQ.data?.jobs.find((j) => j.id === nextJobId);
+                  if (job?.client_fee != null && (!amountTouched || amount.trim() === "")) {
+                    setAmount(String(job.client_fee));
+                  }
+                }}
+                className="w-full rounded border border-input bg-background px-2 py-2 text-sm text-foreground"
+              >
+                <option value="">
+                  {clientId && jobsQ.isLoading ? "Loading jobs…" : "— No specific job —"}
+                </option>
+                {/* A reissue carries the original token's job, which may have
+                    left the open statuses since. Same reasoning as the expiry
+                    select: the state must never hold a value the control does
+                    not show. */}
+                {jobId !== "" && jobsQ.data && !jobsQ.data.jobs.some((j) => j.id === jobId) && (
+                  <option value={jobId}>
+                    {regeneratingFrom?.job_id === jobId && regeneratingFrom.job_code
+                      ? regeneratingFrom.job_code
+                      : "Current job"}{" "}
+                    (carried over)
+                  </option>
+                )}
+                {jobsQ.data?.jobs.map((j) => (
+                  <option key={j.id} value={j.id}>
+                    {j.job_code ?? j.id.slice(0, 8)} · {j.status ?? "—"}
                   </option>
                 ))}
               </select>
@@ -758,6 +829,8 @@ function TokenRow({
               {KIND_LABELS[t.kind as PaymentKind] ?? t.kind}
             </span>
             <span className="text-xs text-muted-foreground">{METHOD_BADGE_LABELS[t.method]}</span>
+            {/* Absent job is the normal case, so nothing rather than a placeholder. */}
+            {t.job_code && <span className="text-xs text-muted-foreground">{t.job_code}</span>}
             {t.payment && t.payment.amount !== t.amount && (
               <span className="text-xs text-muted-foreground">
                 booked {formatAmount(t.payment.amount, t.payment.currency)}
