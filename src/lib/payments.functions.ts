@@ -14,6 +14,9 @@ import { buildPaymentNote } from "./payments-shared";
 export const PAYMENT_KINDS = ["deposit", "balance", "other"] as const;
 export type PaymentKind = (typeof PAYMENT_KINDS)[number];
 
+export const PAYMENT_METHODS = ["revolut", "bank", "stripe"] as const;
+export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
+
 export const PAYMENT_TOKEN_PATTERN = /^pay_[A-Za-z0-9_-]{22}$/;
 
 const PAYMENT_TOKEN_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
@@ -211,6 +214,7 @@ export const createPaymentToken = createServerFn({ method: "POST" })
       expiresInDays?: number;
       note?: string;
       currency?: string;
+      method?: PaymentMethod;
       regeneratedFromToken?: string;
     }) =>
       z
@@ -228,6 +232,7 @@ export const createPaymentToken = createServerFn({ method: "POST" })
           // today. It exists so a reissue carries the original token's currency
           // rather than silently resetting it to the default.
           currency: z.string().trim().length(3).toUpperCase().optional(),
+          method: z.enum(PAYMENT_METHODS).optional(),
           // Set when this mint replaces an existing token at a corrected
           // amount: payment_tokens.regenerated_from_token exists for exactly
           // this, so "I picked the wrong figure" never becomes an in-place
@@ -282,6 +287,7 @@ export const createPaymentToken = createServerFn({ method: "POST" })
       created_by: context.userId,
       regenerated_from_token: data.regeneratedFromToken ?? null,
       ...(data.currency ? { currency: data.currency } : {}),
+      ...(data.method ? { method: data.method } : {}),
     });
     if (insertError) {
       console.error("[createPaymentToken] insert failed", { message: insertError.message });
@@ -300,6 +306,7 @@ export type PaymentTokenSummary = {
   amount: number;
   currency: string;
   kind: string;
+  method: PaymentMethod;
   note: string | null;
   created_at: string;
   expires_at: string | null;
@@ -420,6 +427,7 @@ export const listPaymentTokens = createServerFn({ method: "GET" })
           amount: row.amount,
           currency: row.currency,
           kind: row.kind,
+          method: row.method as PaymentMethod,
           note: row.note,
           created_at: row.created_at,
           expires_at: row.expires_at,

@@ -11,7 +11,9 @@ import {
   revokePaymentToken,
   updatePaymentTokenNote,
   PAYMENT_KINDS,
+  PAYMENT_METHODS,
   type PaymentKind,
+  type PaymentMethod,
   type PaymentTokenStatus,
   type PaymentTokenSummary,
 } from "@/lib/payments.functions";
@@ -42,6 +44,18 @@ const KIND_LABELS: Record<PaymentKind, string> = {
   deposit: "Deposit",
   balance: "Balance",
   other: "Other",
+};
+
+const METHOD_LABELS: Record<PaymentMethod, string> = {
+  revolut: "Revolut link",
+  bank: "Bank transfer",
+  stripe: "Card (Stripe)",
+};
+
+const METHOD_BADGE_LABELS: Record<PaymentMethod, string> = {
+  revolut: "Revolut",
+  bank: "Bank",
+  stripe: "Card",
 };
 
 const STATUS_STYLES: Record<PaymentTokenStatus, string> = {
@@ -134,6 +148,7 @@ function PaymentsPage() {
   const [clientId, setClientId] = useState("");
   const [amount, setAmount] = useState("");
   const [kind, setKind] = useState<PaymentKind>("deposit");
+  const [method, setMethod] = useState<PaymentMethod>("revolut");
   const [expiresInDays, setExpiresInDays] = useState<number | "">("");
   const [note, setNote] = useState("");
   const [noteTouched, setNoteTouched] = useState(false);
@@ -202,6 +217,7 @@ function PaymentsPage() {
         ? (regeneratingFrom.kind as PaymentKind)
         : "other",
     );
+    setMethod(regeneratingFrom.method);
     setAmount(String(regeneratingFrom.amount));
     setNoteTouched(true);
     setNote(regeneratingFrom.note ?? "");
@@ -225,6 +241,7 @@ function PaymentsPage() {
           clientId,
           amount: parsedAmount,
           kind,
+          method,
           expiresInDays: expiresInDays === "" ? undefined : expiresInDays,
           note: note.trim() || undefined,
           currency: regeneratingFrom?.currency,
@@ -348,6 +365,20 @@ function PaymentsPage() {
                 {PAYMENT_KINDS.map((k) => (
                   <option key={k} value={k}>
                     {KIND_LABELS[k]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1 text-xs text-muted-foreground">
+              <span>Method</span>
+              <select
+                value={method}
+                onChange={(e) => setMethod(e.target.value as PaymentMethod)}
+                className="w-full rounded border border-input bg-background px-2 py-2 text-sm text-foreground"
+              >
+                {PAYMENT_METHODS.map((m) => (
+                  <option key={m} value={m}>
+                    {METHOD_LABELS[m]}
                   </option>
                 ))}
               </select>
@@ -726,6 +757,7 @@ function TokenRow({
             <span className="text-xs text-muted-foreground">
               {KIND_LABELS[t.kind as PaymentKind] ?? t.kind}
             </span>
+            <span className="text-xs text-muted-foreground">{METHOD_BADGE_LABELS[t.method]}</span>
             {t.payment && t.payment.amount !== t.amount && (
               <span className="text-xs text-muted-foreground">
                 booked {formatAmount(t.payment.amount, t.payment.currency)}
