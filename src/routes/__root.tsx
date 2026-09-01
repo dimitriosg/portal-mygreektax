@@ -20,6 +20,7 @@ import { isOverdueEligibleStatus } from "@/lib/airtable-shared";
 import { isPasswordRecoveryPending } from "@/lib/auth-recovery";
 import { getErrorMessage, isAuthSessionError } from "@/lib/auth-errors";
 import { createErrorReferenceId, debugError, isDebugEnabled } from "@/lib/debug";
+import { initTheme, setTheme, useTheme } from "@/lib/theme";
 import { listJobs } from "@/lib/jobs.functions";
 import { listLeads } from "@/lib/leads.functions";
 
@@ -262,29 +263,26 @@ function AppShell() {
   const fetchJobs = useServerFn(listJobs);
   const lastProcessedOverdueJobsErrorRef = useRef<unknown>(null);
   const [isHydrated, setIsHydrated] = useState(false);
-  const [isDark, setIsDark] = useState(false);
   const [recoveryPending, setRecoveryPending] = useState(() => isPasswordRecoveryPending());
+  const theme = useTheme();
+  const isDark = theme === "dark";
 
   useEffect(() => {
     setIsHydrated(true);
-
-    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-    const syncTheme = () => setIsDark(mediaQuery.matches);
-    syncTheme();
-
-    mediaQuery.addEventListener("change", syncTheme);
-    return () => mediaQuery.removeEventListener("change", syncTheme);
   }, []);
 
-  useEffect(() => {
-    const root = document.documentElement;
-    if (isDark) root.classList.add("dark");
-    else root.classList.remove("dark");
-  }, [isDark]);
+  // /done is a client-facing page too: it is where Stripe drops someone after
+  // they have just paid, so it must not come wrapped in the admin nav.
   const isPublicClientPage =
     pathname.startsWith("/track/") ||
     pathname.startsWith("/secure-form/") ||
-    pathname.startsWith("/pay/");
+    pathname.startsWith("/pay/") ||
+    pathname === "/done";
+
+  // Depends on the path, because the public client pages default to light
+  // while the application follows the device. A visitor who has picked for
+  // themselves overrides both, and initTheme handles that.
+  useEffect(() => initTheme({ preferLight: isPublicClientPage }), [isPublicClientPage]);
 
   const overdueJobsQuery = useQuery({
     queryKey: ["jobs", user?.id, ""],
@@ -465,7 +463,7 @@ function AppShell() {
               </Link>
             )}
             <button
-              onClick={() => setIsDark((v) => !v)}
+              onClick={() => setTheme(isDark ? "light" : "dark")}
               aria-label="Toggle dark mode"
               className="text-muted-foreground hover:text-foreground"
             >

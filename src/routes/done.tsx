@@ -4,6 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AlertCircle, Check, Clock, ShieldCheck } from "lucide-react";
 import logo from "@/assets/mygreektax-mark.svg";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 // The page Stripe returns the client to after the embedded card form, set as
 // return_url when the Checkout Session is created. The URL carries a
@@ -106,9 +107,12 @@ function DonePage() {
               <span className="text-brand">Tax</span>
             </span>
           </div>
-          <span className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-            Payment
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+              Payment
+            </span>
+            <ThemeToggle />
+          </div>
         </div>
       </header>
 
