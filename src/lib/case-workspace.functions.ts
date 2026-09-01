@@ -45,8 +45,9 @@ export interface CaseRailData {
 // filters on status BEFORE its row cap: otherwise a client with more than 20
 // jobs could have an older Pending job pushed out of the window by newer
 // completed ones and vanish from the rail. "Sent" is a legacy status the
-// overdue-eligible set covers but JOB_STATUSES no longer lists.
-const OPEN_JOB_STATUSES = [
+// overdue-eligible set covers but JOB_STATUSES no longer lists. Exported so
+// the payment-link job picker offers the same set rather than a second list.
+export const OPEN_JOB_STATUSES = [
   ...JOB_STATUSES.filter((status) => isOverdueEligibleStatus(status)),
   "Sent",
 ];

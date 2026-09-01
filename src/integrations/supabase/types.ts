@@ -1346,6 +1346,7 @@ export type Database = {
           job_code: string | null;
           next_action_needed: string | null;
           notes: string | null;
+          paid_at: string | null;
           partner_progress_notes: string | null;
           service_id: string | null;
           sla_deadline: string | null;
@@ -1365,6 +1366,7 @@ export type Database = {
           job_code?: string | null;
           next_action_needed?: string | null;
           notes?: string | null;
+          paid_at?: string | null;
           partner_progress_notes?: string | null;
           service_id?: string | null;
           sla_deadline?: string | null;
@@ -1384,6 +1386,7 @@ export type Database = {
           job_code?: string | null;
           next_action_needed?: string | null;
           notes?: string | null;
+          paid_at?: string | null;
           partner_progress_notes?: string | null;
           service_id?: string | null;
           sla_deadline?: string | null;
@@ -1919,6 +1922,7 @@ export type Database = {
           currency: string;
           expires_at: string | null;
           first_opened_at: string | null;
+          job_id: string | null;
           kind: string;
           last_country: string | null;
           last_opened_at: string | null;
@@ -1939,6 +1943,7 @@ export type Database = {
           currency?: string;
           expires_at?: string | null;
           first_opened_at?: string | null;
+          job_id?: string | null;
           kind: string;
           last_country?: string | null;
           last_opened_at?: string | null;
@@ -1959,6 +1964,7 @@ export type Database = {
           currency?: string;
           expires_at?: string | null;
           first_opened_at?: string | null;
+          job_id?: string | null;
           kind?: string;
           last_country?: string | null;
           last_opened_at?: string | null;
@@ -1976,6 +1982,20 @@ export type Database = {
             columns: ["client_id"];
             isOneToOne: false;
             referencedRelation: "clients";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "payment_tokens_job_id_fkey";
+            columns: ["job_id"];
+            isOneToOne: false;
+            referencedRelation: "jobs";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "payment_tokens_job_id_fkey";
+            columns: ["job_id"];
+            isOneToOne: false;
+            referencedRelation: "jobs_expanded";
             referencedColumns: ["id"];
           },
           {
@@ -2325,7 +2345,7 @@ export type Database = {
     Functions: {
       archive_case: { Args: { p_conversation_id: string }; Returns: undefined };
       confirm_payment: {
-        Args: { p_token: string };
+        Args: { p_external_id?: string; p_source?: string; p_token: string };
         Returns: {
           amount: number;
           applied: boolean;
@@ -2336,6 +2356,8 @@ export type Database = {
           email: string;
           first_name: string;
           full_name: string;
+          job_code: string;
+          job_status: string;
           payment_id: string;
           reason: string;
           stage_after: string;
