@@ -14,6 +14,7 @@ import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as LeadsRouteImport } from './routes/leads'
 import { Route as DraftsRouteImport } from './routes/drafts'
+import { Route as DoneRouteImport } from './routes/done'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as AppendixRouteImport } from './routes/appendix'
 import { Route as AdminRouteImport } from './routes/admin'
@@ -40,6 +41,7 @@ import { Route as JobsJobIdRouteImport } from './routes/jobs.$jobId'
 import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as EmailUnsubscribeRouteImport } from './routes/email/unsubscribe'
 import { Route as ApiHealthRouteImport } from './routes/api.health'
+import { Route as ApiCheckoutStatusRouteImport } from './routes/api/checkout-status'
 import { Route as ApiCheckoutSessionRouteImport } from './routes/api/checkout-session'
 import { Route as AdminTrackingLinksRouteImport } from './routes/admin.tracking-links'
 import { Route as AdminSecureKeysRouteImport } from './routes/admin.secure-keys'
@@ -70,6 +72,11 @@ const LeadsRoute = LeadsRouteImport.update({
 const DraftsRoute = DraftsRouteImport.update({
   id: '/drafts',
   path: '/drafts',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DoneRoute = DoneRouteImport.update({
+  id: '/done',
+  path: '/done',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DashboardRoute = DashboardRouteImport.update({
@@ -203,6 +210,11 @@ const ApiHealthRoute = ApiHealthRouteImport.update({
   path: '/api/health',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiCheckoutStatusRoute = ApiCheckoutStatusRouteImport.update({
+  id: '/api/checkout-status',
+  path: '/api/checkout-status',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiCheckoutSessionRoute = ApiCheckoutSessionRouteImport.update({
   id: '/api/checkout-session',
   path: '/api/checkout-session',
@@ -239,6 +251,7 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminRouteWithChildren
   '/appendix': typeof AppendixRoute
   '/dashboard': typeof DashboardRoute
+  '/done': typeof DoneRoute
   '/drafts': typeof DraftsRoute
   '/leads': typeof LeadsRoute
   '/login': typeof LoginRoute
@@ -250,6 +263,7 @@ export interface FileRoutesByFullPath {
   '/admin/secure-keys': typeof AdminSecureKeysRoute
   '/admin/tracking-links': typeof AdminTrackingLinksRoute
   '/api/checkout-session': typeof ApiCheckoutSessionRoute
+  '/api/checkout-status': typeof ApiCheckoutStatusRoute
   '/api/health': typeof ApiHealthRoute
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
   '/invite/$token': typeof InviteTokenRoute
@@ -277,6 +291,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/appendix': typeof AppendixRoute
   '/dashboard': typeof DashboardRoute
+  '/done': typeof DoneRoute
   '/drafts': typeof DraftsRoute
   '/leads': typeof LeadsRoute
   '/login': typeof LoginRoute
@@ -288,6 +303,7 @@ export interface FileRoutesByTo {
   '/admin/secure-keys': typeof AdminSecureKeysRoute
   '/admin/tracking-links': typeof AdminTrackingLinksRoute
   '/api/checkout-session': typeof ApiCheckoutSessionRoute
+  '/api/checkout-status': typeof ApiCheckoutStatusRoute
   '/api/health': typeof ApiHealthRoute
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
   '/invite/$token': typeof InviteTokenRoute
@@ -317,6 +333,7 @@ export interface FileRoutesById {
   '/admin': typeof AdminRouteWithChildren
   '/appendix': typeof AppendixRoute
   '/dashboard': typeof DashboardRoute
+  '/done': typeof DoneRoute
   '/drafts': typeof DraftsRoute
   '/leads': typeof LeadsRoute
   '/login': typeof LoginRoute
@@ -328,6 +345,7 @@ export interface FileRoutesById {
   '/admin/secure-keys': typeof AdminSecureKeysRoute
   '/admin/tracking-links': typeof AdminTrackingLinksRoute
   '/api/checkout-session': typeof ApiCheckoutSessionRoute
+  '/api/checkout-status': typeof ApiCheckoutStatusRoute
   '/api/health': typeof ApiHealthRoute
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
   '/invite/$token': typeof InviteTokenRoute
@@ -358,6 +376,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/appendix'
     | '/dashboard'
+    | '/done'
     | '/drafts'
     | '/leads'
     | '/login'
@@ -369,6 +388,7 @@ export interface FileRouteTypes {
     | '/admin/secure-keys'
     | '/admin/tracking-links'
     | '/api/checkout-session'
+    | '/api/checkout-status'
     | '/api/health'
     | '/email/unsubscribe'
     | '/invite/$token'
@@ -396,6 +416,7 @@ export interface FileRouteTypes {
     | '/'
     | '/appendix'
     | '/dashboard'
+    | '/done'
     | '/drafts'
     | '/leads'
     | '/login'
@@ -407,6 +428,7 @@ export interface FileRouteTypes {
     | '/admin/secure-keys'
     | '/admin/tracking-links'
     | '/api/checkout-session'
+    | '/api/checkout-status'
     | '/api/health'
     | '/email/unsubscribe'
     | '/invite/$token'
@@ -435,6 +457,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/appendix'
     | '/dashboard'
+    | '/done'
     | '/drafts'
     | '/leads'
     | '/login'
@@ -446,6 +469,7 @@ export interface FileRouteTypes {
     | '/admin/secure-keys'
     | '/admin/tracking-links'
     | '/api/checkout-session'
+    | '/api/checkout-status'
     | '/api/health'
     | '/email/unsubscribe'
     | '/invite/$token'
@@ -475,12 +499,14 @@ export interface RootRouteChildren {
   AdminRoute: typeof AdminRouteWithChildren
   AppendixRoute: typeof AppendixRoute
   DashboardRoute: typeof DashboardRoute
+  DoneRoute: typeof DoneRoute
   DraftsRoute: typeof DraftsRoute
   LeadsRoute: typeof LeadsRoute
   LoginRoute: typeof LoginRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   UnsubscribeRoute: typeof UnsubscribeRoute
   ApiCheckoutSessionRoute: typeof ApiCheckoutSessionRoute
+  ApiCheckoutStatusRoute: typeof ApiCheckoutStatusRoute
   ApiHealthRoute: typeof ApiHealthRoute
   EmailUnsubscribeRoute: typeof EmailUnsubscribeRoute
   InviteTokenRoute: typeof InviteTokenRoute
@@ -539,6 +565,13 @@ declare module '@tanstack/react-router' {
       path: '/drafts'
       fullPath: '/drafts'
       preLoaderRoute: typeof DraftsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/done': {
+      id: '/done'
+      path: '/done'
+      fullPath: '/done'
+      preLoaderRoute: typeof DoneRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dashboard': {
@@ -723,6 +756,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiHealthRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/checkout-status': {
+      id: '/api/checkout-status'
+      path: '/api/checkout-status'
+      fullPath: '/api/checkout-status'
+      preLoaderRoute: typeof ApiCheckoutStatusRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/checkout-session': {
       id: '/api/checkout-session'
       path: '/api/checkout-session'
@@ -793,12 +833,14 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRoute: AdminRouteWithChildren,
   AppendixRoute: AppendixRoute,
   DashboardRoute: DashboardRoute,
+  DoneRoute: DoneRoute,
   DraftsRoute: DraftsRoute,
   LeadsRoute: LeadsRoute,
   LoginRoute: LoginRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   UnsubscribeRoute: UnsubscribeRoute,
   ApiCheckoutSessionRoute: ApiCheckoutSessionRoute,
+  ApiCheckoutStatusRoute: ApiCheckoutStatusRoute,
   ApiHealthRoute: ApiHealthRoute,
   EmailUnsubscribeRoute: EmailUnsubscribeRoute,
   InviteTokenRoute: InviteTokenRoute,

@@ -614,12 +614,45 @@ export type Database = {
           },
         ];
       };
+      case_notes_bak_20260830: {
+        Row: {
+          author_user_id: string | null;
+          body: string | null;
+          conversation_id: string | null;
+          created_at: string | null;
+          id: string | null;
+          include_in_ai: boolean | null;
+          pinned: boolean | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          author_user_id?: string | null;
+          body?: string | null;
+          conversation_id?: string | null;
+          created_at?: string | null;
+          id?: string | null;
+          include_in_ai?: boolean | null;
+          pinned?: boolean | null;
+          updated_at?: string | null;
+        };
+        Update: {
+          author_user_id?: string | null;
+          body?: string | null;
+          conversation_id?: string | null;
+          created_at?: string | null;
+          id?: string | null;
+          include_in_ai?: boolean | null;
+          pinned?: boolean | null;
+          updated_at?: string | null;
+        };
+        Relationships: [];
+      };
       case_partner_drafts: {
         Row: {
           body: string | null;
           case_id: string;
-          id: string;
           drafted_for_email: string | null;
+          id: string;
           internal_notes: string | null;
           last_updated: string;
           model: string | null;
@@ -652,7 +685,7 @@ export type Database = {
           {
             foreignKeyName: "case_partner_drafts_case_id_fkey";
             columns: ["case_id"];
-            isOneToOne: true;
+            isOneToOne: false;
             referencedRelation: "brain_conversations";
             referencedColumns: ["id"];
           },
@@ -1305,7 +1338,7 @@ export type Database = {
           accountant_id: string | null;
           admin_internal_notes: string | null;
           client_fee: number | null;
-          client_id: string | null;
+          client_id: string;
           client_visible_note: string | null;
           created_at: string;
           date_sent: string | null;
@@ -1324,7 +1357,7 @@ export type Database = {
           accountant_id?: string | null;
           admin_internal_notes?: string | null;
           client_fee?: number | null;
-          client_id?: string | null;
+          client_id: string;
           client_visible_note?: string | null;
           created_at?: string;
           date_sent?: string | null;
@@ -1343,7 +1376,7 @@ export type Database = {
           accountant_id?: string | null;
           admin_internal_notes?: string | null;
           client_fee?: number | null;
-          client_id?: string | null;
+          client_id?: string;
           client_visible_note?: string | null;
           created_at?: string;
           date_sent?: string | null;
@@ -1514,6 +1547,24 @@ export type Database = {
             referencedColumns: ["id"];
           },
         ];
+      };
+      mgt_assistant_memory: {
+        Row: {
+          id: number;
+          message: Json;
+          session_id: string;
+        };
+        Insert: {
+          id?: number;
+          message: Json;
+          session_id: string;
+        };
+        Update: {
+          id?: number;
+          message?: Json;
+          session_id?: string;
+        };
+        Relationships: [];
       };
       newsletter_subscribers: {
         Row: {
@@ -1796,6 +1847,68 @@ export type Database = {
           },
         ];
       };
+      payment_token_lines: {
+        Row: {
+          created_at: string;
+          description: string;
+          id: string;
+          position: number;
+          quantity: number;
+          service_code: string | null;
+          token: string;
+          unit_amount: number;
+        };
+        Insert: {
+          created_at?: string;
+          description: string;
+          id?: string;
+          position?: number;
+          quantity?: number;
+          service_code?: string | null;
+          token: string;
+          unit_amount: number;
+        };
+        Update: {
+          created_at?: string;
+          description?: string;
+          id?: string;
+          position?: number;
+          quantity?: number;
+          service_code?: string | null;
+          token?: string;
+          unit_amount?: number;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "payment_token_lines_service_code_fkey";
+            columns: ["service_code"];
+            isOneToOne: false;
+            referencedRelation: "jobs_expanded";
+            referencedColumns: ["service_code"];
+          },
+          {
+            foreignKeyName: "payment_token_lines_service_code_fkey";
+            columns: ["service_code"];
+            isOneToOne: false;
+            referencedRelation: "service_catalog";
+            referencedColumns: ["service_code"];
+          },
+          {
+            foreignKeyName: "payment_token_lines_service_code_fkey";
+            columns: ["service_code"];
+            isOneToOne: false;
+            referencedRelation: "v_partner_appendix";
+            referencedColumns: ["service_code"];
+          },
+          {
+            foreignKeyName: "payment_token_lines_token_fkey";
+            columns: ["token"];
+            isOneToOne: false;
+            referencedRelation: "payment_tokens";
+            referencedColumns: ["token"];
+          },
+        ];
+      };
       payment_tokens: {
         Row: {
           amount: number;
@@ -1809,6 +1922,7 @@ export type Database = {
           kind: string;
           last_country: string | null;
           last_opened_at: string | null;
+          method: string;
           note: string | null;
           open_count: number;
           paid_at: string | null;
@@ -1828,6 +1942,7 @@ export type Database = {
           kind: string;
           last_country?: string | null;
           last_opened_at?: string | null;
+          method?: string;
           note?: string | null;
           open_count?: number;
           paid_at?: string | null;
@@ -1847,6 +1962,7 @@ export type Database = {
           kind?: string;
           last_country?: string | null;
           last_opened_at?: string | null;
+          method?: string;
           note?: string | null;
           open_count?: number;
           paid_at?: string | null;
@@ -2006,9 +2122,11 @@ export type Database = {
           category: string | null;
           created_at: string;
           id: string;
+          in_appendix: boolean;
           notes: string | null;
           service_code: string | null;
           service_name: string | null;
+          service_name_el: string | null;
           tier: string | null;
           updated_at: string;
         };
@@ -2018,9 +2136,11 @@ export type Database = {
           category?: string | null;
           created_at?: string;
           id?: string;
+          in_appendix?: boolean;
           notes?: string | null;
           service_code?: string | null;
           service_name?: string | null;
+          service_name_el?: string | null;
           tier?: string | null;
           updated_at?: string;
         };
@@ -2030,9 +2150,11 @@ export type Database = {
           category?: string | null;
           created_at?: string;
           id?: string;
+          in_appendix?: boolean;
           notes?: string | null;
           service_code?: string | null;
           service_name?: string | null;
+          service_name_el?: string | null;
           tier?: string | null;
           updated_at?: string;
         };
@@ -2199,61 +2321,40 @@ export type Database = {
         };
         Relationships: [];
       };
-      v_rate_card_admin: {
-        Row: {
-          category: string | null;
-          margin_eur: number | null;
-          margin_pct: number | null;
-          partner_name: string | null;
-          partner_user_id: string | null;
-          portal_at_or_below_wholesale: boolean | null;
-          portal_live_price: number | null;
-          portal_mismatch: boolean | null;
-          price_unit: Database["public"]["Enums"]["price_unit"] | null;
-          retail_price: number | null;
-          service_code: string | null;
-          service_name: string | null;
-          sla_days: string | null;
-          wholesale_notes: string | null;
-          wholesale_price: number | null;
-          wholesale_status: Database["public"]["Enums"]["rate_status"] | null;
-        };
-        Relationships: [];
-      };
     };
     Functions: {
       archive_case: { Args: { p_conversation_id: string }; Returns: undefined };
       confirm_payment: {
         Args: { p_token: string };
         Returns: {
+          amount: number;
           applied: boolean;
+          balance_due: number;
+          case_code: string;
+          currency: string;
+          deposit: number;
+          email: string;
+          first_name: string;
+          full_name: string;
+          payment_id: string;
           reason: string;
-          payment_id: string | null;
-          amount: number | null;
-          currency: string | null;
-          full_name: string | null;
-          first_name: string | null;
-          email: string | null;
-          case_code: string | null;
-          stage_before: string | null;
-          stage_after: string | null;
-          deposit: number | null;
-          balance_due: number | null;
+          stage_after: string;
+          stage_before: string;
         }[];
       };
       correct_payment: {
-        Args: { p_payment_id: string; p_new_amount: number; p_reason?: string };
+        Args: { p_new_amount: number; p_payment_id: string; p_reason?: string };
         Returns: {
           applied: boolean;
+          balance_due: number;
+          case_code: string;
+          currency: string;
+          deposit: number;
+          full_name: string;
+          new_amount: number;
+          old_amount: number;
+          payment_id: string;
           reason: string;
-          payment_id: string | null;
-          old_amount: number | null;
-          new_amount: number | null;
-          currency: string | null;
-          full_name: string | null;
-          case_code: string | null;
-          deposit: number | null;
-          balance_due: number | null;
         }[];
       };
       credential_delete: {
@@ -2293,19 +2394,19 @@ export type Database = {
       get_partner_appendix: {
         Args: { p_partner_user_id?: string };
         Returns: {
-          partner_user_id: string | null;
-          partner_name: string | null;
-          category: string | null;
-          service_code: string | null;
-          service_name_el: string | null;
-          service_name: string | null;
-          wholesale_price: number | null;
-          price_unit: Database["public"]["Enums"]["price_unit"] | null;
-          price_unit_el: string | null;
-          sla_days: string | null;
-          status: Database["public"]["Enums"]["rate_status"] | null;
-          notes: string | null;
-          has_line: boolean | null;
+          category: string;
+          has_line: boolean;
+          notes: string;
+          partner_name: string;
+          partner_user_id: string;
+          price_unit: Database["public"]["Enums"]["price_unit"];
+          price_unit_el: string;
+          service_code: string;
+          service_name: string;
+          service_name_el: string;
+          sla_days: string;
+          status: Database["public"]["Enums"]["rate_status"];
+          wholesale_price: number;
         }[];
       };
       get_partner_last_seen: {
@@ -2313,6 +2414,27 @@ export type Database = {
         Returns: {
           last_seen_at: string;
           user_id: string;
+        }[];
+      };
+      get_rate_card_admin: {
+        Args: never;
+        Returns: {
+          category: string;
+          margin_eur: number;
+          margin_pct: number;
+          partner_name: string;
+          partner_user_id: string;
+          portal_at_or_below_wholesale: boolean;
+          portal_live_price: number;
+          portal_mismatch: boolean;
+          price_unit: Database["public"]["Enums"]["price_unit"];
+          retail_price: number;
+          service_code: string;
+          service_name: string;
+          sla_days: string;
+          wholesale_notes: string;
+          wholesale_price: number;
+          wholesale_status: Database["public"]["Enums"]["rate_status"];
         }[];
       };
       has_role: {
@@ -2345,6 +2467,10 @@ export type Database = {
           msg_id: number;
           read_ct: number;
         }[];
+      };
+      recompute_client_stage: {
+        Args: { p_client_id: string };
+        Returns: undefined;
       };
       resolve_case_for_inbound:
         | {
