@@ -2,6 +2,11 @@ import "./lib/error-capture";
 
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
+import {
+  isAllowedOnPaymentHost,
+  PAYMENT_HOST,
+  PAYMENT_HOST_FALLBACK_URL,
+} from "./lib/payment-host";
 
 type ServerEntry = {
   fetch: (request: Request, env: unknown, ctx: unknown) => Promise<Response> | Response;
@@ -16,11 +21,23 @@ const PUBLIC_TRACKING_HEADERS = {
 } as const;
 
 // Public token-gated pages that render without the logged-in chrome and must
-// never be cached or indexed.
-const PUBLIC_TOKEN_PATH_PREFIXES = ["/track/", "/pay/"] as const;
+// never be cached or indexed. /done is the Stripe return page: no token in the
+// URL, but it reports a payment outcome and belongs in the same bucket.
+const PUBLIC_TOKEN_PATH_PREFIXES = ["/track/", "/pay/", "/done"] as const;
 
 function getPublicTokenPathPrefix(pathname: string): string | null {
   return PUBLIC_TOKEN_PATH_PREFIXES.find((prefix) => pathname.startsWith(prefix)) ?? null;
+}
+
+// Only the payment pages answer on the payment hostname. Everything else there
+// goes to the public site. See src/lib/payment-host.ts for why, and for the
+// allowlist itself, which is kept there so it can be unit tested.
+function enforcePaymentHost(request: Request): Response | null {
+  const url = new URL(request.url);
+  if (url.hostname !== PAYMENT_HOST) return null;
+  if (isAllowedOnPaymentHost(url.pathname)) return null;
+
+  return Response.redirect(PAYMENT_HOST_FALLBACK_URL, 302);
 }
 
 // Rate limit for the signal beacon only. The payment page itself is a cheap
@@ -167,6 +184,11 @@ async function normalizeCatastrophicSsrResponse(response: Response): Promise<Res
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
+      // First, before any other work: a request that should not be on this
+      // hostname never reaches the application at all.
+      const paymentHostRedirect = enforcePaymentHost(request);
+      if (paymentHostRedirect) return paymentHostRedirect;
+
       const normalizedTrackingResponse = normalizePublicTrackingRequest(request);
       if (normalizedTrackingResponse) return normalizedTrackingResponse;
 
