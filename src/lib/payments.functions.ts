@@ -37,6 +37,11 @@ function isExpired(expiresAt: string | null): boolean {
 
 export type PublicPaymentErrorCode = "invalid" | "revoked" | "expired" | "temporary_unavailable";
 
+// How the client is meant to pay. 'stripe' renders the embedded card form and
+// confirms itself from the Stripe webhook. 'revolut' and 'bank' render the
+// manual details plus the "I've paid" claim, which Jim confirms by hand.
+export type PublicPaymentMethod = "stripe" | "revolut" | "bank";
+
 export type PublicPaymentData = {
   ok: true;
   token: string;
@@ -47,6 +52,8 @@ export type PublicPaymentData = {
   kind: string;
   paymentReference: string;
   alreadyPaid: boolean;
+  method: PublicPaymentMethod;
+  stripePublishableKey: string | null;
   revolutHandle: string | null;
   iban: string | null;
   accountName: string | null;
@@ -103,11 +110,33 @@ export const getPublicPayment = createServerFn({ method: "GET" })
     const iban = process.env.MGT_IBAN ?? null;
     const accountName = process.env.MGT_ACCOUNT_NAME ?? null;
 
-    // No Revolut handle and no bank details means the client has no way to
-    // pay. That is always misconfiguration on our side, never a client
-    // problem, so it is an error rather than a warning. The page withholds
-    // the payment section and the claim button in this state.
-    if (!revolutHandle && !iban && !accountName) {
+    // The database constrains this column to three values, but a row written
+    // before that constraint, or by some future migration, must not produce a
+    // blank page. Anything unrecognised falls back to the manual flow, which
+    // is the safe direction to fail: it shows payment details and asks for a
+    // claim, rather than offering a card form that cannot work.
+    const method: PublicPaymentMethod =
+      row.method === "stripe" || row.method === "bank" ? row.method : "revolut";
+
+    // Publishable, not secret. Stripe designs this key to be read by the
+    // browser. It still only travels for stripe tokens, because nothing else
+    // on this page has a use for it.
+    const stripePublishableKey =
+      method === "stripe" ? (process.env.STRIPE_PUBLISHABLE_KEY ?? null) : null;
+
+    // A client with no way to pay is always misconfiguration on our side,
+    // never their problem, so it is an error rather than a warning. The page
+    // withholds the payment section in this state. What counts as missing
+    // depends on the method: a card token needs the publishable key and does
+    // not care about bank details, and the reverse for a manual one.
+    if (method === "stripe") {
+      if (!stripePublishableKey) {
+        console.error("[getPublicPayment] stripe token with no publishable key", {
+          tokenPrefix: row.token.slice(0, 8),
+          missing: ["STRIPE_PUBLISHABLE_KEY"],
+        });
+      }
+    } else if (!revolutHandle && !iban && !accountName) {
       console.error("[getPublicPayment] no payment method configured", {
         tokenPrefix: row.token.slice(0, 8),
         missing: ["MGT_REVOLUT_HANDLE", "MGT_IBAN", "MGT_ACCOUNT_NAME"],
@@ -124,6 +153,8 @@ export const getPublicPayment = createServerFn({ method: "GET" })
       kind: row.kind,
       paymentReference,
       alreadyPaid: !!row.paid_at,
+      method,
+      stripePublishableKey,
       revolutHandle,
       iban,
       accountName,

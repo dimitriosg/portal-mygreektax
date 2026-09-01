@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   getPublicPayment,
   type PublicPaymentData,
@@ -79,6 +79,70 @@ async function postClaimSignal(token: string): Promise<boolean> {
 // Tokens this browser session already reported a view for. Module-level so
 // StrictMode double-mounts and route remounts still fire exactly one beacon.
 const viewedTokens = new Set<string>();
+
+// ============================================================
+// Stripe.js
+// ============================================================
+
+// Loaded from Stripe's own domain rather than bundled. That is not a
+// preference: Stripe requires it for PCI compliance, because the file
+// self-updates and a vendored copy would go stale. It also keeps
+// @stripe/stripe-js out of package.json, which matters here because the whole
+// repo is edited through the GitHub web UI and a lockfile change is painful.
+const STRIPE_JS_SRC = "https://js.stripe.com/v3/";
+
+type EmbeddedCheckoutInstance = {
+  mount: (target: HTMLElement) => void;
+  destroy: () => void;
+};
+
+type StripeInstance = {
+  initEmbeddedCheckout: (options: {
+    fetchClientSecret: () => Promise<string>;
+  }) => Promise<EmbeddedCheckoutInstance>;
+};
+
+declare global {
+  interface Window {
+    Stripe?: (publishableKey: string) => StripeInstance;
+  }
+}
+
+// One promise for the whole page load, so a remount reuses the script already
+// in the head instead of injecting a second tag.
+let stripeJsPromise: Promise<void> | null = null;
+
+function loadStripeJs(): Promise<void> {
+  if (stripeJsPromise) return stripeJsPromise;
+
+  stripeJsPromise = new Promise<void>((resolve, reject) => {
+    if (typeof document === "undefined") {
+      reject(new Error("Stripe.js needs a browser"));
+      return;
+    }
+    if (window.Stripe) {
+      resolve();
+      return;
+    }
+
+    const existing = document.querySelector<HTMLScriptElement>(`script[src="${STRIPE_JS_SRC}"]`);
+    const script = existing ?? document.createElement("script");
+    script.addEventListener("load", () => resolve());
+    script.addEventListener("error", () => {
+      // Let a later attempt retry rather than caching the failure forever.
+      stripeJsPromise = null;
+      reject(new Error("Stripe.js failed to load"));
+    });
+
+    if (!existing) {
+      script.src = STRIPE_JS_SRC;
+      script.async = true;
+      document.head.appendChild(script);
+    }
+  });
+
+  return stripeJsPromise;
+}
 
 function PayPage() {
   const data = Route.useLoaderData();
@@ -193,23 +257,12 @@ function PayContent({ data }: { data: PublicPaymentData }) {
   const kindLabel =
     data.kind === "deposit" ? "Deposit" : data.kind === "balance" ? "Balance" : "Payment";
 
-  // Built fresh on each render. Revolut takes the amount in minor units
-  // (15000 means €150.00) and truncates the note around 64 characters, which
-  // is why the case reference comes first in it.
-  const revolutUrl = data.revolutHandle
-    ? `https://revolut.me/${data.revolutHandle}?currency=${encodeURIComponent(
-        data.currency,
-      )}&amount=${Math.round(data.amount * 100)}&note=${encodeURIComponent(data.paymentReference)}`
-    : null;
+  const isCard = data.method === "stripe";
 
-  const hasBankDetails = !!(data.iban || data.accountName);
-  // With no Revolut handle and no bank details there is no way to pay, which
-  // is the state on first deploy before the Worker secrets are set. Showing
-  // an amount and an "I've paid" button with no payment method invites a
-  // client to assert a payment they had no way to make, so the whole payment
-  // section including the claim button is withheld. getPublicPayment logs the
-  // misconfiguration server-side.
-  const canPay = !!revolutUrl || hasBankDetails;
+  // Whether there is any way at all for this client to pay. What that requires
+  // depends on the method, but the failure is the same in both cases: our
+  // configuration, not theirs. getPublicPayment logs it server-side.
+  const canPay = isCard ? !!data.stripePublishableKey : !!data.revolutHandle || hasBank(data);
 
   return (
     <div className="space-y-6">
@@ -225,7 +278,9 @@ function PayContent({ data }: { data: PublicPaymentData }) {
         </h1>
         {canPay && (
           <p className="text-sm text-muted-foreground sm:text-base">
-            Here is how to pay your {kindLabel.toLowerCase()} to MyGreekTax.
+            {isCard
+              ? `Pay your ${kindLabel.toLowerCase()} securely by card below.`
+              : `Here is how to pay your ${kindLabel.toLowerCase()} to MyGreekTax.`}
           </p>
         )}
       </section>
@@ -238,57 +293,200 @@ function PayContent({ data }: { data: PublicPaymentData }) {
           <div className="mt-1 font-serif text-4xl font-medium tabular-nums tracking-tight">
             {formatAmount(data.amount, data.currency)}
           </div>
-          <div className="mt-2 text-sm text-muted-foreground">
-            Payment reference:{" "}
-            <span className="font-medium text-foreground">{data.paymentReference}</span>
-          </div>
+          {/* Only meaningful when the client has to type it into a transfer.
+              On the card path Stripe matches the payment for us, and showing a
+              reference invites them to think they must do something with it. */}
+          {!isCard && (
+            <div className="mt-2 text-sm text-muted-foreground">
+              Payment reference:{" "}
+              <span className="font-medium text-foreground">{data.paymentReference}</span>
+            </div>
+          )}
         </CardContent>
       </Card>
 
       {!canPay && <PaymentMethodsUnavailable />}
 
-      {canPay && (
-        <>
-          {revolutUrl && (
-            <Card className="border-border/60" style={{ boxShadow: "var(--shadow-soft)" }}>
-              <CardContent className="space-y-3 p-5 sm:p-7">
-                <h2 className="font-serif text-lg font-medium">Pay with Revolut</h2>
-                <p className="text-sm text-muted-foreground">
-                  Fastest option — the amount and reference are prefilled.
-                </p>
-                <Button asChild className="w-full" size="lg">
-                  <a href={revolutUrl} target="_blank" rel="noopener noreferrer">
-                    Open Revolut
-                    <ExternalLink className="ml-2 h-4 w-4" />
-                  </a>
-                </Button>
-              </CardContent>
-            </Card>
-          )}
-
-          {hasBankDetails && (
-            <Card className="border-border/60" style={{ boxShadow: "var(--shadow-soft)" }}>
-              <CardContent className="space-y-4 p-5 sm:p-7">
-                <h2 className="flex items-center gap-2 font-serif text-lg font-medium">
-                  <Landmark className="h-4 w-4 text-brand" />
-                  Pay by bank transfer
-                </h2>
-                <div className="space-y-3">
-                  {data.iban && <CopyRow label="IBAN" value={data.iban} />}
-                  {data.accountName && <CopyRow label="Account name" value={data.accountName} />}
-                  <CopyRow label="Payment reference" value={data.paymentReference} />
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Please include the payment reference so we can match your transfer right away.
-                </p>
-              </CardContent>
-            </Card>
-          )}
-
-          <ClaimCard token={data.token} />
-        </>
-      )}
+      {canPay && (isCard ? <CardPayment data={data} /> : <ManualPayment data={data} />)}
     </div>
+  );
+}
+
+function hasBank(data: PublicPaymentData) {
+  return !!(data.iban || data.accountName);
+}
+
+// Revolut and bank transfer: we show the details, the client pays elsewhere,
+// and tells us they did. Unchanged behaviour, just lifted out of PayContent so
+// the card path can sit beside it.
+function ManualPayment({ data }: { data: PublicPaymentData }) {
+  // Built fresh on each render. Revolut takes the amount in minor units
+  // (15000 means €150.00) and truncates the note around 64 characters, which
+  // is why the case reference comes first in it.
+  const revolutUrl = data.revolutHandle
+    ? `https://revolut.me/${data.revolutHandle}?currency=${encodeURIComponent(
+        data.currency,
+      )}&amount=${Math.round(data.amount * 100)}&note=${encodeURIComponent(data.paymentReference)}`
+    : null;
+
+  return (
+    <>
+      {revolutUrl && (
+        <Card className="border-border/60" style={{ boxShadow: "var(--shadow-soft)" }}>
+          <CardContent className="space-y-3 p-5 sm:p-7">
+            <h2 className="font-serif text-lg font-medium">Pay with Revolut</h2>
+            <p className="text-sm text-muted-foreground">
+              Fastest option — the amount and reference are prefilled.
+            </p>
+            <Button asChild className="w-full" size="lg">
+              <a href={revolutUrl} target="_blank" rel="noopener noreferrer">
+                Open Revolut
+                <ExternalLink className="ml-2 h-4 w-4" />
+              </a>
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {hasBank(data) && (
+        <Card className="border-border/60" style={{ boxShadow: "var(--shadow-soft)" }}>
+          <CardContent className="space-y-4 p-5 sm:p-7">
+            <h2 className="flex items-center gap-2 font-serif text-lg font-medium">
+              <Landmark className="h-4 w-4 text-brand" />
+              Pay by bank transfer
+            </h2>
+            <div className="space-y-3">
+              {data.iban && <CopyRow label="IBAN" value={data.iban} />}
+              {data.accountName && <CopyRow label="Account name" value={data.accountName} />}
+              <CopyRow label="Payment reference" value={data.paymentReference} />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Please include the payment reference so we can match your transfer right away.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      <ClaimCard token={data.token} />
+    </>
+  );
+}
+
+type CheckoutState = "loading" | "ready" | "failed";
+
+// Stripe Embedded Checkout, mounted into our own page on pay.mygreektax.eu.
+//
+// There is deliberately no claim button here. A card payment confirms itself
+// through the Stripe webhook, so asking the client to also tell us they paid
+// would produce a second, unreliable source of truth for the same event.
+function CardPayment({ data }: { data: PublicPaymentData }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [state, setState] = useState<CheckoutState>("loading");
+  const publishableKey = data.stripePublishableKey;
+  const token = data.token;
+
+  useEffect(() => {
+    // PayContent will not render this without a key, so reaching here means
+    // something upstream changed. Fail visibly rather than sitting on a
+    // skeleton forever, which looks like a slow network and invites the
+    // client to wait for something that is never coming.
+    if (!publishableKey) {
+      setState("failed");
+      return;
+    }
+
+    let cancelled = false;
+    let checkout: EmbeddedCheckoutInstance | undefined;
+
+    async function mountCheckout(key: string) {
+      try {
+        await loadStripeJs();
+        if (cancelled) return;
+
+        const stripe = window.Stripe?.(key);
+        if (!stripe) throw new Error("Stripe.js loaded but window.Stripe is missing");
+
+        checkout = await stripe.initEmbeddedCheckout({
+          // Stripe calls this itself and expects the raw secret back. Note
+          // what is NOT sent: no amount, no currency, no line items. The
+          // endpoint reads every figure from the database against this token,
+          // which is the one property keeping this page from being a way to
+          // pay one cent for an eight hundred euro job.
+          fetchClientSecret: async () => {
+            const res = await fetch("/api/checkout-session", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ token }),
+            });
+            const body = (await res.json().catch(() => ({}))) as {
+              clientSecret?: string;
+              error?: string;
+            };
+            if (!res.ok || !body.clientSecret) {
+              throw new Error(body.error ?? `Checkout session failed (${res.status})`);
+            }
+            return body.clientSecret;
+          },
+        });
+
+        // The await above can outlive the component: a StrictMode double
+        // mount, or a client who navigates away while Stripe is still
+        // starting. Mounting a dead instance leaves an orphan iframe that
+        // blocks the next one, so bail and clean up instead.
+        if (cancelled || !containerRef.current) {
+          checkout.destroy();
+          return;
+        }
+
+        checkout.mount(containerRef.current);
+        setState("ready");
+      } catch (error) {
+        if (cancelled) return;
+        console.error("[pay] embedded checkout failed to start", error);
+        setState("failed");
+      }
+    }
+
+    void mountCheckout(publishableKey);
+
+    return () => {
+      cancelled = true;
+      checkout?.destroy();
+    };
+  }, [publishableKey, token]);
+
+  if (state === "failed") {
+    return (
+      <Card className="border-warning/40 bg-warning/5" style={{ boxShadow: "var(--shadow-soft)" }}>
+        <CardContent className="flex items-start gap-3 p-5 sm:p-7">
+          <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-warning" />
+          <div>
+            <h2 className="font-serif text-lg font-medium">The card form didn't load</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Please refresh the page and try again. If it still doesn't appear, contact MyGreekTax
+              and we'll send you another way to pay.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="border-border/60" style={{ boxShadow: "var(--shadow-soft)" }}>
+      <CardContent className="p-4 sm:p-6">
+        {state === "loading" && (
+          <div className="space-y-3" aria-hidden="true">
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-36 w-full" />
+            <Skeleton className="h-10 w-full" />
+          </div>
+        )}
+        {/* Always rendered, because Stripe needs a real node to mount into
+            before there is anything to show. Hidden rather than conditional. */}
+        <div ref={containerRef} className={cn(state !== "ready" && "hidden")} />
+      </CardContent>
+    </Card>
   );
 }
 
