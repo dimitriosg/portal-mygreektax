@@ -451,7 +451,7 @@ export const Route = createFileRoute("/api/checkout-session")({
             "/checkout/sessions",
             stripeKey,
             {
-              ui_mode: "embedded",
+              ui_mode: "embedded_page",
               mode: "payment",
               return_url: `${returnBase}/done?session_id={CHECKOUT_SESSION_ID}`,
               line_items: lineItems,
