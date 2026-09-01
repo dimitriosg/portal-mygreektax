@@ -29,6 +29,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 // loud 500 rather than a quiet fallback.
 
 const STRIPE_API = "https://api.stripe.com/v1";
+const PAYMENT_TOKEN_PATTERN = /^pay_[A-Za-z0-9_-]{22}$/;
 
 // Lazy, request-time client creation, same pattern as /webhooks/conversation-log:
 // nothing touches the environment at module load, so a missing variable returns
@@ -62,6 +63,10 @@ function readString(value: unknown, maxLength: number): string | undefined {
   const trimmed = value.trim();
   if (!trimmed) return undefined;
   return trimmed.slice(0, maxLength);
+}
+
+function maskToken(token: string): string {
+  return `${token.slice(0, 8)}…${token.slice(-4)}`;
 }
 
 // Euros to cents. Stripe works in the smallest currency unit and the database
@@ -175,6 +180,9 @@ export const Route = createFileRoute("/api/checkout-session")({
         if (!token) {
           return Response.json({ error: "Token is required" }, { status: 400 });
         }
+        if (!PAYMENT_TOKEN_PATTERN.test(token)) {
+          return Response.json({ error: "Invalid token format" }, { status: 400 });
+        }
 
         const supabaseResult = getSupabase();
         if ("configError" in supabaseResult) {
@@ -253,6 +261,57 @@ export const Route = createFileRoute("/api/checkout-session")({
           }
 
           const lines = (lineRows ?? []) as TokenLine[];
+          const tokenAmount = Number(tokenRow.amount);
+          const tokenAmountMinor = toMinorUnits(tokenAmount);
+          if (
+            !Number.isFinite(tokenAmount) ||
+            Math.abs(tokenAmount * 100 - tokenAmountMinor) > 0.000001
+          ) {
+            console.error("[checkout-session] invalid token amount precision", {
+              amount: tokenRow.amount,
+            });
+            return Response.json(
+              { error: "This payment link is not valid", reason: "amount" },
+              { status: 409 },
+            );
+          }
+
+          const normalizedLines: Array<TokenLine & { unit_amount_minor: number }> = [];
+          for (const line of lines) {
+            const quantity = Number(line.quantity);
+            const unitAmount = Number(line.unit_amount);
+            const unitAmountMinor = toMinorUnits(unitAmount);
+
+            if (!Number.isInteger(quantity) || quantity <= 0) {
+              console.error("[checkout-session] invalid line quantity", {
+                position: line.position,
+                quantity: line.quantity,
+              });
+              return Response.json(
+                { error: "This payment link is not valid", reason: "amount" },
+                { status: 409 },
+              );
+            }
+            if (
+              !Number.isFinite(unitAmount) ||
+              Math.abs(unitAmount * 100 - unitAmountMinor) > 0.000001
+            ) {
+              console.error("[checkout-session] invalid line amount precision", {
+                position: line.position,
+                unit_amount: line.unit_amount,
+              });
+              return Response.json(
+                { error: "This payment link is not valid", reason: "amount" },
+                { status: 409 },
+              );
+            }
+
+            normalizedLines.push({
+              ...line,
+              quantity,
+              unit_amount_minor: unitAmountMinor,
+            });
+          }
 
           // Stripe will not accept a negative unit_amount, so a discount line
           // cannot be sent as a line item. Positive lines become line items and
@@ -260,21 +319,18 @@ export const Route = createFileRoute("/api/checkout-session")({
           // That is Stripe's own idiom for this and it keeps the discount
           // visible on the client's receipt rather than silently folded into a
           // smaller price.
-          const positiveLines = lines.filter((line) => Number(line.unit_amount) > 0);
-          const discountTotal = lines
-            .filter((line) => Number(line.unit_amount) < 0)
-            .reduce(
-              (sum, line) => sum + Math.abs(Number(line.unit_amount)) * Number(line.quantity),
-              0,
-            );
+          const positiveLines = normalizedLines.filter((line) => line.unit_amount_minor > 0);
+          const discountTotal = normalizedLines
+            .filter((line) => line.unit_amount_minor < 0)
+            .reduce((sum, line) => sum + Math.abs(line.unit_amount_minor) * line.quantity, 0);
 
           const lineItems =
             positiveLines.length > 0
               ? positiveLines.map((line) => ({
-                  quantity: Number(line.quantity),
+                  quantity: line.quantity,
                   price_data: {
                     currency,
-                    unit_amount: toMinorUnits(Number(line.unit_amount)),
+                    unit_amount: line.unit_amount_minor,
                     product_data: {
                       name: line.service_code
                         ? `${line.service_code} · ${line.description}`
@@ -293,7 +349,7 @@ export const Route = createFileRoute("/api/checkout-session")({
                     quantity: 1,
                     price_data: {
                       currency,
-                      unit_amount: toMinorUnits(Number(tokenRow.amount)),
+                      unit_amount: tokenAmountMinor,
                       product_data: {
                         name:
                           tokenRow.note ??
@@ -309,7 +365,7 @@ export const Route = createFileRoute("/api/checkout-session")({
             (sum, item) => sum + item.price_data.unit_amount * item.quantity,
             0,
           );
-          const netTotal = grossTotal - toMinorUnits(discountTotal);
+          const netTotal = grossTotal - discountTotal;
 
           if (netTotal <= 0) {
             console.error("[checkout-session] refusing a non-positive total", { netTotal });
@@ -323,7 +379,7 @@ export const Route = createFileRoute("/api/checkout-session")({
           // payment_token_lines keeps payment_tokens.amount in step, so a
           // mismatch means something wrote around it and the safe move is to
           // refuse rather than charge a figure nobody agreed to.
-          const expectedTotal = toMinorUnits(Number(tokenRow.amount));
+          const expectedTotal = tokenAmountMinor;
           if (lines.length > 0 && netTotal !== expectedTotal) {
             console.error("[checkout-session] line total does not match token amount", {
               netTotal,
@@ -351,13 +407,13 @@ export const Route = createFileRoute("/api/checkout-session")({
               "/coupons",
               stripeKey,
               {
-                amount_off: toMinorUnits(discountTotal),
+                amount_off: discountTotal,
                 currency,
                 duration: "once",
                 name: "Discount",
                 metadata: { payment_token: token },
               },
-              `coupon:${token}:${toMinorUnits(discountTotal)}`,
+              `coupon:${token}:${discountTotal}`,
             );
             if (!coupon.ok) {
               console.error("[checkout-session] coupon creation failed", coupon.message);
@@ -415,7 +471,7 @@ export const Route = createFileRoute("/api/checkout-session")({
           }
 
           console.log("[checkout-session] session created", {
-            token,
+            token: maskToken(token),
             case_code: tokenRow.case_code,
             net_total: netTotal,
             lines: lines.length,

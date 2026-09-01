@@ -40,6 +40,7 @@ import { Route as JobsJobIdRouteImport } from './routes/jobs.$jobId'
 import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as EmailUnsubscribeRouteImport } from './routes/email/unsubscribe'
 import { Route as ApiHealthRouteImport } from './routes/api.health'
+import { Route as ApiCheckoutSessionRouteImport } from './routes/api/checkout-session'
 import { Route as AdminTrackingLinksRouteImport } from './routes/admin.tracking-links'
 import { Route as AdminSecureKeysRouteImport } from './routes/admin.secure-keys'
 import { Route as AdminSecureInboxRouteImport } from './routes/admin.secure-inbox'
@@ -202,6 +203,11 @@ const ApiHealthRoute = ApiHealthRouteImport.update({
   path: '/api/health',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiCheckoutSessionRoute = ApiCheckoutSessionRouteImport.update({
+  id: '/api/checkout-session',
+  path: '/api/checkout-session',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminTrackingLinksRoute = AdminTrackingLinksRouteImport.update({
   id: '/tracking-links',
   path: '/tracking-links',
@@ -243,6 +249,7 @@ export interface FileRoutesByFullPath {
   '/admin/secure-inbox': typeof AdminSecureInboxRoute
   '/admin/secure-keys': typeof AdminSecureKeysRoute
   '/admin/tracking-links': typeof AdminTrackingLinksRoute
+  '/api/checkout-session': typeof ApiCheckoutSessionRoute
   '/api/health': typeof ApiHealthRoute
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
   '/invite/$token': typeof InviteTokenRoute
@@ -280,6 +287,7 @@ export interface FileRoutesByTo {
   '/admin/secure-inbox': typeof AdminSecureInboxRoute
   '/admin/secure-keys': typeof AdminSecureKeysRoute
   '/admin/tracking-links': typeof AdminTrackingLinksRoute
+  '/api/checkout-session': typeof ApiCheckoutSessionRoute
   '/api/health': typeof ApiHealthRoute
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
   '/invite/$token': typeof InviteTokenRoute
@@ -319,6 +327,7 @@ export interface FileRoutesById {
   '/admin/secure-inbox': typeof AdminSecureInboxRoute
   '/admin/secure-keys': typeof AdminSecureKeysRoute
   '/admin/tracking-links': typeof AdminTrackingLinksRoute
+  '/api/checkout-session': typeof ApiCheckoutSessionRoute
   '/api/health': typeof ApiHealthRoute
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
   '/invite/$token': typeof InviteTokenRoute
@@ -359,6 +368,7 @@ export interface FileRouteTypes {
     | '/admin/secure-inbox'
     | '/admin/secure-keys'
     | '/admin/tracking-links'
+    | '/api/checkout-session'
     | '/api/health'
     | '/email/unsubscribe'
     | '/invite/$token'
@@ -396,6 +406,7 @@ export interface FileRouteTypes {
     | '/admin/secure-inbox'
     | '/admin/secure-keys'
     | '/admin/tracking-links'
+    | '/api/checkout-session'
     | '/api/health'
     | '/email/unsubscribe'
     | '/invite/$token'
@@ -434,6 +445,7 @@ export interface FileRouteTypes {
     | '/admin/secure-inbox'
     | '/admin/secure-keys'
     | '/admin/tracking-links'
+    | '/api/checkout-session'
     | '/api/health'
     | '/email/unsubscribe'
     | '/invite/$token'
@@ -468,6 +480,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   UnsubscribeRoute: typeof UnsubscribeRoute
+  ApiCheckoutSessionRoute: typeof ApiCheckoutSessionRoute
   ApiHealthRoute: typeof ApiHealthRoute
   EmailUnsubscribeRoute: typeof EmailUnsubscribeRoute
   InviteTokenRoute: typeof InviteTokenRoute
@@ -710,6 +723,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiHealthRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/checkout-session': {
+      id: '/api/checkout-session'
+      path: '/api/checkout-session'
+      fullPath: '/api/checkout-session'
+      preLoaderRoute: typeof ApiCheckoutSessionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin/tracking-links': {
       id: '/admin/tracking-links'
       path: '/tracking-links'
@@ -778,6 +798,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   UnsubscribeRoute: UnsubscribeRoute,
+  ApiCheckoutSessionRoute: ApiCheckoutSessionRoute,
   ApiHealthRoute: ApiHealthRoute,
   EmailUnsubscribeRoute: EmailUnsubscribeRoute,
   InviteTokenRoute: InviteTokenRoute,
