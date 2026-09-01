@@ -86,7 +86,9 @@ function encodeForm(obj: Record<string, unknown>, prefix = ""): string[] {
         if (item !== null && typeof item === "object") {
           parts.push(...encodeForm(item as Record<string, unknown>, `${key}[${index}]`));
         } else {
-          parts.push(`${encodeURIComponent(`${key}[${index}]`)}=${encodeURIComponent(String(item))}`);
+          parts.push(
+            `${encodeURIComponent(`${key}[${index}]`)}=${encodeURIComponent(String(item))}`,
+          );
         }
       });
     } else if (typeof value === "object") {
@@ -98,12 +100,24 @@ function encodeForm(obj: Record<string, unknown>, prefix = ""): string[] {
   return parts;
 }
 
+// Only the fields this route actually reads back. Deliberately narrow rather
+// than `any`, so a typo in a field name is a compile error instead of undefined
+// at three in the morning.
+type StripeObject = {
+  id?: string;
+  client_secret?: string;
+  error?: { message?: string };
+};
+
+type StripeResult =
+  { ok: true; data: StripeObject } | { ok: false; status: number; message: string };
+
 async function stripePost(
   path: string,
   secretKey: string,
   payload: Record<string, unknown>,
   idempotencyKey?: string,
-): Promise<{ ok: true; data: any } | { ok: false; status: number; message: string }> {
+): Promise<StripeResult> {
   const headers: Record<string, string> = {
     Authorization: `Bearer ${secretKey}`,
     "Content-Type": "application/x-www-form-urlencoded",
@@ -116,9 +130,9 @@ async function stripePost(
     body: encodeForm(payload).join("&"),
   });
 
-  const data = await response.json().catch(() => ({}));
+  const data = (await response.json().catch(() => ({}))) as StripeObject;
   if (!response.ok) {
-    const message = data?.error?.message ?? `Stripe returned ${response.status}`;
+    const message = data.error?.message ?? `Stripe returned ${response.status}`;
     return { ok: false, status: response.status, message };
   }
   return { ok: true, data };
@@ -190,16 +204,28 @@ export const Route = createFileRoute("/api/checkout-session")({
           // tokens. The reason code is for our own page copy, not a hint.
           if (!tokenRow) {
             console.warn("[checkout-session] unknown token");
-            return Response.json({ error: "This payment link is not valid", reason: "unknown" }, { status: 404 });
+            return Response.json(
+              { error: "This payment link is not valid", reason: "unknown" },
+              { status: 404 },
+            );
           }
           if (tokenRow.revoked_at) {
-            return Response.json({ error: "This payment link has been cancelled", reason: "revoked" }, { status: 409 });
+            return Response.json(
+              { error: "This payment link has been cancelled", reason: "revoked" },
+              { status: 409 },
+            );
           }
           if (tokenRow.paid_at) {
-            return Response.json({ error: "This payment has already been made", reason: "paid" }, { status: 409 });
+            return Response.json(
+              { error: "This payment has already been made", reason: "paid" },
+              { status: 409 },
+            );
           }
           if (tokenRow.expires_at && new Date(tokenRow.expires_at).getTime() < Date.now()) {
-            return Response.json({ error: "This payment link has expired", reason: "expired" }, { status: 409 });
+            return Response.json(
+              { error: "This payment link has expired", reason: "expired" },
+              { status: 409 },
+            );
           }
           if (tokenRow.method !== "stripe") {
             // A Revolut or bank token must not be payable by card here. The
@@ -208,7 +234,10 @@ export const Route = createFileRoute("/api/checkout-session")({
             console.warn("[checkout-session] non-stripe token reached card checkout", {
               method: tokenRow.method,
             });
-            return Response.json({ error: "This payment link is not a card payment", reason: "method" }, { status: 409 });
+            return Response.json(
+              { error: "This payment link is not a card payment", reason: "method" },
+              { status: 409 },
+            );
           }
 
           const currency = (tokenRow.currency ?? "EUR").toLowerCase();
@@ -234,7 +263,10 @@ export const Route = createFileRoute("/api/checkout-session")({
           const positiveLines = lines.filter((line) => Number(line.unit_amount) > 0);
           const discountTotal = lines
             .filter((line) => Number(line.unit_amount) < 0)
-            .reduce((sum, line) => sum + Math.abs(Number(line.unit_amount)) * Number(line.quantity), 0);
+            .reduce(
+              (sum, line) => sum + Math.abs(Number(line.unit_amount)) * Number(line.quantity),
+              0,
+            );
 
           const lineItems =
             positiveLines.length > 0
@@ -281,7 +313,10 @@ export const Route = createFileRoute("/api/checkout-session")({
 
           if (netTotal <= 0) {
             console.error("[checkout-session] refusing a non-positive total", { netTotal });
-            return Response.json({ error: "This payment link is not valid", reason: "amount" }, { status: 409 });
+            return Response.json(
+              { error: "This payment link is not valid", reason: "amount" },
+              { status: 409 },
+            );
           }
 
           // Sanity check against the cached total on the token. The trigger on
@@ -294,7 +329,10 @@ export const Route = createFileRoute("/api/checkout-session")({
               netTotal,
               expectedTotal,
             });
-            return Response.json({ error: "This payment link is not valid", reason: "mismatch" }, { status: 409 });
+            return Response.json(
+              { error: "This payment link is not valid", reason: "mismatch" },
+              { status: 409 },
+            );
           }
 
           // Client email, so Stripe's receipt reaches the right person and the
