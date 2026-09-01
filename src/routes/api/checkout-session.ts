@@ -157,8 +157,17 @@ export const Route = createFileRoute("/api/checkout-session")({
       POST: async ({ request }) => {
         const stripeKey = process.env.STRIPE_SECRET_KEY;
         if (!stripeKey) {
-          console.error("[checkout-session] STRIPE_SECRET_KEY not configured");
-          return Response.json({ error: "Server configuration error" }, { status: 500 });
+          const env = (process.env ?? {}) as Record<string, string | undefined>;
+          const probe = {
+            totalNames: Object.keys(env).length,
+            sawStripe: "STRIPE_SECRET_KEY" in env,
+            sawSupabaseServiceRole: "SUPABASE_SERVICE_ROLE_KEY" in env,
+            sawSupabaseUrl: "SUPABASE_URL" in env,
+            sawMailgun: "MAILGUN_API_KEY" in env,
+            stripeNames: Object.keys(env).filter((n) => n.includes("STRIPE")),
+          };
+          console.error("[checkout-session] STRIPE_SECRET_KEY not configured", probe);
+          return Response.json({ error: "Server configuration error", probe }, { status: 500 });
         }
 
         // Where Stripe sends the client back after the card form completes.
