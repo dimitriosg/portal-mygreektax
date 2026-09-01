@@ -147,7 +147,7 @@ function PaymentsPage() {
   const [amountTouched, setAmountTouched] = useState(false);
   const [kind, setKind] = useState<PaymentKind>("deposit");
   const [method, setMethod] = useState<PaymentMethod>("revolut");
-  // Supabase jobs.id, or "" for a case-level payment. Never an Airtable id.
+  // jobs.id, or "" for a case-level payment.
   const [jobId, setJobId] = useState("");
   const [expiresInDays, setExpiresInDays] = useState<number | "">("");
   const [note, setNote] = useState("");

@@ -205,9 +205,12 @@ export const listPaymentClients = createServerFn({ method: "GET" })
     return { clients: (data ?? []) as PaymentClientOption[] };
   });
 
-// The job a payment link is for. Read from the Supabase `jobs` table, never
-// from the Airtable-backed listJobs in jobs.functions.ts: payment_tokens.job_id
-// is a foreign key to jobs.id, and an Airtable record id would fail it.
+// The job a payment link is for. Read straight from `jobs` rather than through
+// listJobs in jobs.functions.ts. Both are Supabase (Airtable was retired in the
+// Jul 2026 migration and airtable.server.ts is a shim over it), but listJobs
+// fetches every job and filters client-side, inside the retained Airtable
+// envelope with Title Case field names. The picker wants one client's open
+// jobs by column name, which is the query getCaseRail already runs.
 export type MintableJob = {
   id: string; // Supabase jobs.id uuid — this is what goes in job_id
   job_code: string | null;
