@@ -82,7 +82,12 @@ select
   -- A null accountant fee is not a zero-cost job, it is an unknown-cost job.
   -- Margin on those rows is overstated, so every consumer can flag it.
   j.accountant_fee is null                                 as wholesale_missing,
-  j.status = 'Cancelled / NMF'                             as is_cancelled,
+  -- coalesce, not a bare equality: jobs.status is nullable, and `null =
+  -- 'Cancelled / NMF'` is null, which `where not is_cancelled` then drops. A
+  -- job with no status would have vanished from the monthly, concentration and
+  -- share-of-book figures while still being counted in the pipeline table and
+  -- the tiles. An unknown status is not a cancellation.
+  coalesce(j.status,'') = 'Cancelled / NMF'                as is_cancelled,
   j.date_sent,
   j.sla_deadline,
   j.paid_at,
@@ -129,7 +134,16 @@ select month,
        sum(gross_margin) filter (where not is_cancelled)       as gross_margin,
        sum(retail) filter (where status = 'Completed')         as completed_retail,
        sum(retail) filter (where status = 'In Progress')       as in_progress_retail,
-       sum(retail) filter (where status in ('To Assign','Pending','Paid')) as open_retail,
+       -- Open is defined by subtraction, not by listing three statuses. The
+       -- listed form silently dropped Delivered, Invoiced and the legacy Sent:
+       -- their retail landed in no segment, so the bars under-reported the
+       -- month and never reconciled with the live book tile. Today no job sits
+       -- in any of those, so this changes no current figure — it stops the
+       -- chart losing revenue the first time one does.
+       sum(retail) filter (
+         where not is_cancelled
+           and coalesce(status,'') not in ('Completed','In Progress')
+       )                                                       as open_retail,
        sum(retail) filter (where is_cancelled)                 as cancelled_retail
 from public.v_report_jobs
 group by month;
