@@ -1,34 +1,92 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect } from "react";
-import { AlertTriangle } from "lucide-react";
-import { getAdminReports, type ReportTotals } from "@/lib/reports.functions";
+import { useEffect, useMemo } from "react";
+import { z } from "zod";
+import { getAdminReports } from "@/lib/reports.functions";
 import { useAuth } from "@/lib/auth-context";
 import { getErrorMessage, isAuthSessionError } from "@/lib/auth-errors";
 import { Card, CardContent } from "@/components/ui/card";
-import { StatusBadge } from "@/lib/badges";
-import { ClientConcentrationChart, MonthlyRevenueChart } from "@/components/admin-reports-charts";
-import { formatEuro, formatPct } from "@/lib/reports-format";
+import { cn } from "@/lib/utils";
+import { filterJobs, filterLeads, type ReportFilters } from "@/lib/reports-aggregate";
+import { ReportsFilterBar } from "@/components/reports/filter-bar";
+import { PipelineTab } from "@/components/reports/tab-pipeline";
+import { FunnelTab } from "@/components/reports/tab-funnel";
+import { SourcesTab } from "@/components/reports/tab-sources";
+import { QualityTab } from "@/components/reports/tab-quality";
 
 // Reports. Read-only, no cash.
 //
 // Every figure here is the value of work on the books, from jobs.client_fee and
-// jobs.accountant_fee. Nothing on this page is money received, promised or owed,
-// and nothing on it reads clients.quote_amount, clients.deposit,
-// clients.balance_due or clients.partner_fee. Three sources in this database
-// disagree about how much has been collected and payments has no job_id, so any
-// cash number here would be confidently wrong — which is worse than absent. The
-// data quality panel at the bottom is where that disagreement is made visible;
-// it is the reason this page exists in this shape.
+// jobs.accountant_fee, or a count of leads. Nothing on this page is money
+// received, promised or owed, and nothing on it reads clients.quote_amount,
+// clients.deposit, clients.balance_due, clients.partner_fee or
+// clients.lead_value. Three sources in this database disagree about how much
+// has been collected and payments has no job_id, so any cash number here would
+// be confidently wrong — which is worse than absent.
+//
+// This route is a shell: auth, one query, filter state, and which tab is
+// showing. The tabs themselves live in src/components/reports/ and all
+// arithmetic lives in src/lib/reports-aggregate.ts, so no number is defined in
+// more than one place.
+
+const TABS = [
+  { key: "pipeline", label: "Pipeline" },
+  { key: "funnel", label: "Funnel" },
+  { key: "sources", label: "Sources" },
+  { key: "quality", label: "Data quality" },
+] as const;
+
+type TabKey = (typeof TABS)[number]["key"];
+
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+// .catch() on every field rather than .optional() alone: a hand-edited or stale
+// URL should land on the default view, never throw the route into an error
+// boundary. A report link is the kind of thing people paste into chat and edit.
+const searchSchema = z.object({
+  // Optional, not defaulted: the router treats a required output field as a
+  // required link param, and `<Link to="/admin/reports">` should keep working
+  // with no search at all. The default is applied at read time instead.
+  tab: z.enum(["pipeline", "funnel", "sources", "quality"]).optional().catch(undefined),
+  from: z.string().regex(ISO_DAY).optional().catch(undefined),
+  to: z.string().regex(ISO_DAY).optional().catch(undefined),
+  /** Comma-separated job statuses. */
+  status: z.string().optional().catch(undefined),
+  /** Comma-separated lead stages. */
+  stage: z.string().optional().catch(undefined),
+});
+
+type ReportsSearch = z.infer<typeof searchSchema>;
 
 export const Route = createFileRoute("/admin/reports")({
+  // Typed as Record<string, unknown> rather than letting the schema drive the
+  // input type, matching src/routes/appendix.tsx. Otherwise the router infers
+  // every param as required and `<Link to="/admin/reports">` on the admin
+  // overview stops compiling for want of a search object.
+  validateSearch: (search: Record<string, unknown>): ReportsSearch => searchSchema.parse(search),
   component: ReportsPage,
 });
+
+function splitList(value?: string): string[] | undefined {
+  if (!value) return undefined;
+  const parts = value
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean);
+  return parts.length ? parts : undefined;
+}
+
+function joinList(values?: string[]): string | undefined {
+  return values?.length ? values.join(",") : undefined;
+}
 
 function ReportsPage() {
   const { user, loading, sessionReady, isAdmin } = useAuth();
   const navigate = useNavigate();
+  const search = Route.useSearch();
+  const tab: TabKey = search.tab ?? "pipeline";
+
   useEffect(() => {
     if (loading) return;
     if (!user) {
@@ -52,6 +110,54 @@ function ReportsPage() {
     if (isAuthSessionError(reportsQ.error)) navigate({ to: "/login", replace: true });
   }, [reportsQ.error, navigate]);
 
+  const filters: ReportFilters = useMemo(
+    () => ({
+      from: search.from,
+      to: search.to,
+      status: splitList(search.status),
+      stage: splitList(search.stage),
+    }),
+    [search.from, search.to, search.status, search.stage],
+  );
+
+  // replace: true so dragging a date range does not bury the back button under
+  // one history entry per click.
+  function setSearch(next: Partial<ReportsSearch>) {
+    navigate({ to: "/admin/reports", search: { ...search, ...next }, replace: true });
+  }
+
+  function setFilters(next: ReportFilters) {
+    setSearch({
+      from: next.from,
+      to: next.to,
+      status: joinList(next.status),
+      stage: joinList(next.stage),
+    });
+  }
+
+  const data = reportsQ.data;
+
+  const jobs = useMemo(() => filterJobs(data?.jobs ?? [], filters), [data?.jobs, filters]);
+  const leads = useMemo(() => filterLeads(data?.leads ?? [], filters), [data?.leads, filters]);
+
+  // Facet options come from the data actually present, so a status that no job
+  // has stops offering a filter that would return nothing.
+  const statusOptions = useMemo(
+    () =>
+      [...new Set((data?.jobs ?? []).map((j) => j.status).filter((s): s is string => !!s))].sort(),
+    [data?.jobs],
+  );
+  const stageOptions = useMemo(
+    () =>
+      [
+        ...new Set((data?.leads ?? []).map((l) => l.current_stage).filter((s): s is string => !!s)),
+      ].sort(),
+    [data?.leads],
+  );
+
+  const unlinkable =
+    data?.dataQuality.find((c) => c.check_key === "lead_history_unlinkable")?.value ?? 0;
+
   if (loading || (!!user && !sessionReady)) {
     return (
       <div className="mx-auto max-w-6xl px-4 py-6 text-sm text-muted-foreground">Loading...</div>
@@ -59,7 +165,7 @@ function ReportsPage() {
   }
   if (!isAdmin) return null;
 
-  const data = reportsQ.data;
+  const facetMode = tab === "pipeline" ? "jobs" : tab === "quality" ? "none" : "leads";
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 sm:py-8 space-y-6">
@@ -70,7 +176,7 @@ function ReportsPage() {
           </Link>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight">Reports</h1>
           <p className="text-sm text-muted-foreground">
-            The book by job, by status and by month. Read-only.
+            The book, the closing cycle, and where the leads come from. Read-only.
           </p>
         </div>
       </div>
@@ -78,13 +184,40 @@ function ReportsPage() {
       <Card className="border-dashed">
         <CardContent className="py-4 text-sm text-muted-foreground">
           <span className="font-medium text-foreground">No cash figures on this page.</span>{" "}
-          Everything below is the value of work on the books, taken from the fees on each job.
-          Nothing here is money collected, outstanding or owed: three sources in this database
-          disagree on what has been collected, and payments carry no job, so any cash number would
-          be wrong with confidence. The data quality panel at the bottom is that disagreement,
-          measured.
+          Everything below is the value of work on the books, or a count of leads. Nothing here is
+          money collected, outstanding or owed: three sources in this database disagree on what has
+          been collected, and payments carry no job, so any cash number would be wrong with
+          confidence.
         </CardContent>
       </Card>
+
+      {/* Segmented control rather than ui/tabs.tsx, which nothing in this repo
+          uses. Same shape as the board/list toggle on the leads page. */}
+      <div className="flex flex-wrap items-center gap-1 rounded-md border border-border p-1 text-sm">
+        {TABS.map((tab_) => (
+          <button
+            key={tab_.key}
+            type="button"
+            onClick={() => setSearch({ tab: tab_.key })}
+            aria-current={tab === tab_.key ? "page" : undefined}
+            className={cn(
+              "rounded px-3 py-1 transition-colors",
+              tab === tab_.key
+                ? "bg-muted font-medium"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {tab_.label}
+          </button>
+        ))}
+      </div>
+
+      <ReportsFilterBar
+        filters={filters}
+        onChange={setFilters}
+        mode={facetMode}
+        facetOptions={facetMode === "jobs" ? statusOptions : stageOptions}
+      />
 
       {reportsQ.isLoading && (
         <Card>
@@ -102,187 +235,20 @@ function ReportsPage() {
 
       {data && (
         <>
-          {/* A. Live book. Cancelled excluded — 7 of the 15 cancelled jobs have
-              no accountant fee, so including them would inflate margin. */}
-          <section className="space-y-2">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h2 className="text-lg font-semibold">Live book</h2>
-              <p className="text-xs text-muted-foreground">Cancelled work excluded</p>
-            </div>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <Tile label="Jobs" value={data.live.jobs.toLocaleString("en-GB")} />
-              <Tile label="Revenue on the books" value={formatEuro(data.live.retail)} />
-              <Tile label="Gross margin" value={formatEuro(data.live.grossMargin)} />
-              <Tile
-                label="Margin %"
-                value={formatPct(data.live.marginPct)}
-                note={
-                  data.live.missingWholesale > 0
-                    ? `${data.live.missingWholesale} job${data.live.missingWholesale === 1 ? "" : "s"} with no accountant fee — margin is overstated`
-                    : undefined
-                }
-              />
-            </div>
-          </section>
-
-          {/* B. Pipeline by status. */}
-          <section className="space-y-2">
-            <h2 className="text-lg font-semibold">Pipeline by status</h2>
-            <div className="overflow-x-auto rounded-lg border border-border">
-              <table className="w-full min-w-[720px] text-sm">
-                <thead className="bg-muted/50 text-left">
-                  <tr>
-                    <th className="px-3 py-2">Status</th>
-                    <th className="px-3 py-2 text-right">Jobs</th>
-                    <th className="px-3 py-2 text-right">Retail</th>
-                    <th className="px-3 py-2 text-right">Wholesale</th>
-                    <th className="px-3 py-2 text-right">Gross margin</th>
-                    <th className="px-3 py-2 text-right">Margin %</th>
-                    <th className="px-3 py-2">Data</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.pipeline.length === 0 && (
-                    <tr>
-                      <td colSpan={7} className="px-3 py-6 text-center text-muted-foreground">
-                        No jobs yet.
-                      </td>
-                    </tr>
-                  )}
-                  {data.pipeline.map((row) => (
-                    <tr key={row.status} className="border-t border-border hover:bg-muted/30">
-                      <td className="px-3 py-2">
-                        <StatusBadge status={row.status} />
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums">{row.jobs}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">
-                        {formatEuro(row.retail)}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums">
-                        {formatEuro(row.wholesale)}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums">
-                        {formatEuro(row.grossMargin)}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums">
-                        {formatPct(row.marginPct)}
-                      </td>
-                      <td className="px-3 py-2">
-                        {/* Margin on a row with no accountant fee is not high,
-                            it is unknown. Say so where the number is read. */}
-                        {row.missingWholesale > 0 ? (
-                          <span className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-100 px-1.5 py-0.5 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/60 dark:text-amber-100">
-                            <AlertTriangle className="h-3 w-3" aria-hidden="true" />
-                            {row.missingWholesale} without an accountant fee
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                {data.pipeline.length > 0 && <TotalsRow totals={data.all} />}
-              </table>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Margin % on a row is its own gross margin over its own retail, never the average of
-              the rows above it.
-            </p>
-          </section>
-
-          {/* C. Charts. */}
-          <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <MonthlyRevenueChart rows={data.monthly} />
-            <ClientConcentrationChart rows={data.concentration} />
-          </section>
-
-          {/* D. Data quality. Not a footnote. */}
-          <section className="space-y-2">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h2 className="text-lg font-semibold">Data quality</h2>
-              <p className="text-xs text-muted-foreground">
-                A non-zero number here is a warning, not an error
-              </p>
-            </div>
-            <Card>
-              <CardContent className="divide-y divide-border py-0">
-                {data.dataQuality.length === 0 && (
-                  <div className="py-6 text-sm text-muted-foreground">No checks returned.</div>
-                )}
-                {data.dataQuality.map((check) => (
-                  <div
-                    key={check.checkKey}
-                    className="flex items-center justify-between gap-4 py-3 text-sm"
-                  >
-                    <div className="flex items-center gap-2">
-                      {check.value !== 0 && (
-                        <AlertTriangle
-                          className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400"
-                          aria-hidden="true"
-                        />
-                      )}
-                      <span className={check.value !== 0 ? "" : "text-muted-foreground"}>
-                        {check.label}
-                      </span>
-                    </div>
-                    <span
-                      className={`shrink-0 tabular-nums font-semibold ${
-                        check.value !== 0
-                          ? "text-amber-700 dark:text-amber-300"
-                          : "text-muted-foreground"
-                      }`}
-                    >
-                      {check.value.toLocaleString("en-GB")}
-                    </span>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-            <p className="text-xs text-muted-foreground">
-              Payments cannot be attributed to a job until payments carries a job id. Until then
-              this page reports work, not money.
-            </p>
-          </section>
+          {tab === "pipeline" && <PipelineTab jobs={jobs} />}
+          {tab === "funnel" && (
+            <FunnelTab
+              leads={leads}
+              leadHistoryFrom={data.leadHistoryFrom}
+              unlinkableEvents={unlinkable}
+            />
+          )}
+          {tab === "sources" && <SourcesTab leads={leads} />}
+          {tab === "quality" && (
+            <QualityTab jobs={jobs} leads={leads} dataQuality={data.dataQuality} />
+          )}
         </>
       )}
     </div>
-  );
-}
-
-function TotalsRow({ totals }: { totals: ReportTotals }) {
-  return (
-    <tfoot>
-      <tr className="border-t-2 border-border bg-muted/40 font-semibold">
-        <td className="px-3 py-2">All</td>
-        <td className="px-3 py-2 text-right tabular-nums">{totals.jobs}</td>
-        <td className="px-3 py-2 text-right tabular-nums">{formatEuro(totals.retail)}</td>
-        <td className="px-3 py-2 text-right tabular-nums">{formatEuro(totals.wholesale)}</td>
-        <td className="px-3 py-2 text-right tabular-nums">{formatEuro(totals.grossMargin)}</td>
-        <td className="px-3 py-2 text-right tabular-nums">{formatPct(totals.marginPct)}</td>
-        <td className="px-3 py-2 text-xs font-normal text-muted-foreground">
-          {totals.missingWholesale > 0
-            ? `${totals.missingWholesale} without an accountant fee`
-            : "—"}
-        </td>
-      </tr>
-    </tfoot>
-  );
-}
-
-function Tile({ label, value, note }: { label: string; value: string; note?: string }) {
-  return (
-    <Card>
-      <CardContent className="py-4">
-        <div className="text-xs uppercase tracking-wide text-muted-foreground">{label}</div>
-        <div className="mt-1 text-2xl font-semibold tabular-nums">{value}</div>
-        {note && (
-          <div className="mt-1 flex items-start gap-1 text-xs text-amber-700 dark:text-amber-400">
-            <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
-            <span>{note}</span>
-          </div>
-        )}
-      </CardContent>
-    </Card>
   );
 }

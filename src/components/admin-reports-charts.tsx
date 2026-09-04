@@ -9,7 +9,12 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { ReportConcentrationRow, ReportMonthlyRow } from "@/lib/reports.functions";
+import type {
+  FunnelStep,
+  ReportConcentrationRow,
+  ReportMonthlyRow,
+  ReportSourceRow,
+} from "@/lib/reports-aggregate";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatEuro, formatPct } from "@/lib/reports-format";
 
@@ -199,5 +204,139 @@ function EmptyPlot() {
     <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
       Nothing to plot yet.
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Funnel
+// ---------------------------------------------------------------------------
+
+/**
+ * The closing cycle, as a horizontal bar per step. One series, so one hue and
+ * no legend: the steps are stages of the same quantity shrinking, not four
+ * different things, and colouring them separately would imply otherwise.
+ */
+export function FunnelChart({ steps }: { steps: FunnelStep[] }) {
+  const data = steps.map((s) => ({
+    label: s.label,
+    count: s.count,
+    // Built here rather than in a LabelList formatter, which receives only the
+    // value — and two steps can legitimately share a count.
+    labelText:
+      s.conversion == null ? `${s.count}` : `${s.count}  ·  ${formatPct(s.conversion)} of previous`,
+  }));
+
+  return (
+    <Card>
+      <CardContent className="py-4">
+        <div className="mb-1 text-xs uppercase tracking-wide text-muted-foreground">
+          Closing cycle
+        </div>
+        <p className="mb-3 text-xs text-muted-foreground">
+          Leads that ever reached each step, not leads sitting on it now — a lead that completed and
+          reopened has still been quoted and still paid.
+        </p>
+        {data.length === 0 ? (
+          <EmptyPlot />
+        ) : (
+          <div className="w-full" style={{ height: Math.max(200, data.length * 44 + 24) }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={data}
+                layout="vertical"
+                margin={{ top: 4, right: 150, left: 0, bottom: 4 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
+                <XAxis type="number" hide />
+                <YAxis
+                  type="category"
+                  dataKey="label"
+                  tick={AXIS}
+                  stroke="var(--border)"
+                  tickLine={false}
+                  axisLine={false}
+                  width={110}
+                />
+                <Tooltip
+                  cursor={{ fill: "var(--muted)", opacity: 0.4 }}
+                  contentStyle={TOOLTIP_STYLE}
+                  formatter={(v: number) => [`${v}`, "Leads"]}
+                />
+                <Bar dataKey="count" fill={SERIES.completed} radius={[0, 4, 4, 0]} barSize={20}>
+                  <LabelList
+                    dataKey="labelText"
+                    position="right"
+                    style={{ fontSize: 11, fill: "var(--foreground)" }}
+                  />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Lead sources
+// ---------------------------------------------------------------------------
+
+/** Volume by source. Conversion is the table's job — a bar cannot show both. */
+export function LeadSourceChart({ rows }: { rows: ReportSourceRow[] }) {
+  const data = rows.map((r) => ({
+    label: r.source,
+    leads: r.leads,
+    labelText: r.conversion == null ? `${r.leads}` : `${r.leads}  ·  ${formatPct(r.conversion)}`,
+  }));
+
+  return (
+    <Card>
+      <CardContent className="py-4">
+        <div className="mb-1 text-xs uppercase tracking-wide text-muted-foreground">
+          Where leads come from
+        </div>
+        <p className="mb-3 text-xs text-muted-foreground">
+          Lead count, labelled with the share that went on to pay a deposit.
+        </p>
+        {data.length === 0 ? (
+          <EmptyPlot />
+        ) : (
+          <div className="w-full" style={{ height: Math.max(200, data.length * 32 + 24) }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={data}
+                layout="vertical"
+                margin={{ top: 4, right: 96, left: 0, bottom: 4 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
+                <XAxis type="number" hide />
+                <YAxis
+                  type="category"
+                  dataKey="label"
+                  tick={AXIS}
+                  stroke="var(--border)"
+                  tickLine={false}
+                  axisLine={false}
+                  width={170}
+                />
+                <Tooltip
+                  cursor={{ fill: "var(--muted)", opacity: 0.4 }}
+                  contentStyle={TOOLTIP_STYLE}
+                  formatter={(v: number) => [`${v}`, "Leads"]}
+                />
+                <Bar dataKey="leads" fill={SERIES.open} radius={[0, 4, 4, 0]} barSize={16}>
+                  <LabelList
+                    dataKey="labelText"
+                    position="right"
+                    style={{ fontSize: 11, fill: "var(--foreground)" }}
+                  />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
