@@ -2385,6 +2385,27 @@ export type Database = {
         };
         Relationships: [];
       };
+      v_report_lead_lifecycle: {
+        Row: {
+          active_at: string | null;
+          client_code: string | null;
+          client_id: string | null;
+          client_name: string | null;
+          complete_at: string | null;
+          current_stage: string | null;
+          current_status: string | null;
+          delivered_at: string | null;
+          last_activity_at: string | null;
+          lead_created_at: string | null;
+          lost_at: string | null;
+          next_action: string | null;
+          next_action_date: string | null;
+          parked_at: string | null;
+          quoted_at: string | null;
+          source: string | null;
+        };
+        Relationships: [];
+      };
       v_report_monthly: {
         Row: {
           cancelled_retail: number | null;
