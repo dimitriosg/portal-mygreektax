@@ -197,9 +197,11 @@ A direct commit to `main` is a deliberate emergency decision, not the default.
 
 ## Database and migrations
 
-Supabase is the system of record. Migrations live in `supabase/migrations/` (25 files as of this writing), and this is the canonical migration home for the whole project, since it is the larger and better ordered set. Schema changes are committed as migration files, not run only in the SQL editor, so they are reproducible.
+Supabase is the system of record. Migrations live in `supabase/migrations/`, and this is the canonical migration home for the whole project, since it is the larger and better ordered set. Schema changes are committed as migration files, not run only in the SQL editor, so they are reproducible.
 
 Known trap: `src/integrations/supabase/20260721_link_leads_to_cases_on_insert.sql` is a migration sitting outside `supabase/migrations/`, so no tool will ever apply it. Do not assume it is live.
+
+The `context` schema is a mirror, not a system of record. It holds Claude memory files and PIPELINE project docs, pushed in by a scheduled Claude session three times a day on weekdays, and read by n8n through `context.mgt_documents`. Never hand-edit those tables, the next sync overwrites them. It is context, not canon: `public.knowledge_base` remains the only source a client-facing draft may quote as settled tax fact.
 
 ---
 
