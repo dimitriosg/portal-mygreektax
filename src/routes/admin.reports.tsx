@@ -2,6 +2,8 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
+import { RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { z } from "zod";
 import { getAdminReports } from "@/lib/reports.functions";
 import { useAuth } from "@/lib/auth-context";
@@ -67,6 +69,13 @@ export const Route = createFileRoute("/admin/reports")({
   validateSearch: (search: Record<string, unknown>): ReportsSearch => searchSchema.parse(search),
   component: ReportsPage,
 });
+
+/** HH:mm in the viewer's own timezone — this is "how stale is this", not a date. */
+function formatTime(ms: number): string {
+  if (!ms) return "—";
+  const d = new Date(ms);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
 
 function splitList(value?: string): string[] | undefined {
   if (!value) return undefined;
@@ -178,6 +187,31 @@ function ReportsPage() {
           <p className="text-sm text-muted-foreground">
             The book, the closing cycle, and where the leads come from. Read-only.
           </p>
+        </div>
+        {/* The query holds data for five minutes, which is right for a report
+            you leave open — and wrong for the moment you have just changed
+            something and want to see it. This refetches in place rather than
+            reloading the page, so the tab and filters survive. */}
+        <div className="flex items-center gap-2">
+          {data && (
+            <span className="text-xs text-muted-foreground" title="When this data was fetched">
+              {reportsQ.isFetching
+                ? "Refreshing…"
+                : `Updated ${formatTime(reportsQ.dataUpdatedAt)}`}
+            </span>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => reportsQ.refetch()}
+            disabled={reportsQ.isFetching}
+          >
+            <RefreshCw
+              className={cn("mr-2 h-4 w-4", reportsQ.isFetching && "animate-spin")}
+              aria-hidden="true"
+            />
+            Refresh
+          </Button>
         </div>
       </div>
 
