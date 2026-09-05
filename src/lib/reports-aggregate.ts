@@ -70,6 +70,8 @@ export type ReportLeadRow = {
   lost_at: string | null;
   parked_at: string | null;
   last_activity_at: string | null;
+  /** Newest of clients.last_activity, any activity event, any job change. */
+  last_touch_at: string | null;
   next_action: string | null;
   next_action_date: string | null;
 };
@@ -444,6 +446,13 @@ export type ReportWatchlist = {
   goneQuiet: WatchlistLead[];
 };
 
+/** At or past the deposit: nothing here is still waiting to pay one. */
+const PAST_DEPOSIT_STAGES = new Set(["Active", "Delivered", "Complete"]);
+/** Decisions already taken. Not things to chase. */
+const CLOSED_STAGES = new Set(["Parked", "Lost"]);
+/** Still in play, so silence on one of these is worth surfacing. */
+const OPEN_STAGES = new Set(["Potential", "Quoted", "Active"]);
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 function daysBetween(from: string | null, now: Date): number {
@@ -491,12 +500,23 @@ export function watchlistFrom(
       .filter((j) => (j.sla_deadline as string) >= today && (j.sla_deadline as string) <= soon)
       .map(toJob)
       .sort((a, b) => (a.slaDeadline ?? "").localeCompare(b.slaDeadline ?? "")),
-    // Quoted, never reached the deposit stage, and not already closed out.
-    // Parked and Lost are decisions already taken, not things to chase.
+    // Quoted and still genuinely waiting on the deposit.
+    //
+    // The first version asked only "quoted, and no Active milestone", which put
+    // five completed clients on the chase list. They were never recorded as
+    // reaching Active — their work predates the event log or moved straight
+    // past it — but they had been delivered and completed, so the deposit
+    // plainly arrived. So a lead counts as past the deposit if ANY later
+    // milestone exists, or its current stage is at or beyond Active.
     quotedNotPaid: leads
       .filter(
         (l) =>
-          l.quoted_at && !l.active_at && l.current_stage !== "Parked" && l.current_stage !== "Lost",
+          l.quoted_at &&
+          !l.active_at &&
+          !l.delivered_at &&
+          !l.complete_at &&
+          !PAST_DEPOSIT_STAGES.has(l.current_stage ?? "") &&
+          !CLOSED_STAGES.has(l.current_stage ?? ""),
       )
       .map((l) => ({
         clientId: l.client_id,
@@ -507,14 +527,18 @@ export function watchlistFrom(
         daysSince: daysBetween(l.quoted_at, now),
       }))
       .sort((a, b) => b.daysSince - a.daysSince),
+    // last_touch_at, never clients.last_activity with a fallback to the lead's
+    // birthday. That fallback reported two clients as 62 and 36 days quiet on
+    // the day their own jobs were moving, because last_activity is set on half
+    // the table and is not maintained. A watchlist naming people who need
+    // nothing costs a check every time and teaches you to stop reading it.
     goneQuiet: leads
       .filter((l) => {
-        if (!["Potential", "Quoted", "Active"].includes(l.current_stage ?? "")) return false;
-        const last = l.last_activity_at ?? l.lead_created_at;
-        return daysBetween(last, now) >= quietDays;
+        if (!OPEN_STAGES.has(l.current_stage ?? "")) return false;
+        return daysBetween(l.last_touch_at ?? l.lead_created_at, now) >= quietDays;
       })
       .map((l) => {
-        const last = l.last_activity_at ?? l.lead_created_at;
+        const last = l.last_touch_at ?? l.lead_created_at;
         return {
           clientId: l.client_id,
           clientCode: l.client_code,

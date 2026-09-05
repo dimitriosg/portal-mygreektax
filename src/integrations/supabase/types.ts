@@ -2396,6 +2396,7 @@ export type Database = {
           current_status: string | null;
           delivered_at: string | null;
           last_activity_at: string | null;
+          last_touch_at: string | null;
           lead_created_at: string | null;
           lost_at: string | null;
           next_action: string | null;

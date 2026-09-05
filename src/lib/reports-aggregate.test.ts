@@ -62,6 +62,7 @@ function lead(over: Partial<ReportLeadRow> = {}): ReportLeadRow {
     lost_at: null,
     parked_at: null,
     last_activity_at: "2026-08-20T09:00:00Z",
+    last_touch_at: "2026-08-20T09:00:00Z",
     next_action: null,
     next_action_date: null,
     ...over,
@@ -292,21 +293,63 @@ describe("watchlistFrom", () => {
     expect(w.quotedNotPaid.map((l) => l.clientId)).toEqual(["chase"]);
   });
 
-  it("uses created_at for a lead that has never had activity recorded", () => {
+  it("does not call a lead quiet when something touched it, whatever last_activity says", () => {
+    // Both of these were on the real list: reported 62 and 36 days quiet on the
+    // day their own jobs were moving, because clients.last_activity is set on
+    // half the table and the fallback was the lead's birthday.
+    const leads = [
+      lead({
+        client_id: "busy",
+        current_stage: "Active",
+        last_activity_at: null,
+        lead_created_at: "2026-07-05T00:00:00Z",
+        last_touch_at: "2026-09-04T00:00:00Z",
+      }),
+      lead({
+        client_id: "stale-column",
+        current_stage: "Active",
+        last_activity_at: "2026-07-31T00:00:00Z",
+        last_touch_at: "2026-09-04T00:00:00Z",
+      }),
+    ];
+    expect(watchlistFrom([], leads, now).goneQuiet).toHaveLength(0);
+  });
+
+  it("still surfaces a lead that genuinely nothing has touched", () => {
     const leads = [
       lead({
         client_id: "quiet",
         current_stage: "Quoted",
         last_activity_at: null,
         lead_created_at: "2026-06-01T00:00:00Z",
+        last_touch_at: "2026-06-01T00:00:00Z",
+      }),
+      lead({ client_id: "fresh", current_stage: "Quoted", last_touch_at: "2026-09-01T00:00:00Z" }),
+    ];
+    expect(watchlistFrom([], leads, now).goneQuiet.map((l) => l.clientId)).toEqual(["quiet"]);
+  });
+
+  it("does not chase a completed client for a deposit", () => {
+    // Five of these were on the real list. They have no Active milestone —
+    // their work predates the stage log — but they were delivered and
+    // completed, so the deposit plainly arrived.
+    const leads = [
+      lead({
+        client_id: "completed",
+        current_stage: "Complete",
+        active_at: null,
+        complete_at: "2026-08-07T00:00:00Z",
       }),
       lead({
-        client_id: "fresh",
-        current_stage: "Quoted",
-        last_activity_at: "2026-09-01T00:00:00Z",
+        client_id: "delivered",
+        current_stage: "Complete",
+        active_at: null,
+        delivered_at: "2026-08-07T00:00:00Z",
       }),
+      // Complete by stage alone, with no milestone recorded at all.
+      lead({ client_id: "stage-only", current_stage: "Complete", active_at: null }),
+      lead({ client_id: "genuine", current_stage: "Quoted", active_at: null }),
     ];
-    const w = watchlistFrom([], leads, now);
-    expect(w.goneQuiet.map((l) => l.clientId)).toEqual(["quiet"]);
+    expect(watchlistFrom([], leads, now).quotedNotPaid.map((l) => l.clientId)).toEqual(["genuine"]);
   });
 });
