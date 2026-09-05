@@ -20,14 +20,15 @@ import { formatEuro, formatPct } from "@/lib/reports-format";
 
 // Palette checked for colourblind separation and contrast, assigned in fixed
 // order and never cycled: a series keeps its colour when the data changes.
-// Cancelled work is deliberately not in this set — it is muted, because it is
-// context for the live book rather than part of it.
+// Cancelled work has no colour here because it is no longer plotted at all.
 const SERIES = {
   completed: "#2a78d6",
   inProgress: "#eb6834",
   open: "#1baf7a",
+  // Margin is not another slice of revenue, it is a different measure of the
+  // same month, so it gets its own hue and its own bar rather than a segment.
+  margin: "#8E44AD",
 } as const;
-const CANCELLED = "var(--muted-foreground)";
 
 /** 2026-08-01 → "Aug 26". */
 function monthLabel(iso: string): string {
@@ -51,7 +52,7 @@ type MonthlyDatum = {
   Completed: number;
   "In Progress": number;
   Open: number;
-  Cancelled: number;
+  Margin: number;
 };
 
 export function MonthlyRevenueChart({ rows }: { rows: ReportMonthlyRow[] }) {
@@ -60,7 +61,7 @@ export function MonthlyRevenueChart({ rows }: { rows: ReportMonthlyRow[] }) {
     Completed: r.completedRetail,
     "In Progress": r.inProgressRetail,
     Open: r.openRetail,
-    Cancelled: r.cancelledRetail,
+    Margin: r.grossMargin,
   }));
 
   return (
@@ -70,8 +71,9 @@ export function MonthlyRevenueChart({ rows }: { rows: ReportMonthlyRow[] }) {
           Revenue on the books by month
         </div>
         <p className="mb-3 text-xs text-muted-foreground">
-          Month comes from the date the job was sent, falling back to when it was created. Cancelled
-          work sits beside the live stack, not inside it.
+          Month comes from the date the job was sent, falling back to when it was created. The stack
+          is revenue by status; the purple bar beside it is the gross margin inside that revenue.
+          Cancelled work is excluded entirely.
         </p>
         {data.length === 0 ? (
           <EmptyPlot />
@@ -116,13 +118,10 @@ export function MonthlyRevenueChart({ rows }: { rows: ReportMonthlyRow[] }) {
                   stroke="var(--card)"
                   radius={[4, 4, 0, 0]}
                 />
-                <Bar
-                  dataKey="Cancelled"
-                  stackId="cancelled"
-                  fill={CANCELLED}
-                  fillOpacity={0.35}
-                  radius={[4, 4, 0, 0]}
-                />
+                {/* Its own stackId, so it stands beside the revenue stack
+                    rather than adding to it — margin is a part of that revenue,
+                    and stacking it would double-count the month. */}
+                <Bar dataKey="Margin" stackId="margin" fill={SERIES.margin} radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -216,6 +215,41 @@ function EmptyPlot() {
  * no legend: the steps are stages of the same quantity shrinking, not four
  * different things, and colouring them separately would imply otherwise.
  */
+/**
+ * Draws a step's label inside its own bar, and gives up when the bar is too
+ * short to hold it. A label that overflows a short bar collides with the next
+ * one and reads as belonging to the wrong step. The tooltip carries the same
+ * text, so nothing is lost by staying silent here.
+ */
+function InsideLabel(props: {
+  x?: string | number;
+  y?: string | number;
+  width?: string | number;
+  height?: string | number;
+  value?: string | number;
+}) {
+  const num = (v: string | number | undefined) => (typeof v === "number" ? v : Number(v ?? 0));
+  const x = num(props.x);
+  const y = num(props.y);
+  const width = num(props.width);
+  const height = num(props.height);
+  const text = String(props.value ?? "");
+  // Roughly 6px per character at 11px, plus padding either side.
+  const needed = text.length * 6 + 20;
+  if (!text || width < needed) return null;
+  return (
+    <text
+      x={x + width - 10}
+      y={y + height / 2}
+      textAnchor="end"
+      dominantBaseline="central"
+      style={{ fontSize: 11, fill: "#fff", fontWeight: 500 }}
+    >
+      {text}
+    </text>
+  );
+}
+
 export function FunnelChart({ steps }: { steps: FunnelStep[] }) {
   const data = steps.map((s) => ({
     label: s.label,
@@ -223,7 +257,9 @@ export function FunnelChart({ steps }: { steps: FunnelStep[] }) {
     // Built here rather than in a LabelList formatter, which receives only the
     // value — and two steps can legitimately share a count.
     labelText:
-      s.conversion == null ? `${s.count}` : `${s.count}  ·  ${formatPct(s.conversion)} of previous`,
+      s.conversion == null
+        ? `${s.count} leads`
+        : `${s.count}  ·  ${formatPct(s.conversion)} of previous`,
   }));
 
   return (
@@ -244,7 +280,7 @@ export function FunnelChart({ steps }: { steps: FunnelStep[] }) {
               <BarChart
                 data={data}
                 layout="vertical"
-                margin={{ top: 4, right: 150, left: 0, bottom: 4 }}
+                margin={{ top: 4, right: 16, left: 0, bottom: 4 }}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
                 <XAxis type="number" hide />
@@ -260,14 +296,16 @@ export function FunnelChart({ steps }: { steps: FunnelStep[] }) {
                 <Tooltip
                   cursor={{ fill: "var(--muted)", opacity: 0.4 }}
                   contentStyle={TOOLTIP_STYLE}
-                  formatter={(v: number) => [`${v}`, "Leads"]}
+                  // The tooltip is the fallback for a bar too short to hold its
+                  // own label, so it repeats the conversion, not just the count.
+                  formatter={(
+                    _v: number,
+                    _n: string,
+                    item: { payload?: { labelText?: string } },
+                  ) => [item?.payload?.labelText ?? "", "Reached"]}
                 />
                 <Bar dataKey="count" fill={SERIES.completed} radius={[0, 4, 4, 0]} barSize={20}>
-                  <LabelList
-                    dataKey="labelText"
-                    position="right"
-                    style={{ fontSize: 11, fill: "var(--foreground)" }}
-                  />
+                  <LabelList dataKey="labelText" content={InsideLabel} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
