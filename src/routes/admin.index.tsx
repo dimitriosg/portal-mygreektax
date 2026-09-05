@@ -322,6 +322,9 @@ function AdminPage() {
               <Link to="/admin/payments">Payments</Link>
             </Button>
             <Button asChild variant="outline">
+              <Link to="/admin/reports">Reports</Link>
+            </Button>
+            <Button asChild variant="outline">
               <Link to="/admin/tracking-links">Tracking links</Link>
             </Button>
             <Button asChild variant="outline">

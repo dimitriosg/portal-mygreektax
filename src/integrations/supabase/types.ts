@@ -2341,6 +2341,97 @@ export type Database = {
         };
         Relationships: [];
       };
+      v_report_client_concentration: {
+        Row: {
+          client_code: string | null;
+          client_id: string | null;
+          client_name: string | null;
+          gross_margin: number | null;
+          jobs: number | null;
+          retail: number | null;
+          share_of_book: number | null;
+        };
+        Relationships: [];
+      };
+      v_report_data_quality: {
+        Row: {
+          check_key: string | null;
+          label: string | null;
+          value: number | null;
+        };
+        Relationships: [];
+      };
+      v_report_jobs: {
+        Row: {
+          client_code: string | null;
+          client_id: string | null;
+          client_name: string | null;
+          created_at: string | null;
+          date_sent: string | null;
+          gross_margin: number | null;
+          id: string | null;
+          is_cancelled: boolean | null;
+          job_code: string | null;
+          margin_pct: number | null;
+          month: string | null;
+          paid_at: string | null;
+          retail: number | null;
+          service_code: string | null;
+          service_name: string | null;
+          sla_deadline: string | null;
+          status: string | null;
+          wholesale: number | null;
+          wholesale_missing: boolean | null;
+        };
+        Relationships: [];
+      };
+      v_report_lead_lifecycle: {
+        Row: {
+          active_at: string | null;
+          client_code: string | null;
+          client_id: string | null;
+          client_name: string | null;
+          complete_at: string | null;
+          current_stage: string | null;
+          current_status: string | null;
+          delivered_at: string | null;
+          last_activity_at: string | null;
+          last_touch_at: string | null;
+          lead_created_at: string | null;
+          lost_at: string | null;
+          next_action: string | null;
+          next_action_date: string | null;
+          parked_at: string | null;
+          quoted_at: string | null;
+          source: string | null;
+        };
+        Relationships: [];
+      };
+      v_report_monthly: {
+        Row: {
+          cancelled_retail: number | null;
+          completed_retail: number | null;
+          gross_margin: number | null;
+          in_progress_retail: number | null;
+          jobs: number | null;
+          month: string | null;
+          open_retail: number | null;
+          retail: number | null;
+        };
+        Relationships: [];
+      };
+      v_report_pipeline: {
+        Row: {
+          gross_margin: number | null;
+          jobs: number | null;
+          margin_pct: number | null;
+          missing_wholesale: number | null;
+          retail: number | null;
+          status: string | null;
+          wholesale: number | null;
+        };
+        Relationships: [];
+      };
     };
     Functions: {
       archive_case: { Args: { p_conversation_id: string }; Returns: undefined };

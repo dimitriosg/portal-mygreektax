@@ -46,6 +46,7 @@ import { Route as ApiCheckoutSessionRouteImport } from './routes/api/checkout-se
 import { Route as AdminTrackingLinksRouteImport } from './routes/admin.tracking-links'
 import { Route as AdminSecureKeysRouteImport } from './routes/admin.secure-keys'
 import { Route as AdminSecureInboxRouteImport } from './routes/admin.secure-inbox'
+import { Route as AdminReportsRouteImport } from './routes/admin.reports'
 import { Route as AdminPaymentsRouteImport } from './routes/admin.payments'
 import { Route as AdminChangeRequestsRouteImport } from './routes/admin.change-requests'
 
@@ -235,6 +236,11 @@ const AdminSecureInboxRoute = AdminSecureInboxRouteImport.update({
   path: '/secure-inbox',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminReportsRoute = AdminReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminPaymentsRoute = AdminPaymentsRouteImport.update({
   id: '/payments',
   path: '/payments',
@@ -259,6 +265,7 @@ export interface FileRoutesByFullPath {
   '/unsubscribe': typeof UnsubscribeRoute
   '/admin/change-requests': typeof AdminChangeRequestsRoute
   '/admin/payments': typeof AdminPaymentsRoute
+  '/admin/reports': typeof AdminReportsRoute
   '/admin/secure-inbox': typeof AdminSecureInboxRoute
   '/admin/secure-keys': typeof AdminSecureKeysRoute
   '/admin/tracking-links': typeof AdminTrackingLinksRoute
@@ -299,6 +306,7 @@ export interface FileRoutesByTo {
   '/unsubscribe': typeof UnsubscribeRoute
   '/admin/change-requests': typeof AdminChangeRequestsRoute
   '/admin/payments': typeof AdminPaymentsRoute
+  '/admin/reports': typeof AdminReportsRoute
   '/admin/secure-inbox': typeof AdminSecureInboxRoute
   '/admin/secure-keys': typeof AdminSecureKeysRoute
   '/admin/tracking-links': typeof AdminTrackingLinksRoute
@@ -341,6 +349,7 @@ export interface FileRoutesById {
   '/unsubscribe': typeof UnsubscribeRoute
   '/admin/change-requests': typeof AdminChangeRequestsRoute
   '/admin/payments': typeof AdminPaymentsRoute
+  '/admin/reports': typeof AdminReportsRoute
   '/admin/secure-inbox': typeof AdminSecureInboxRoute
   '/admin/secure-keys': typeof AdminSecureKeysRoute
   '/admin/tracking-links': typeof AdminTrackingLinksRoute
@@ -384,6 +393,7 @@ export interface FileRouteTypes {
     | '/unsubscribe'
     | '/admin/change-requests'
     | '/admin/payments'
+    | '/admin/reports'
     | '/admin/secure-inbox'
     | '/admin/secure-keys'
     | '/admin/tracking-links'
@@ -424,6 +434,7 @@ export interface FileRouteTypes {
     | '/unsubscribe'
     | '/admin/change-requests'
     | '/admin/payments'
+    | '/admin/reports'
     | '/admin/secure-inbox'
     | '/admin/secure-keys'
     | '/admin/tracking-links'
@@ -465,6 +476,7 @@ export interface FileRouteTypes {
     | '/unsubscribe'
     | '/admin/change-requests'
     | '/admin/payments'
+    | '/admin/reports'
     | '/admin/secure-inbox'
     | '/admin/secure-keys'
     | '/admin/tracking-links'
@@ -791,6 +803,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminSecureInboxRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/reports': {
+      id: '/admin/reports'
+      path: '/reports'
+      fullPath: '/admin/reports'
+      preLoaderRoute: typeof AdminReportsRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/payments': {
       id: '/admin/payments'
       path: '/payments'
@@ -811,6 +830,7 @@ declare module '@tanstack/react-router' {
 interface AdminRouteChildren {
   AdminChangeRequestsRoute: typeof AdminChangeRequestsRoute
   AdminPaymentsRoute: typeof AdminPaymentsRoute
+  AdminReportsRoute: typeof AdminReportsRoute
   AdminSecureInboxRoute: typeof AdminSecureInboxRoute
   AdminSecureKeysRoute: typeof AdminSecureKeysRoute
   AdminTrackingLinksRoute: typeof AdminTrackingLinksRoute
@@ -820,6 +840,7 @@ interface AdminRouteChildren {
 const AdminRouteChildren: AdminRouteChildren = {
   AdminChangeRequestsRoute: AdminChangeRequestsRoute,
   AdminPaymentsRoute: AdminPaymentsRoute,
+  AdminReportsRoute: AdminReportsRoute,
   AdminSecureInboxRoute: AdminSecureInboxRoute,
   AdminSecureKeysRoute: AdminSecureKeysRoute,
   AdminTrackingLinksRoute: AdminTrackingLinksRoute,
