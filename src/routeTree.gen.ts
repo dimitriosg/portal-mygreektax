@@ -49,6 +49,7 @@ import { Route as AdminSecureInboxRouteImport } from './routes/admin.secure-inbo
 import { Route as AdminReportsRouteImport } from './routes/admin.reports'
 import { Route as AdminPaymentsRouteImport } from './routes/admin.payments'
 import { Route as AdminChangeRequestsRouteImport } from './routes/admin.change-requests'
+import { Route as LeadsClientCodeCorrespondenceRouteImport } from './routes/leads_.$clientCode.correspondence'
 
 const UnsubscribeRoute = UnsubscribeRouteImport.update({
   id: '/unsubscribe',
@@ -251,6 +252,12 @@ const AdminChangeRequestsRoute = AdminChangeRequestsRouteImport.update({
   path: '/change-requests',
   getParentRoute: () => AdminRoute,
 } as any)
+const LeadsClientCodeCorrespondenceRoute =
+  LeadsClientCodeCorrespondenceRouteImport.update({
+    id: '/leads_/$clientCode/correspondence',
+    path: '/leads/$clientCode/correspondence',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -293,6 +300,7 @@ export interface FileRoutesByFullPath {
   '/webhooks/send-approved': typeof WebhooksSendApprovedRoute
   '/webhooks/summarize-case': typeof WebhooksSummarizeCaseRoute
   '/admin/': typeof AdminIndexRoute
+  '/leads/$clientCode/correspondence': typeof LeadsClientCodeCorrespondenceRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -334,6 +342,7 @@ export interface FileRoutesByTo {
   '/webhooks/send-approved': typeof WebhooksSendApprovedRoute
   '/webhooks/summarize-case': typeof WebhooksSummarizeCaseRoute
   '/admin': typeof AdminIndexRoute
+  '/leads/$clientCode/correspondence': typeof LeadsClientCodeCorrespondenceRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -377,6 +386,7 @@ export interface FileRoutesById {
   '/webhooks/send-approved': typeof WebhooksSendApprovedRoute
   '/webhooks/summarize-case': typeof WebhooksSummarizeCaseRoute
   '/admin/': typeof AdminIndexRoute
+  '/leads_/$clientCode/correspondence': typeof LeadsClientCodeCorrespondenceRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -421,6 +431,7 @@ export interface FileRouteTypes {
     | '/webhooks/send-approved'
     | '/webhooks/summarize-case'
     | '/admin/'
+    | '/leads/$clientCode/correspondence'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -462,6 +473,7 @@ export interface FileRouteTypes {
     | '/webhooks/send-approved'
     | '/webhooks/summarize-case'
     | '/admin'
+    | '/leads/$clientCode/correspondence'
   id:
     | '__root__'
     | '/'
@@ -504,6 +516,7 @@ export interface FileRouteTypes {
     | '/webhooks/send-approved'
     | '/webhooks/summarize-case'
     | '/admin/'
+    | '/leads_/$clientCode/correspondence'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -540,6 +553,7 @@ export interface RootRouteChildren {
   WebhooksPartnerSyncRoute: typeof WebhooksPartnerSyncRoute
   WebhooksSendApprovedRoute: typeof WebhooksSendApprovedRoute
   WebhooksSummarizeCaseRoute: typeof WebhooksSummarizeCaseRoute
+  LeadsClientCodeCorrespondenceRoute: typeof LeadsClientCodeCorrespondenceRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -824,6 +838,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminChangeRequestsRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/leads_/$clientCode/correspondence': {
+      id: '/leads_/$clientCode/correspondence'
+      path: '/leads/$clientCode/correspondence'
+      fullPath: '/leads/$clientCode/correspondence'
+      preLoaderRoute: typeof LeadsClientCodeCorrespondenceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -883,6 +904,7 @@ const rootRouteChildren: RootRouteChildren = {
   WebhooksPartnerSyncRoute: WebhooksPartnerSyncRoute,
   WebhooksSendApprovedRoute: WebhooksSendApprovedRoute,
   WebhooksSummarizeCaseRoute: WebhooksSummarizeCaseRoute,
+  LeadsClientCodeCorrespondenceRoute: LeadsClientCodeCorrespondenceRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

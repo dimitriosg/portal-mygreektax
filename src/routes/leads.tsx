@@ -27,6 +27,7 @@ import { useAuth } from "@/lib/auth-context";
 import { getErrorMessage, isAuthSessionError } from "@/lib/auth-errors";
 import { Card, CardContent } from "@/components/ui/card";
 import { JobEditDialog } from "@/components/job-edit-dialog";
+import { CorrespondenceView } from "@/components/correspondence-view";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -55,6 +56,11 @@ import type {
 export const Route = createFileRoute("/leads")({ component: LeadsPage });
 
 const COLLAPSED_STORAGE_KEY = "mgt-leads-collapsed-stages";
+
+// The three views this page can show. Correspondence is a third member of the
+// same toggle group rather than a separate action: it is another way of looking
+// at the same pipeline, not something you do to it.
+type LeadsView = "board" | "list" | "correspondence";
 
 // Color coding per stage — used for column headers, the stage select, and
 // badges so a stage is recognizable at a glance. Delegates to the shared
@@ -306,7 +312,7 @@ function LeadsPage() {
     return map;
   }, [jobs]);
 
-  const [view, setView] = useState<"board" | "list">("board");
+  const [view, setView] = useState<LeadsView>("board");
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState<string>("");
   const [editingLead, setEditingLead] = useState<Lead | null>(null);
@@ -429,43 +435,54 @@ function LeadsPage() {
             >
               List by status
             </button>
+            <button
+              onClick={() => setView("correspondence")}
+              className={`rounded px-3 py-1 ${view === "correspondence" ? "bg-muted font-medium" : "text-muted-foreground"}`}
+            >
+              Correspondence
+            </button>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <Card>
-          <CardContent className="py-3">
-            <div className="text-xs text-muted-foreground">Total leads</div>
-            <div className="text-lg font-semibold">{stats.total}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="py-3">
-            <div className="text-xs text-muted-foreground">Active pipeline value</div>
-            <div className="text-lg font-semibold">{leadValueLabel(stats.activeValue)}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="py-3">
-            <div className="text-xs text-muted-foreground">Completed (all-time)</div>
-            <div className="text-lg font-semibold">{stats.completeCount}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="py-3">
-            <div className="flex items-center gap-1 text-xs text-muted-foreground">
-              {stats.overdueCount > 0 && <AlertTriangle className="h-3 w-3 text-destructive" />}
-              Overdue follow-ups
-            </div>
-            <div
-              className={`text-lg font-semibold ${stats.overdueCount > 0 ? "text-destructive" : ""}`}
-            >
-              {stats.overdueCount}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Pipeline funnel stats — hidden on the correspondence view, which counts
+          messages rather than money and would otherwise be topped by four
+          numbers that answer a different question. */}
+      {view !== "correspondence" && (
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <Card>
+            <CardContent className="py-3">
+              <div className="text-xs text-muted-foreground">Total leads</div>
+              <div className="text-lg font-semibold">{stats.total}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="py-3">
+              <div className="text-xs text-muted-foreground">Active pipeline value</div>
+              <div className="text-lg font-semibold">{leadValueLabel(stats.activeValue)}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="py-3">
+              <div className="text-xs text-muted-foreground">Completed (all-time)</div>
+              <div className="text-lg font-semibold">{stats.completeCount}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="py-3">
+              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                {stats.overdueCount > 0 && <AlertTriangle className="h-3 w-3 text-destructive" />}
+                Overdue follow-ups
+              </div>
+              <div
+                className={`text-lg font-semibold ${stats.overdueCount > 0 ? "text-destructive" : ""}`}
+              >
+                {stats.overdueCount}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {errors.map(({ label, error }) => (
         <Card key={label}>
@@ -475,7 +492,12 @@ function LeadsPage() {
         </Card>
       ))}
 
-      <div className="flex flex-wrap items-center gap-2">
+      {/* Lead search and stage filter. Both drive filteredLeads, which the
+          correspondence table does not read, so on that view they would be
+          controls that visibly do nothing. */}
+      <div
+        className={`flex flex-wrap items-center gap-2 ${view === "correspondence" ? "hidden" : ""}`}
+      >
         <Input
           placeholder="Search name, email, client code…"
           value={search}
@@ -498,7 +520,9 @@ function LeadsPage() {
         )}
       </div>
 
-      {leadsQ.isLoading ? (
+      {view === "correspondence" ? (
+        <CorrespondenceView isAdmin={!!isAdmin} sessionReady={sessionReady} />
+      ) : leadsQ.isLoading ? (
         <p className="text-sm text-muted-foreground">Loading leads…</p>
       ) : view === "board" ? (
         <DndContext

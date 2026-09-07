@@ -171,6 +171,9 @@ Notes:
 - `VITE_ENABLE_DEBUG_DIAGNOSTICS` stays `false`. Enable it only for temporary local or preview troubleshooting, never left on in production.
 - `LEAD_INTAKE_SECRET` is checked against the `X-Lead-Intake-Secret` header on `/webhooks/lead-intake`. Generate a long random value, set it here and as the header value in the Make HTTP module, and never commit the real value.
 - `PLAUSIBLE_API_KEY` is optional, needed only for the analytics panel.
+- `N8N_GMAIL_SYNC_URL` and `N8N_GMAIL_SYNC_SECRET` drive the Refresh button on the Correspondence view of `/leads`, and both are set in Cloudflare (never here). The URL is the **Portal Refresh Requested** webhook on n8n workflow `uSQOKDb9YLNxiIIT` ("20 · Sync Gmail to messages"), which is active and also runs on a schedule at 07:00 and 19:00 Athens. With either variable unset the button renders disabled with the reason on it rather than silently doing nothing.
+
+  The secret is sent as the HTTP header `X-Mgt-Gmail-Sync-Secret`, which is unique to this sync and shared with no other workflow. n8n's header-auth credential has two fields the form labels "Name" — the credential's display name, and the name of the header the caller must send — and it is the **second** that has to read `X-Mgt-Gmail-Sync-Secret`. Putting the Cloudflare variable name there instead rejects every request with a 403 identical to a wrong value, so the portal names both possibilities in the error rather than leaving you to guess.
 
 Some server secrets are set directly in Cloudflare and are deliberately not in `.env.example`: the Brain endpoint and shared secret used by `/webhooks/generate-draft`, and the Mailgun credentials used by `/webhooks/send-approved`. Treat the Cloudflare dashboard as the source of truth for those.
 
@@ -200,6 +203,8 @@ A direct commit to `main` is a deliberate emergency decision, not the default.
 Supabase is the system of record. Migrations live in `supabase/migrations/`, and this is the canonical migration home for the whole project, since it is the larger and better ordered set. Schema changes are committed as migration files, not run only in the SQL editor, so they are reproducible.
 
 Known trap: `src/integrations/supabase/20260721_link_leads_to_cases_on_insert.sql` is a migration sitting outside `supabase/migrations/`, so no tool will ever apply it. Do not assume it is live.
+
+Correspondence views: `public.v_case_messages` resolves `public.messages` to a case, and `public.v_case_correspondence` aggregates it to one row per case. Both are `security_invoker` and granted to `service_role` only, because `public.messages` has RLS on with zero policies — it holds client correspondence, which has carried a TAXISnet credential in plaintext before now (one July row, redacted by #126) and could again. Read them through a server function, never from the browser client. `public.sync_runs` records when a background sync last ran, which is a different question from when a row last landed and is not derivable from the synced data.
 
 The `context` schema is a mirror, not a system of record. It holds Claude memory files and PIPELINE project docs, pushed in by a scheduled Claude session three times a day on weekdays, and read by n8n through `context.mgt_documents`. Never hand-edit those tables, the next sync overwrites them. It is context, not canon: `public.knowledge_base` remains the only source a client-facing draft may quote as settled tax fact.
 
