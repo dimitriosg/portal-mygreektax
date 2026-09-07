@@ -54,6 +54,29 @@
 -- itself matches the pattern and is replaced by an identical marker. Verified
 -- against the live row before this file was written.
 --
+-- THE VALUE IS ON THE SAME LINE AS ITS LABEL, AND THAT WAS CHECKED
+-- The separator class is `[[:blank:]]` (space and tab), not `[[:space:]]`, so
+-- the pattern deliberately does not cross a newline. That is the safe direction
+-- for an irreversible rewrite: a class that swallowed newlines would consume the
+-- following line whenever a label happened to end one. It does mean a
+-- hypothetical `Password:\nvalue` would not be redacted, so the shape of this
+-- row was confirmed rather than assumed, before and after running it:
+--
+--   * Both credential lines carry their value inline. No label in this row is
+--     followed by a line break before its value.
+--   * Length went 2434 -> 2458. That delta of +24 is exactly
+--     2 * len('[redacted 2026-09-07]') - (8 + 10), the two markers minus the two
+--     values, which proves the rewrite consumed the credentials and nothing else
+--     on those lines.
+--   * Both credential lines now end at the marker: nothing was left behind, and
+--     no trailing content was eaten.
+--   * The opening line, the consent sentence, the AFM and AMKA labels and the
+--     paragraph that follows are all still present.
+--
+-- Anyone adapting this file for another row must repeat that check rather than
+-- inherit the conclusion: the same-line assumption is a fact about this message,
+-- not a property of the pattern.
+--
 -- NOT REVERSIBLE, by design. The original text remains in the Gmail mailbox the
 -- sync reads from, but it is not recoverable from Supabase once this has run.
 --
