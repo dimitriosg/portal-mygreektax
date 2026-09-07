@@ -2204,6 +2204,39 @@ export type Database = {
         };
         Relationships: [];
       };
+      sync_runs: {
+        Row: {
+          error: string | null;
+          finished_at: string | null;
+          id: string;
+          rows_written: number;
+          source: string;
+          started_at: string;
+          status: string;
+          triggered_by: string;
+        };
+        Insert: {
+          error?: string | null;
+          finished_at?: string | null;
+          id?: string;
+          rows_written?: number;
+          source: string;
+          started_at?: string;
+          status?: string;
+          triggered_by?: string;
+        };
+        Update: {
+          error?: string | null;
+          finished_at?: string | null;
+          id?: string;
+          rows_written?: number;
+          source?: string;
+          started_at?: string;
+          status?: string;
+          triggered_by?: string;
+        };
+        Relationships: [];
+      };
       tracking_link_opens: {
         Row: {
           airtable_job_id: string | null;
@@ -2323,6 +2356,41 @@ export type Database = {
             referencedColumns: ["id"];
           },
         ];
+      };
+      v_case_correspondence: {
+        Row: {
+          any_last: string | null;
+          client_code: string | null;
+          client_id: string | null;
+          client_in: number | null;
+          client_last: string | null;
+          client_name: string | null;
+          client_out: number | null;
+          partner_in: number | null;
+          partner_last: string | null;
+          partner_out: number | null;
+          stage: string | null;
+        };
+        Relationships: [];
+      };
+      v_case_messages: {
+        Row: {
+          client_code: string | null;
+          client_id: string | null;
+          client_name: string | null;
+          direction: string | null;
+          from_addr: string | null;
+          gmail_url: string | null;
+          message_id: string | null;
+          party: string | null;
+          snippet: string | null;
+          stage: string | null;
+          subject: string | null;
+          thread_id: string | null;
+          to_addr: string | null;
+          ts: string | null;
+        };
+        Relationships: [];
       };
       v_partner_appendix: {
         Row: {
