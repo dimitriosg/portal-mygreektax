@@ -264,7 +264,7 @@ export const requestGmailSync = createServerFn({ method: "POST" })
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Mgt-Portal-Secret": secret,
+          "X-Mgt-Gmail-Sync-Secret": secret,
         },
         body: JSON.stringify({ source: GMAIL_SOURCE, run_id: runId, triggered_by: "portal" }),
       });
@@ -272,7 +272,7 @@ export const requestGmailSync = createServerFn({ method: "POST" })
         // 401/403 has exactly one cause worth naming. n8n's header-auth
         // credential holds two fields, both labelled "Name" in its form: the
         // credential's own display name, and the name of the HTTP header the
-        // caller must send. Putting N8N_GMAIL_SYNC_SECRET — the name of the
+        // caller must send: X-Mgt-Gmail-Sync-Secret. Putting N8N_GMAIL_SYNC_SECRET — the name of the
         // Cloudflare variable holding the value — in the second one produces a
         // rejection identical to a wrong value, and the two are impossible to
         // tell apart from the outside, because a missing header and a bad one
@@ -280,7 +280,7 @@ export const requestGmailSync = createServerFn({ method: "POST" })
         // making someone guess which half is wrong.
         const rejectedAuth = res.status === 401 || res.status === 403;
         const detail = rejectedAuth
-          ? `n8n rejected the shared secret (${res.status}). Its header-auth credential must have Name set to the header X-Mgt-Portal-Secret, and Value equal to N8N_GMAIL_SYNC_SECRET in Cloudflare.`
+          ? `n8n rejected the shared secret (${res.status}). Its header-auth credential must have Name set to the header X-Mgt-Gmail-Sync-Secret, and Value equal to N8N_GMAIL_SYNC_SECRET in Cloudflare.`
           : `n8n responded ${res.status}`;
         console.error("[gmail-sync] webhook rejected", { status: res.status, runId });
         // Close the row out as failed rather than leaving it on 'running'. The
