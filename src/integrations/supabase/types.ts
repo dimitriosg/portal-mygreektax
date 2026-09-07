@@ -2503,6 +2503,10 @@ export type Database = {
     };
     Functions: {
       archive_case: { Args: { p_conversation_id: string }; Returns: undefined };
+      claim_gmail_sync_slot: {
+        Args: { p_cooldown_seconds?: number };
+        Returns: string | null;
+      };
       confirm_payment: {
         Args: { p_external_id?: string; p_source?: string; p_token: string };
         Returns: {

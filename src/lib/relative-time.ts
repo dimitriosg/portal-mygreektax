@@ -27,8 +27,15 @@ export function relativeTime(iso: string | null | undefined, now: Date = new Dat
   if (hrs < 24) return `${hrs} hour${hrs === 1 ? "" : "s"} ago`;
   const days = Math.floor(hrs / 24);
   if (days < 30) return `${days} day${days === 1 ? "" : "s"} ago`;
-  const months = Math.floor(days / 30);
-  if (months < 12) return `${months} month${months === 1 ? "" : "s"} ago`;
+  // The boundary is in days, not months. Deciding it on `months < 12` leaves a
+  // five-day hole: 360 to 364 days is 12 whole 30-day months, so it fell
+  // through to the year branch and floor(360/365) printed "0 years ago". That
+  // was live in admin-partners' "Last seen" column before this helper moved
+  // here, and it now also feeds the correspondence freshness line.
+  if (days < 365) {
+    const months = Math.floor(days / 30);
+    return `${months} month${months === 1 ? "" : "s"} ago`;
+  }
   const years = Math.floor(days / 365);
   return `${years} year${years === 1 ? "" : "s"} ago`;
 }

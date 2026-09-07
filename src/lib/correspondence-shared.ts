@@ -378,25 +378,46 @@ export function groupConsecutiveThreads(messages: CaseMessageRow[]): ThreadBlock
   return blocks;
 }
 
+/** Escape a user-typed search term so it is matched literally, not as a pattern. */
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 /**
  * Highlight ranges for a search term inside one string.
  *
  * Returned as offsets rather than markup so the caller decides the element and
  * the class, and so this stays testable without a DOM. Case-insensitive,
  * non-overlapping, left to right.
+ *
+ * WHY THE OFFSETS COME FROM A REGEX ON THE ORIGINAL STRING.
+ *
+ * The obvious version — lowercase both sides and indexOf — returns offsets in
+ * the lowercased string, and the caller slices the ORIGINAL. Those two
+ * coordinate spaces are not the same, because lowercasing can change length:
+ * 'İ'.toLowerCase() is two code units, not one. So highlightRanges('İx', 'x')
+ * used to return [2, 3], and slicing the original at [2, 3] yields '' — the
+ * match rendered empty and the matched character was dropped from the output
+ * entirely. Matching against the original with the `i` flag keeps every offset
+ * in the space the caller actually uses.
+ *
+ * One deliberate behaviour change comes with it: `i` does not fold 'i' onto
+ * 'İ', where lowercasing did. Greek and Turkish text is common in this mailbox,
+ * so it is asserted in the tests rather than left to be rediscovered.
  */
 export function highlightRanges(text: string, needle: string): Array<[number, number]> {
   const term = needle.trim();
   if (!term) return [];
-  const hay = text.toLowerCase();
-  const term_ = term.toLowerCase();
+  const pattern = new RegExp(escapeRegExp(term), "gi");
   const out: Array<[number, number]> = [];
-  let from = 0;
-  for (;;) {
-    const at = hay.indexOf(term_, from);
-    if (at === -1) break;
-    out.push([at, at + term_.length]);
-    from = at + term_.length;
+  for (let match = pattern.exec(text); match !== null; match = pattern.exec(text)) {
+    // A zero-length match cannot happen with an escaped non-empty term, but the
+    // guard keeps the loop from spinning if that ever stops being true.
+    if (match[0].length === 0) {
+      pattern.lastIndex += 1;
+      continue;
+    }
+    out.push([match.index, match.index + match[0].length]);
   }
   return out;
 }

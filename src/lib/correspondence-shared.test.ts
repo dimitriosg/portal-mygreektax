@@ -421,4 +421,34 @@ describe("highlightRanges", () => {
       [2, 4],
     ]);
   });
+
+  // The offsets are consumed by slicing the ORIGINAL string, so they have to be
+  // in the original's coordinate space. Lowercasing can change length —
+  // 'İ'.toLowerCase() is two code units — which used to shift every offset
+  // after it and render the match as an empty <mark>.
+  it("returns offsets into the original string, not a lowercased copy", () => {
+    expect("İ".toLowerCase().length).toBe(2);
+    expect(highlightRanges("İx", "x")).toEqual([[1, 2]]);
+    const text = "İİİ afm";
+    const [range] = highlightRanges(text, "afm");
+    expect(text.slice(range[0], range[1])).toBe("afm");
+  });
+
+  it("keeps offsets usable on Greek text, which this mailbox is full of", () => {
+    const text = "Στείλε μου τα στοιχεία του ακινήτου";
+    const [range] = highlightRanges(text, "ΣΤΟΙΧΕΊΑ");
+    expect(text.slice(range[0], range[1])).toBe("στοιχεία");
+  });
+
+  it("treats the term literally rather than as a regular expression", () => {
+    expect(highlightRanges("a.c and abc", "a.c")).toEqual([[0, 3]]);
+    expect(highlightRanges("cost is 100 (net)", "(net)")).toEqual([[12, 17]]);
+  });
+
+  // Documented rather than asserted as desirable: matching on the original with
+  // the `i` flag does not fold dotless/dotted i the way lowercasing did.
+  it("does not fold plain i onto İ", () => {
+    expect(highlightRanges("İstanbul", "i")).toEqual([]);
+    expect(highlightRanges("İstanbul", "İ")).toEqual([[0, 1]]);
+  });
 });

@@ -149,13 +149,15 @@ export const getCaseCorrespondence = createServerFn({ method: "GET" })
 //
 // THE CONTRACT WITH n8n, WHEN IT IS WIRED.
 //
-// This function creates the sync_runs row itself, then POSTs `run_id` to the
-// webhook. n8n must therefore UPDATE the row it is given rather than inserting
-// its own, and insert one only for its own scheduled runs. The row is created
-// here rather than in n8n for two reasons the portal cannot get any other way:
-// the rate limit below needs a durable record of manual attempts that survives
-// a Worker isolate recycling, and the poll needs to know which row is this run
-// rather than guessing at the newest one and racing the 2-hourly cron.
+// This function creates the sync_runs row itself — through the
+// claim_gmail_sync_slot RPC, which reserves it atomically — and then POSTs
+// `run_id` to the webhook. n8n must therefore UPDATE the row it is given rather
+// than inserting its own, and insert one only for its own scheduled runs. The
+// row is created here rather than in n8n for two reasons the portal cannot get
+// any other way: the rate limit below needs a durable record of manual attempts
+// that survives a Worker isolate recycling, and the poll needs to know which
+// row is this run rather than guessing at the newest one and racing the
+// 2-hourly cron.
 //
 // A row left on 'running' is not swept up by anything. That is intentional: it
 // records that a run was asked for and never reported back, which is exactly
@@ -167,7 +169,7 @@ function isRefreshConfigured(): boolean {
 }
 
 /** One manual run a minute. The sync reads the whole mailbox window each time. */
-const MANUAL_COOLDOWN_MS = 60_000;
+const MANUAL_COOLDOWN_SECONDS = 60;
 
 export type RequestGmailSyncResult =
   | { ok: true; runId: string }
@@ -193,36 +195,29 @@ export const requestGmailSync = createServerFn({ method: "POST" })
       };
     }
 
-    // Rate limit off the database rather than an in-memory map: Workers run
-    // many isolates and an in-memory counter would let one click per isolate
+    // Rate limit in the database rather than an in-memory map: Workers run many
+    // isolates and an in-memory counter would let one click per isolate
     // through. Only manual runs count — the 2-hourly cron must not lock the
     // button out.
-    const since = new Date(Date.now() - MANUAL_COOLDOWN_MS).toISOString();
-    const recent = await supabaseAdmin
-      .from("sync_runs")
-      .select("id")
-      .eq("source", GMAIL_SOURCE)
-      .eq("triggered_by", "portal")
-      .gte("started_at", since)
-      .limit(1);
-    if (recent.error) throw new Error(`Failed to check refresh cooldown: ${recent.error.message}`);
-    if ((recent.data ?? []).length > 0) {
+    //
+    // One RPC rather than a read then an insert. Those were two statements and
+    // therefore two snapshots: two requests arriving together both saw no
+    // recent run, both inserted, and both fired the webhook, which is exactly
+    // what the limit exists to stop. claim_gmail_sync_slot takes a
+    // transaction-level advisory lock, so the second caller waits, sees the
+    // first row, and is refused. A null return means refused.
+    const claim = await supabaseAdmin.rpc("claim_gmail_sync_slot", {
+      p_cooldown_seconds: MANUAL_COOLDOWN_SECONDS,
+    });
+    if (claim.error) throw new Error(`Failed to start refresh: ${claim.error.message}`);
+    const runId = claim.data;
+    if (!runId) {
       return {
         ok: false,
         reason: "rate_limited",
         message: "A manual refresh already ran in the last minute. Give it a moment.",
       };
     }
-
-    const inserted = await supabaseAdmin
-      .from("sync_runs")
-      .insert({ source: GMAIL_SOURCE, status: "running", triggered_by: "portal" })
-      .select("id")
-      .single();
-    if (inserted.error || !inserted.data) {
-      throw new Error(`Failed to record refresh: ${inserted.error?.message ?? "no row returned"}`);
-    }
-    const runId = inserted.data.id;
 
     try {
       const res = await fetch(webhookUrl, {
