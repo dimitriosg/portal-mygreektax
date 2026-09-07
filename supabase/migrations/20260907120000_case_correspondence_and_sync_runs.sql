@@ -73,6 +73,20 @@ alter table public.sync_runs enable row level security;
 -- pre-existing row, a client's TAXISnet password in plaintext; anything that
 -- reads alongside it stays behind the service role. RLS on with zero policies
 -- means authenticated and anon get nothing, and service_role bypasses RLS.
+--
+-- THE REVOKE IS NOT REDUNDANT, AND THIS WAS LEARNED THE HARD WAY.
+--
+-- This Supabase project carries default privileges that grant ALL on every new
+-- table and view in `public` to anon, authenticated and service_role. So a bare
+-- `grant ... to service_role` does not produce "service_role only": it produces
+-- service_role plus two roles nobody intended, including INSERT/UPDATE/DELETE.
+-- RLS still held when this first went in — anon and authenticated read zero rows
+-- from all three objects, verified by probing under `set role` — so nothing
+-- leaked. But the grant would become a live write surface the moment anyone adds
+-- a policy to sync_runs, and a stock Postgres has no such default privileges, so
+-- the mistake is invisible when the migration is tested locally. Revoke first,
+-- then grant exactly what is wanted.
+revoke all on public.sync_runs from anon, authenticated;
 grant select, insert, update on public.sync_runs to service_role;
 
 -- ---------------------------------------------------------------------------
@@ -176,6 +190,7 @@ where t.party in ('client', 'partner');
 comment on view public.v_case_messages is
   'One row per Gmail message that belongs to a case, with party = client | partner. Client mail matches on messages.client_id; partner mail (Chrysostomos, who has no client_id) matches on the CLTnnnn code in the subject against left(client_code,7). The inner join deliberately drops non-case mail — Instagram, bank, AADE, phishing — and partner mail with no code in the subject. snippet is ~300 characters, not the full body.';
 
+revoke all on public.v_case_messages from anon, authenticated;
 grant select on public.v_case_messages to service_role;
 
 -- ---------------------------------------------------------------------------
@@ -218,6 +233,7 @@ group by client_id, client_code, client_name, stage;
 comment on view public.v_case_correspondence is
   'One row per case with correspondence: six counts (client and partner, inbound and outbound) and three last-message timestamps, aggregated from v_case_messages. A case with no messages at all does not appear. client_last or partner_last null means that conversation has no email on record, which is not the same as zero and is rendered as an em-space rather than a date.';
 
+revoke all on public.v_case_correspondence from anon, authenticated;
 grant select on public.v_case_correspondence to service_role;
 
 notify pgrst, 'reload schema';
