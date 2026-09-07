@@ -201,6 +201,8 @@ Supabase is the system of record. Migrations live in `supabase/migrations/`, and
 
 Known trap: `src/integrations/supabase/20260721_link_leads_to_cases_on_insert.sql` is a migration sitting outside `supabase/migrations/`, so no tool will ever apply it. Do not assume it is live.
 
+`public.messages` mirrors Gmail headers and a snippet, written by n8n workflow `uSQOKDb9YLNxiIIT` ("20 · Sync Gmail to messages"). Its `body` is client correspondence, so it can contain whatever a client typed into an email — and once did: one row carried a TAXISnet username and password in plaintext until migration `20260907160000_redact_taxisnet_credential_in_messages.sql` redacted it. The workflow's **Build Message Rows** node now masks credential-shaped text before the insert, keying on the label (`Password:`, `Κωδικός πρόσβασης:`, …) and never on a value, and replacing only the value so the rest of the snippet stays readable. That mask is a security control rather than formatting: if you edit that node, keep it. It is not a substitute for the encrypted route below — a client who should be handing over credentials belongs at `/secure-form/$token`, not in the inbox.
+
 The `context` schema is a mirror, not a system of record. It holds Claude memory files and PIPELINE project docs, pushed in by a scheduled Claude session three times a day on weekdays, and read by n8n through `context.mgt_documents`. Never hand-edit those tables, the next sync overwrites them. It is context, not canon: `public.knowledge_base` remains the only source a client-facing draft may quote as settled tax fact.
 
 ---
