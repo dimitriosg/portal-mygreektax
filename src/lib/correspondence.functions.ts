@@ -170,23 +170,36 @@ export const getCaseCorrespondence = createServerFn({ method: "GET" })
 //
 // THE PORTAL HALF OF A TWO-HALF FEATURE.
 //
-// n8n workflow uSQOKDb9YLNxiIIT ("20 · Sync Gmail to messages") currently has a
-// Schedule Trigger only, is tagged `standby` and is inactive. It cannot be
-// asked to run. Until someone adds a webhook trigger to it and sets the two
-// environment variables below, requestGmailSync refuses cleanly and the page
-// disables the button with the reason on it. Nothing here guesses a URL.
+// The other half is n8n workflow uSQOKDb9YLNxiIIT ("20 · Sync Gmail to
+// messages"), which now carries a POST webhook trigger — "Portal Refresh
+// Requested", behind header auth on X-Mgt-Portal-Secret — alongside its
+// 2-hourly schedule. Two things still gate the button, and both are outside
+// this repository: the workflow is inactive and tagged `standby`, and a
+// webhook only answers once the workflow is activated; and
+// N8N_GMAIL_SYNC_URL / N8N_GMAIL_SYNC_SECRET are unset in Cloudflare. Until
+// then requestGmailSync refuses cleanly and the page disables the button with
+// the reason on it. Nothing here guesses a URL.
 //
-// THE CONTRACT WITH n8n, WHEN IT IS WIRED.
+// THE CONTRACT WITH n8n, AS BUILT.
 //
 // This function creates the sync_runs row itself — through the
 // claim_gmail_sync_slot RPC, which reserves it atomically — and then POSTs
-// `run_id` to the webhook. n8n must therefore UPDATE the row it is given rather
-// than inserting its own, and insert one only for its own scheduled runs. The
+// `run_id` to the webhook. n8n therefore UPDATES the row it is given rather
+// than inserting its own, and inserts one only for its own scheduled runs. The
 // row is created here rather than in n8n for two reasons the portal cannot get
 // any other way: the rate limit below needs a durable record of manual attempts
 // that survives a Worker isolate recycling, and the poll needs to know which
 // row is this run rather than guessing at the newest one and racing the
-// 2-hourly cron.
+// 2-hourly cron. On the n8n side, "Run Context" refuses a request whose
+// `run_id` is not a uuid rather than inventing a row, because a run recorded
+// under some other id would report success against nothing and leave the row
+// this function is polling on 'running' for ever.
+//
+// The cooldown holds one manual run against another, not a manual run against
+// the cron. If the two overlap, both read the same unlogged messages and the
+// second insert hits messages_message_id_uq; n8n continues rather than dying,
+// so the losing run closes as 'failed' with the duplicate-key error and the
+// winning run still writes every message. Visible, and not lossy.
 //
 // A row left on 'running' is not swept up by anything. That is intentional: it
 // records that a run was asked for and never reported back, which is exactly
