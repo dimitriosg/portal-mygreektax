@@ -69,10 +69,14 @@ comment on column public.sync_runs.triggered_by is
 
 alter table public.sync_runs enable row level security;
 
--- No policies. public.messages carries email snippets and, in at least one
--- pre-existing row, a client's TAXISnet password in plaintext; anything that
--- reads alongside it stays behind the service role. RLS on with zero policies
--- means authenticated and anon get nothing, and service_role bypasses RLS.
+-- No policies. public.messages carries client correspondence, which holds
+-- whatever a client chose to type: as this migration was written, one July row
+-- contained a TAXISnet username and password in plaintext. That row was
+-- redacted afterwards (see 20260907160000) and the Gmail sync now masks
+-- credential shapes before insert, but the rule stands on the class of data
+-- rather than on any one row, so anything reading alongside it stays behind the
+-- service role. RLS on with zero policies means authenticated and anon get
+-- nothing, and service_role bypasses RLS.
 --
 -- THE REVOKE IS NOT REDUNDANT, AND THIS WAS LEARNED THE HARD WAY.
 --

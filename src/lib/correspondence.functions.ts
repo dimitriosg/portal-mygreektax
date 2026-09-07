@@ -11,8 +11,11 @@ import type { CaseMessageRow, CorrespondenceRow, SyncRunRow } from "./correspond
 // WHY EVERYTHING GOES THROUGH THE SERVICE ROLE.
 //
 // public.messages has RLS enabled and zero policies, which is deliberate: the
-// table holds email snippets and one pre-existing row contains a client's
-// TAXISnet password in plaintext. Nothing about it is readable by anon or
+// table holds client correspondence, and correspondence carries whatever a
+// client chose to type. One July row held a TAXISnet username and password in
+// plaintext until #126 redacted it, and the Gmail sync now masks credential
+// shapes on the way in — but the posture here does not depend on either of
+// those holding. Nothing about the table is readable by anon or
 // authenticated, so the browser Supabase client cannot read it at all and the
 // two views inherit that. Every read here is supabaseAdmin behind
 // requireAdminAccess, and no snippet is ever exposed to a non-admin session.
