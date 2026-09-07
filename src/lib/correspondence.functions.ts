@@ -171,14 +171,12 @@ export const getCaseCorrespondence = createServerFn({ method: "GET" })
 // THE PORTAL HALF OF A TWO-HALF FEATURE.
 //
 // The other half is n8n workflow uSQOKDb9YLNxiIIT ("20 · Sync Gmail to
-// messages"), which now carries a POST webhook trigger — "Portal Refresh
-// Requested", behind header auth on X-Mgt-Portal-Secret — alongside its
-// 2-hourly schedule. Two things still gate the button, and both are outside
-// this repository: the workflow is inactive and tagged `standby`, and a
-// webhook only answers once the workflow is activated; and
-// N8N_GMAIL_SYNC_URL / N8N_GMAIL_SYNC_SECRET are unset in Cloudflare. Until
-// then requestGmailSync refuses cleanly and the page disables the button with
-// the reason on it. Nothing here guesses a URL.
+// messages"), which carries a POST webhook trigger — "Portal Refresh
+// Requested", behind header auth — alongside a schedule that runs at 07:00 and
+// 19:00 Athens. It is active, and N8N_GMAIL_SYNC_URL / N8N_GMAIL_SYNC_SECRET
+// are set in Cloudflare. With either unset requestGmailSync refuses cleanly
+// and the page disables the button with the reason on it, rather than offering
+// a control that silently does nothing. Nothing here guesses a URL.
 //
 // THE CONTRACT WITH n8n, AS BUILT.
 //
@@ -196,10 +194,10 @@ export const getCaseCorrespondence = createServerFn({ method: "GET" })
 // this function is polling on 'running' for ever.
 //
 // The cooldown holds one manual run against another, not a manual run against
-// the cron. If the two overlap, both read the same unlogged messages and the
-// second insert hits messages_message_id_uq; n8n continues rather than dying,
-// so the losing run closes as 'failed' with the duplicate-key error and the
-// winning run still writes every message. Visible, and not lossy.
+// the schedule. If the two overlap, both read the same unlogged messages and
+// the second insert hits messages_message_id_uq; n8n continues rather than
+// dying, so the losing run closes as 'failed' with the duplicate-key error and
+// the winning run still writes every message. Visible, and not lossy.
 //
 // A row left on 'running' is not swept up by anything. That is intentional: it
 // records that a run was asked for and never reported back, which is exactly
@@ -271,7 +269,19 @@ export const requestGmailSync = createServerFn({ method: "POST" })
         body: JSON.stringify({ source: GMAIL_SOURCE, run_id: runId, triggered_by: "portal" }),
       });
       if (!res.ok) {
-        const detail = `n8n responded ${res.status}`;
+        // 401/403 has exactly one cause worth naming. n8n's header-auth
+        // credential holds two fields, both labelled "Name" in its form: the
+        // credential's own display name, and the name of the HTTP header the
+        // caller must send. Putting N8N_GMAIL_SYNC_SECRET — the name of the
+        // Cloudflare variable holding the value — in the second one produces a
+        // rejection identical to a wrong value, and the two are impossible to
+        // tell apart from the outside, because a missing header and a bad one
+        // both return 403. So say both possibilities out loud rather than
+        // making someone guess which half is wrong.
+        const rejectedAuth = res.status === 401 || res.status === 403;
+        const detail = rejectedAuth
+          ? `n8n rejected the shared secret (${res.status}). Its header-auth credential must have Name set to the header X-Mgt-Portal-Secret, and Value equal to N8N_GMAIL_SYNC_SECRET in Cloudflare.`
+          : `n8n responded ${res.status}`;
         console.error("[gmail-sync] webhook rejected", { status: res.status, runId });
         // Close the row out as failed rather than leaving it on 'running'. The
         // run demonstrably never started, and a stuck row would keep the button
