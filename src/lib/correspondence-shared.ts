@@ -48,6 +48,30 @@ export type CaseMessageRow = {
   gmail_url: string | null;
 };
 
+/**
+ * One row of public.v_case_correspondence_unmatched — a partner message the
+ * matching rule could not attach to exactly one case.
+ *
+ * The page shows the count, not the rows, because the useful fact is "three
+ * partner messages are not on any case" rather than which three. It exists at
+ * all so that an exclusion is a number rather than a silent absence: the
+ * matching rule refuses an ambiguous CLTnnnn prefix rather than attaching the
+ * message to every client that shares it, and a refusal nobody can see is the
+ * same failure as the double it replaced.
+ */
+export type UnmatchedPartnerMessage = {
+  message_id: string | null;
+  thread_id: string | null;
+  direction: string | null;
+  ts: string | null;
+  subject: string | null;
+  subject_clt: string | null;
+  matching_clients: number | null;
+  /** 'no_case_code' — no CLTnnnn in the subject. 'ambiguous_code' — it names more than one client. */
+  reason: string | null;
+  gmail_url: string | null;
+};
+
 /** The latest public.sync_runs row for one source, or null if none has ever run. */
 export type SyncRunRow = {
   id: string;

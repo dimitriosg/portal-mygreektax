@@ -175,6 +175,7 @@ export function CorrespondenceView({ isAdmin, sessionReady }: Props) {
       refreshing={refresh.isPending || polling}
       refreshError={refreshError}
       now={now}
+      unmatched={data.unmatched}
     />
   );
 }

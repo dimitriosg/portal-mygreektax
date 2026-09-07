@@ -134,18 +134,23 @@ grant select, insert, update on public.sync_runs to service_role;
 -- columns undercount silently. That is worth a data-quality count; it is not
 -- one here.
 --
--- KNOWN LIMIT — DUPLICATE CLTnnnn PREFIXES DOUBLE-COUNT.
+-- DUPLICATE CLTnnnn PREFIXES DOUBLE-COUNT — SUPERSEDED BY 20260907170000.
 --
 -- client_code is unique but its first seven characters are not:
 -- 'CLT0041-XX' and 'CLT0041-SO' are two different clients sharing prefix
--- CLT0041. A partner message whose subject says CLT0041 therefore matches both
--- rows and is counted twice, once against each. No partner message mentions
--- CLT0041 today, so the view returns 113 rather than 114, but the hazard is
--- live and it fails in the direction of inflating a count rather than raising
--- an error. It is left in rather than papered over because the data genuinely
--- cannot say which of the two clients such a message is about, and picking one
--- arbitrarily would be a worse answer than a visible double. Fixing it means
--- deciding a tie-break, which is a decision and not a migration.
+-- CLT0041, so as written below a partner message whose subject says CLT0041
+-- matches both rows and is counted twice, once against each. This migration
+-- left that in, reasoning that the data cannot say which of the two clients
+-- such a message is about and that a visible double beats an arbitrary pick.
+--
+-- That reasoning was wrong about what the double costs. It is not only an
+-- inflated count: on the per-case page it puts a message about one client into
+-- another client's conversation, and a case timeline you cannot trust is worse
+-- than one with a gap in it. 20260907170000 recreates the view with the prefix
+-- required to identify exactly one client, and adds
+-- v_case_correspondence_unmatched so the messages it declines to place are a
+-- count on the page rather than a silent drop. No partner message mentions
+-- CLT0041 today, so no row changed: read 20260907170000 for the rule in force.
 --
 -- KNOWN LIMIT — body IS A SNIPPET.
 --

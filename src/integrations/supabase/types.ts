@@ -2373,6 +2373,20 @@ export type Database = {
         };
         Relationships: [];
       };
+      v_case_correspondence_unmatched: {
+        Row: {
+          direction: string | null;
+          gmail_url: string | null;
+          matching_clients: number | null;
+          message_id: string | null;
+          reason: string | null;
+          subject: string | null;
+          subject_clt: string | null;
+          thread_id: string | null;
+          ts: string | null;
+        };
+        Relationships: [];
+      };
       v_case_messages: {
         Row: {
           client_code: string | null;

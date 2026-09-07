@@ -4,7 +4,12 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { requireAdminAccess } from "./access-context.server";
-import type { CaseMessageRow, CorrespondenceRow, SyncRunRow } from "./correspondence-shared";
+import type {
+  CaseMessageRow,
+  CorrespondenceRow,
+  SyncRunRow,
+  UnmatchedPartnerMessage,
+} from "./correspondence-shared";
 
 // Read and refresh side of the Correspondence view on /leads. Admin only.
 //
@@ -56,6 +61,16 @@ export type CorrespondenceOverview = {
    * that silently does nothing.
    */
   refreshConfigured: boolean;
+  /**
+   * Partner messages that could not be attached to exactly one case.
+   *
+   * Carried so the table can say so out loud. The matching rule refuses an
+   * ambiguous CLTnnnn prefix rather than attaching the message to every client
+   * that shares it, and an exclusion nobody can see is the same failure as the
+   * double it replaced — a number that is quietly missing rather than quietly
+   * doubled.
+   */
+  unmatched: UnmatchedPartnerMessage[];
 };
 
 export const getCorrespondenceOverview = createServerFn({ method: "GET" })
@@ -66,7 +81,7 @@ export const getCorrespondenceOverview = createServerFn({ method: "GET" })
       email: context.claims.email as string | undefined,
     });
 
-    const [rowsRes, runRes] = await Promise.all([
+    const [rowsRes, runRes, unmatchedRes] = await Promise.all([
       supabaseAdmin.from("v_case_correspondence").select("*"),
       // Latest run of any outcome, not the latest success: a failed run must be
       // able to replace a stale success on the header, otherwise the page shows
@@ -78,6 +93,10 @@ export const getCorrespondenceOverview = createServerFn({ method: "GET" })
         .order("started_at", { ascending: false })
         .limit(1)
         .maybeSingle(),
+      supabaseAdmin
+        .from("v_case_correspondence_unmatched")
+        .select("*")
+        .order("ts", { ascending: false }),
     ]);
 
     if (rowsRes.error) throw new Error(`Failed to load correspondence: ${rowsRes.error.message}`);
@@ -86,10 +105,17 @@ export const getCorrespondenceOverview = createServerFn({ method: "GET" })
     // "never refreshed" state, which is the honest reading of "we don't know".
     const lastRun = runRes.error ? null : ((runRes.data as SyncRunRow | null) ?? null);
 
+    // Same reasoning as lastRun: informative, not load-bearing. A table that
+    // renders without its footnote beats a page that will not render at all.
+    const unmatched = unmatchedRes.error
+      ? []
+      : ((unmatchedRes.data ?? []) as UnmatchedPartnerMessage[]);
+
     return {
       rows: (rowsRes.data ?? []) as CorrespondenceRow[],
       lastRun,
       refreshConfigured: isRefreshConfigured(),
+      unmatched,
     };
   });
 

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { AlertTriangle, ChevronDown, ChevronUp, RefreshCw } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronUp, HelpCircle, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { athensFullStamp, athensStamp } from "@/lib/case-thread";
@@ -17,6 +17,7 @@ import {
   type CorrespondenceSortKey,
   type SortDir,
   type SyncRunRow,
+  type UnmatchedPartnerMessage,
 } from "@/lib/correspondence-shared";
 
 // The consolidated correspondence table — the third view on /leads.
@@ -44,6 +45,15 @@ type Props = {
   refreshError: string | null;
   /** Pinned once per render so every row measures staleness against one instant. */
   now: Date;
+  /**
+   * Partner messages the matching rule could not place on exactly one case.
+   * Rendered as a count under the table, and only when it is non-zero.
+   *
+   * These messages are in the mailbox and in no column above. Leaving that
+   * unsaid would make the table quietly wrong in the one direction a reader
+   * cannot detect — an absence looks identical to a case with no partner mail.
+   */
+  unmatched: UnmatchedPartnerMessage[];
 };
 
 const CLOSED_STORAGE_KEY = "mgt-leads-correspondence-show-closed";
@@ -87,6 +97,7 @@ export function CorrespondenceTable({
   refreshing,
   refreshError,
   now,
+  unmatched,
 }: Props) {
   const [sort, setSort] = useState<{ key: CorrespondenceSortKey; dir: SortDir }>({
     key: "any_last",
@@ -220,7 +231,77 @@ export function CorrespondenceTable({
           that case — often the exchange happened on WhatsApp.
         </p>
       </div>
+
+      <UnmatchedNote unmatched={unmatched} />
     </div>
+  );
+}
+
+/**
+ * The counts above exclude partner mail that cannot be tied to one case. This
+ * says how much, and lets it be opened.
+ *
+ * Two reasons, and they are not the same problem. `no_case_code` is normal —
+ * the ΣΥΝΟΨΗ ΑΝΑΘΕΣΕΩΝ digest covers several cases and belongs to none of them
+ * — and only becomes interesting if the number climbs, which would mean the
+ * subject convention is lapsing. `ambiguous_code` is a naming collision:
+ * CLT0041-XX and CLT0041-SO share a prefix, so a subject saying CLT0041 names
+ * two clients and the message is withheld rather than filed against both. That
+ * one is fixed in the subject line, not here, so the message is linkable.
+ *
+ * Renders nothing at zero. A permanent "0 excluded" line is furniture.
+ */
+function UnmatchedNote({ unmatched }: { unmatched: UnmatchedPartnerMessage[] }) {
+  const ambiguous = unmatched.filter((m) => m.reason === "ambiguous_code").length;
+  const uncoded = unmatched.length - ambiguous;
+  if (unmatched.length === 0) return null;
+
+  // Said in whichever way is true, rather than one sentence with a zero in it.
+  // Only the ambiguous ones are a problem to act on, so they carry the weight
+  // when both kinds are present.
+  const why =
+    ambiguous === 0
+      ? "none of them names a case in its subject"
+      : uncoded === 0
+        ? `${ambiguous === 1 ? "it names" : "each names"} more than one client`
+        : `${uncoded} with no case code, ${ambiguous} naming more than one client`;
+
+  return (
+    <details className="rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs">
+      <summary className="cursor-pointer list-none text-muted-foreground marker:content-none">
+        <span className="inline-flex items-center gap-1.5">
+          <HelpCircle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <span className={cn(ambiguous > 0 && "text-foreground")}>
+            {unmatched.length} partner {unmatched.length === 1 ? "message is" : "messages are"} not
+            counted above — {why}
+          </span>
+        </span>
+      </summary>
+      <ul className="mt-2 space-y-1 border-t border-border pt-2">
+        {unmatched.map((m) => (
+          <li key={m.message_id ?? `${m.thread_id}-${m.ts}`} className="flex flex-wrap gap-x-2">
+            <span className="tabular-nums text-muted-foreground">{athensStamp(m.ts)}</span>
+            {m.gmail_url ? (
+              <a
+                href={m.gmail_url}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {m.subject ?? "(no subject)"}
+              </a>
+            ) : (
+              <span>{m.subject ?? "(no subject)"}</span>
+            )}
+            {m.reason === "ambiguous_code" && (
+              <span className="text-amber-600 dark:text-amber-400">
+                {m.subject_clt} matches {m.matching_clients ?? 0} client codes
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }
 
