@@ -78,21 +78,27 @@ const CREDENTIAL_QUALIFIER = "(?:[^\\S\\r\\n]+(?:πρ[οό]σβασης|χρ[η�
  */
 const CREDENTIAL_PATTERN = new RegExp(
   `(?<![\\p{L}\\p{N}])(${CREDENTIAL_LABEL}${CREDENTIAL_QUALIFIER}` +
-    // Separator, then the value -- which may sit on the next line, but only one
-    // line down and only if that line does not begin with a quote marker.
+    // Separator, then optionally one newline and any depth of quote markers,
+    // all captured so the replacement puts them back. That is what lets
     //
-    // Both restrictions are load-bearing. Allowing the next line is what
-    // catches the structured note shape, where the label is a heading:
+    //   > > Password:
+    //   > > hunter2
     //
-    //   TAXISnet PASSWORD:
-    //   hunter2
+    // be masked as "> > Password:\n> > [redacted]" with the thread intact,
+    // and it also catches the structured-note shape where the label is a
+    // heading and the next line is not quoted at all. Only ONE newline, so a
+    // label followed by a blank line cannot swallow the next paragraph.
+    `[^\\S\\r\\n]*[:=][^\\S\\r\\n]*(?:\\r?\\n[^\\S\\r\\n]*(?:>[^\\S\\r\\n]*)*)?)` +
+    // (?!>) is load-bearing and easy to lose. The quote markers above are
+    // optional, so without it the engine backtracks, matches zero markers, and
+    // takes the ">" itself as the value -- masking the quote marker and leaving
+    // the secret. That also breaks idempotence: a second pass turns
+    // "> Password:\n> [redacted]" into "[redacted] [redacted]". Asserted below.
     //
-    // Refusing it when the line starts with ">" is what keeps quoted email
-    // safe: there the next line is "> hunter2", and a pattern that crossed
-    // into it would replace the quote marker and leave the secret. Allowing
-    // exactly one newline is what stops a label followed by a blank line from
-    // swallowing the first word of the next paragraph.
-    `[^\\S\\r\\n]*[:=][^\\S\\r\\n]*(?:\\r?\\n[^\\S\\r\\n]*)?)(?!>)(?!\\[redacted)\\S+`,
+    // Then the value: a quoted string first, so a multi-word secret is taken
+    // whole ("correct horse battery staple" would otherwise leave three words
+    // readable), falling back to a single unquoted token.
+    `(?!>)(?!\\[redacted)("[^"\\r\\n]*"|'[^'\\r\\n]*'|\\S+)`,
   "giu",
 );
 

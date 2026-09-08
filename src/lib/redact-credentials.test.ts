@@ -110,12 +110,31 @@ describe("redactCredentials", () => {
       );
     });
 
-    it("refuses the next line when it is a quote, leaving the marker intact", () => {
-      // In quoted email the next line is "> secret". Crossing into it would
-      // replace the ">" and leave the secret sitting there, so this must not
-      // match at all. The bound is deliberate; the trigger is the backstop.
-      const input = "> Password:\n> the-secret-on-its-own-line";
-      expect(redactCredentials(input)).toBe(input);
+    it("masks a value on a quoted next line, keeping the quote markers", () => {
+      expect(redactCredentials("> Password:\n> the-secret")).toBe(
+        `> Password:\n> ${CREDENTIAL_MARKER}`,
+      );
+      expect(redactCredentials("> > Password:\n> > the-secret")).toBe(
+        `> > Password:\n> > ${CREDENTIAL_MARKER}`,
+      );
+    });
+
+    it("takes a quoted multi-word value whole", () => {
+      // \S+ alone stops at the first space, leaving "horse battery staple"
+      // readable after the mask.
+      const out = redactCredentials('Password: "correct horse battery staple"');
+      expect(out).toBe(`Password: ${CREDENTIAL_MARKER}`);
+      expect(out).not.toContain("horse");
+      expect(redactCredentials("Password: 'two words'")).toBe(`Password: ${CREDENTIAL_MARKER}`);
+    });
+
+    it("never masks a quote marker as if it were the value", () => {
+      // The marker run is optional, so the engine can backtrack to zero markers
+      // and take ">" as the value unless (?!>) forbids it.
+      expect(redactCredentials("Password:\n>")).toBe("Password:\n>");
+      const once = redactCredentials("> Password:\n> the-secret");
+      expect(redactCredentials(once)).toBe(once);
+      expect(redactCredentials(once)).not.toContain(`${CREDENTIAL_MARKER} ${CREDENTIAL_MARKER}`);
     });
 
     it("does not swallow the next paragraph after a blank line", () => {

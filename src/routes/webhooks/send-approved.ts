@@ -798,7 +798,11 @@ export const Route = createFileRoute("/webhooks/send-approved")({
                 .from("case_draft_versions")
                 .update({
                   sent_at: new Date().toISOString(),
-                  sent_text: finalText,
+                  // Masked like the brain_events log, and for the same reason:
+                  // this is a stored copy of what went out, not the thing that
+                  // went out. Missing it would have left the credential
+                  // readable here after the case thread had been cleaned.
+                  sent_text: redactCredentials(finalText),
                   sent_mode: sentMode,
                 })
                 .eq("id", (versionRow as { id: string }).id);
@@ -883,7 +887,13 @@ export const Route = createFileRoute("/webhooks/send-approved")({
               case_serial_id: caseSerialId,
               event_type: "outbound_sent",
               sender: "internal",
-              payload: { text: logText, sent_mode: sentMode },
+              // The legacy spine's copy of the same text, masked for the same
+              // reason. Only the text is passed through the redaction: the
+              // trigger on this table rewrites payload->>'text' via jsonb_set
+              // rather than the whole payload as a string, because redacting
+              // serialised JSON matches the escaped \" of a quoted value and
+              // corrupts the escaping while leaving the secret readable.
+              payload: { text: redactCredentials(logText), sent_mode: sentMode },
             });
 
             if (timelineError) {

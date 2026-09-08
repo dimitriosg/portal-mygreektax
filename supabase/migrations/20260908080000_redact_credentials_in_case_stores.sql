@@ -53,20 +53,31 @@
 -- that "Κωδικός εργασίας: 0043", a job code the case page needs, is left alone
 -- while "Κωδικός πρόσβασης" is caught.
 --
--- THE VALUE MAY SIT ON THE NEXT LINE, WITH TWO RESTRICTIONS
--- The structured case note writes the label as a heading:
+-- THE VALUE MAY SIT ON THE NEXT LINE, QUOTED OR NOT
+-- Two real shapes need it. The structured case note writes the label as a
+-- heading with the value beneath, and quoted email puts markers in the way:
 --
---     TAXISnet PASSWORD:
---     <value>
+--     TAXISnet PASSWORD:        > > Password:
+--     <value>                   > > <value>
 --
--- so the pattern allows exactly one newline after the separator. It refuses
--- when the following line begins with ">", because in quoted email the next
--- line is "> <value>" and a pattern that crossed into it would replace the
--- quote marker and leave the secret, having mangled the thread on the way. And
--- allowing only one newline stops a label followed by a blank line from
--- swallowing the first word of the next paragraph. All three behaviours are
--- asserted in src/lib/redact-credentials.test.ts and were checked against the
--- live rows before this file was written.
+-- So the separator group takes one newline and any depth of "> " markers, and
+-- because they are inside the capture they are written back: the thread keeps
+-- its quoting and only the value is replaced. Exactly one newline, so a label
+-- followed by a blank line cannot swallow the next paragraph.
+--
+-- `(?!>)` before the value is load-bearing and easy to lose. The marker run is
+-- optional, so without it the engine backtracks to zero markers and takes the
+-- ">" itself as the value -- masking the quote marker and leaving the secret
+-- behind. It also breaks idempotence: a second pass would turn
+-- "> Password:\n> [redacted]" into "[redacted] [redacted]". Both asserted.
+--
+-- THE VALUE MAY BE QUOTED
+-- A quoted string is taken whole before the single-token fallback, because
+-- `Password: "correct horse battery staple"` otherwise masks one word and
+-- leaves three readable.
+--
+-- All of this is asserted in src/lib/redact-credentials.test.ts and was checked
+-- against the live rows in both engines before this file was written.
 --
 -- KNOWN COLLATERAL, accepted: one row carries a URL query string with
 -- `username=` followed by an address, and the rewrite takes that parameter. It
@@ -95,7 +106,8 @@ as $$
         || '|kleidarithmos'
         || '|[οό]νομα[[:blank:]]+χρ[ηή]στη)'
         || '(?:[[:blank:]]+(?:πρ[οό]σβασης|χρ[ηή]στη|εισ[οό]δου|ασφαλε[ιί]ας))?'
-        || '[[:blank:]]*[:=][[:blank:]]*(?:\r?\n[[:blank:]]*)?)(?!>)(?!\[redacted)[^[:space:]]+',
+        || '[[:blank:]]*[:=][[:blank:]]*(?:\r?\n[[:blank:]]*(?:>[[:blank:]]*)*)?)'
+        || '(?!>)(?!\[redacted)("[^"\r\n]*"|''[^''\r\n]*''|[^[:space:]]+)',
            '\1[redacted]',
            'gi')
   end;
@@ -138,6 +150,49 @@ begin
 end;
 $$;
 
+-- Two further sinks for the same outbound text, found in review. send-approved
+-- writes what it sent to case_draft_versions.sent_text and, on the legacy
+-- spine, to case_timeline.payload->>'text'. Neither held a credential when this
+-- was written, but both would have taken the next one, and cleaning the case
+-- thread while leaving a copy in the version history is not cleaning it.
+--
+-- case_timeline.payload is jsonb and is handled by key rather than as a string.
+-- Redacting the serialised JSON is actively wrong: the quoted-value branch
+-- matches the escaped \" of "Password: \"two words\"", so it corrupts the
+-- escaping AND leaves "words" readable. jsonb_set on the text key only, guarded
+-- by ? 'text' so a payload without one is not given an empty key.
+
+create or replace function public.tg_redact_case_draft_versions()
+returns trigger language plpgsql as $$
+begin
+  new.sent_text  := public.redact_credentials(new.sent_text);
+  new.draft_text := public.redact_credentials(new.draft_text);
+  return new;
+end;
+$$;
+
+create or replace function public.tg_redact_case_timeline()
+returns trigger language plpgsql as $$
+begin
+  if new.payload ? 'text' then
+    new.payload := jsonb_set(
+      new.payload, '{text}',
+      to_jsonb(public.redact_credentials(new.payload ->> 'text')));
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists redact_credentials_before_write on public.case_draft_versions;
+create trigger redact_credentials_before_write
+  before insert or update on public.case_draft_versions
+  for each row execute function public.tg_redact_case_draft_versions();
+
+drop trigger if exists redact_credentials_before_write on public.case_timeline;
+create trigger redact_credentials_before_write
+  before insert or update on public.case_timeline
+  for each row execute function public.tg_redact_case_timeline();
+
 drop trigger if exists redact_credentials_before_write on public.brain_events;
 create trigger redact_credentials_before_write
   before insert or update on public.brain_events
@@ -170,6 +225,18 @@ update public.brain_events
 update public.case_notes
    set body = public.redact_credentials(body)
  where body is distinct from public.redact_credentials(body);
+
+update public.case_draft_versions
+   set sent_text  = public.redact_credentials(sent_text),
+       draft_text = public.redact_credentials(draft_text)
+ where sent_text  is distinct from public.redact_credentials(sent_text)
+    or draft_text is distinct from public.redact_credentials(draft_text);
+
+update public.case_timeline
+   set payload = jsonb_set(payload, '{text}',
+                   to_jsonb(public.redact_credentials(payload ->> 'text')))
+ where payload ? 'text'
+   and (payload ->> 'text') is distinct from public.redact_credentials(payload ->> 'text');
 
 update public.case_drafts
    set proposed_draft = public.redact_credentials(proposed_draft),
