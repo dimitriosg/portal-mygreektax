@@ -1,6 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
+import { redactCredentials } from "@/lib/redact-credentials";
+
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // Lazy, request-time client creation. Nothing touches the database or the
@@ -157,8 +159,17 @@ export const Route = createFileRoute("/webhooks/conversation-log")({
         const email = readString(b.email, 200);
         const direction = readString(b.direction, 20);
         const caseSerialId = readString(b.case_serial_id, 100);
-        const textContent = readString(b.text_content, 100000);
-        const subject = readString(b.subject, 500);
+        // Masked here, at the read, rather than at the insert further down.
+        // body_text is written from textContent in two branches of a ternary,
+        // and a guard applied per branch is a guard someone adds a third branch
+        // past. Everything downstream of this line sees the masked text.
+        //
+        // Clients paste their TAXISnet login into email, and a reply quotes the
+        // message it answers, so one handover spreads across a whole thread.
+        // See src/lib/redact-credentials.ts. The database trigger added by
+        // migration 20260908 catches whatever reaches the table another way.
+        const textContent = redactCredentials(readString(b.text_content, 100000));
+        const subject = redactCredentials(readString(b.subject, 500));
         const sentAt = parseSentAt(b.sent_at);
         const sourceMessageId = readString(b.source_message_id, 200);
 

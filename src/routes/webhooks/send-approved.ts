@@ -3,6 +3,7 @@ import { mailgunFailureResponse } from "@/lib/mailgun-error.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { resolveActivePartner } from "@/lib/partner-recipient.server";
 import { isBeforeDeposit, reviewBody, visibleText } from "@/lib/case-composer";
+import { redactCredentials } from "@/lib/redact-credentials";
 
 // POST /webhooks/send-approved
 //
@@ -490,8 +491,14 @@ export const Route = createFileRoute("/webhooks/send-approved")({
               provider_message_id: mgId || null,
               from_email: "hello@mygreektax.eu",
               to_emails: [partnerEmail],
-              subject,
-              body_text: finalText,
+              // Masked on the way into the log, never on the way out to
+              // Mailgun. The mail has already gone as written -- finalText is
+              // what the recipient received -- and rewriting it here would make
+              // the case history disagree with what was actually sent. What
+              // this prevents is the stored copy keeping a credential readable
+              // for as long as the row lives. See src/lib/redact-credentials.ts.
+              subject: redactCredentials(subject),
+              body_text: redactCredentials(finalText),
               metadata: { via: "portal_composer" },
             });
             if (insErr) {
@@ -791,7 +798,11 @@ export const Route = createFileRoute("/webhooks/send-approved")({
                 .from("case_draft_versions")
                 .update({
                   sent_at: new Date().toISOString(),
-                  sent_text: finalText,
+                  // Masked like the brain_events log, and for the same reason:
+                  // this is a stored copy of what went out, not the thing that
+                  // went out. Missing it would have left the credential
+                  // readable here after the case thread had been cleaned.
+                  sent_text: redactCredentials(finalText),
                   sent_mode: sentMode,
                 })
                 .eq("id", (versionRow as { id: string }).id);
@@ -851,8 +862,14 @@ export const Route = createFileRoute("/webhooks/send-approved")({
               provider_message_id: mgId || null,
               from_email: "hello@mygreektax.eu",
               to_emails: [clientRow.email],
-              subject,
-              body_text: logText,
+              // As above: the log is masked, the sent mail is not.
+              //
+              // This is the route that matters most for it. The outbound
+              // "Your access is live. Here are your credentials." mail goes
+              // through here, so this path does not merely relay a credential
+              // a client typed -- it originates one, and then stores it.
+              subject: redactCredentials(subject),
+              body_text: redactCredentials(logText),
               metadata: { via: "portal_desk", sent_mode: sentMode },
             });
 
@@ -870,7 +887,13 @@ export const Route = createFileRoute("/webhooks/send-approved")({
               case_serial_id: caseSerialId,
               event_type: "outbound_sent",
               sender: "internal",
-              payload: { text: logText, sent_mode: sentMode },
+              // The legacy spine's copy of the same text, masked for the same
+              // reason. Only the text is passed through the redaction: the
+              // trigger on this table rewrites payload->>'text' via jsonb_set
+              // rather than the whole payload as a string, because redacting
+              // serialised JSON matches the escaped \" of a quoted value and
+              // corrupts the escaping while leaving the secret readable.
+              payload: { text: redactCredentials(logText), sent_mode: sentMode },
             });
 
             if (timelineError) {
