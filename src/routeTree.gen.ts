@@ -40,6 +40,7 @@ import { Route as PayTokenRouteImport } from './routes/pay.$token'
 import { Route as JobsJobIdRouteImport } from './routes/jobs.$jobId'
 import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as EmailUnsubscribeRouteImport } from './routes/email/unsubscribe'
+import { Route as ApiLookupRouteImport } from './routes/api/lookup'
 import { Route as ApiHealthRouteImport } from './routes/api.health'
 import { Route as ApiCheckoutStatusRouteImport } from './routes/api/checkout-status'
 import { Route as ApiCheckoutSessionRouteImport } from './routes/api/checkout-session'
@@ -207,6 +208,11 @@ const EmailUnsubscribeRoute = EmailUnsubscribeRouteImport.update({
   path: '/email/unsubscribe',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiLookupRoute = ApiLookupRouteImport.update({
+  id: '/api/lookup',
+  path: '/api/lookup',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiHealthRoute = ApiHealthRouteImport.update({
   id: '/api/health',
   path: '/api/health',
@@ -279,6 +285,7 @@ export interface FileRoutesByFullPath {
   '/api/checkout-session': typeof ApiCheckoutSessionRoute
   '/api/checkout-status': typeof ApiCheckoutStatusRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/lookup': typeof ApiLookupRoute
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
   '/invite/$token': typeof InviteTokenRoute
   '/jobs/$jobId': typeof JobsJobIdRoute
@@ -321,6 +328,7 @@ export interface FileRoutesByTo {
   '/api/checkout-session': typeof ApiCheckoutSessionRoute
   '/api/checkout-status': typeof ApiCheckoutStatusRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/lookup': typeof ApiLookupRoute
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
   '/invite/$token': typeof InviteTokenRoute
   '/jobs/$jobId': typeof JobsJobIdRoute
@@ -365,6 +373,7 @@ export interface FileRoutesById {
   '/api/checkout-session': typeof ApiCheckoutSessionRoute
   '/api/checkout-status': typeof ApiCheckoutStatusRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/lookup': typeof ApiLookupRoute
   '/email/unsubscribe': typeof EmailUnsubscribeRoute
   '/invite/$token': typeof InviteTokenRoute
   '/jobs/$jobId': typeof JobsJobIdRoute
@@ -410,6 +419,7 @@ export interface FileRouteTypes {
     | '/api/checkout-session'
     | '/api/checkout-status'
     | '/api/health'
+    | '/api/lookup'
     | '/email/unsubscribe'
     | '/invite/$token'
     | '/jobs/$jobId'
@@ -452,6 +462,7 @@ export interface FileRouteTypes {
     | '/api/checkout-session'
     | '/api/checkout-status'
     | '/api/health'
+    | '/api/lookup'
     | '/email/unsubscribe'
     | '/invite/$token'
     | '/jobs/$jobId'
@@ -495,6 +506,7 @@ export interface FileRouteTypes {
     | '/api/checkout-session'
     | '/api/checkout-status'
     | '/api/health'
+    | '/api/lookup'
     | '/email/unsubscribe'
     | '/invite/$token'
     | '/jobs/$jobId'
@@ -533,6 +545,7 @@ export interface RootRouteChildren {
   ApiCheckoutSessionRoute: typeof ApiCheckoutSessionRoute
   ApiCheckoutStatusRoute: typeof ApiCheckoutStatusRoute
   ApiHealthRoute: typeof ApiHealthRoute
+  ApiLookupRoute: typeof ApiLookupRoute
   EmailUnsubscribeRoute: typeof EmailUnsubscribeRoute
   InviteTokenRoute: typeof InviteTokenRoute
   JobsJobIdRoute: typeof JobsJobIdRoute
@@ -775,6 +788,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof EmailUnsubscribeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/lookup': {
+      id: '/api/lookup'
+      path: '/api/lookup'
+      fullPath: '/api/lookup'
+      preLoaderRoute: typeof ApiLookupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/health': {
       id: '/api/health'
       path: '/api/health'
@@ -884,6 +904,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiCheckoutSessionRoute: ApiCheckoutSessionRoute,
   ApiCheckoutStatusRoute: ApiCheckoutStatusRoute,
   ApiHealthRoute: ApiHealthRoute,
+  ApiLookupRoute: ApiLookupRoute,
   EmailUnsubscribeRoute: EmailUnsubscribeRoute,
   InviteTokenRoute: InviteTokenRoute,
   JobsJobIdRoute: JobsJobIdRoute,
