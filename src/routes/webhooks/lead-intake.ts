@@ -45,8 +45,13 @@ function readString(value: unknown, maxLength: number): string | undefined {
 }
 
 // Shape returned by the resolve_case_for_inbound SQL function (one row).
+//
+// out_conversation_id is NULLABLE. The resolver attaches to a case only when
+// the client has exactly one open one. With none, or with several, routing is
+// a decision for a person: it flags needs_routing_review and returns no case
+// rather than opening one. out_client_id is always present.
 type ResolvedCase = {
-  out_conversation_id: string;
+  out_conversation_id: string | null;
   out_client_id: string;
   out_client_code: string | null;
   out_case_serial_id: string | null;

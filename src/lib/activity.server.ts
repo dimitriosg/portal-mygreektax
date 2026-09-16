@@ -14,6 +14,8 @@ export type ActivityEventType =
   | "lead_field_changed"
   | "lead_created"
   | "lead_deleted"
+  | "case_opened"
+  | "case_reopened"
   | "tracking_link_created"
   | "tracking_link_regenerated"
   | "tracking_link_opened"

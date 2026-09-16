@@ -91,9 +91,11 @@ export const Route = createFileRoute("/webhooks/case-create")({
           return Response.json({ error: "Valid email required" }, { status: 400 });
         }
 
-        // 3. Find-or-create the client + case via the resolver.
-        //    p_provider is passed only to select the 7-arg overload; with no
-        //    message, no brain_events row is logged, so the value is inert.
+        // 3. Resolve the client. As of the cases work this no longer creates
+        //    a case for a client who already exists: resolve_case_for_inbound
+        //    is the inbound path and email must never open a case. A brand
+        //    new client gets CS001 from the clients_open_first_case trigger,
+        //    in the same transaction as the client insert.
         const { data, error } = await supabase.rpc("resolve_case_for_inbound", {
           p_email: email,
           p_name: name ?? null,
@@ -110,15 +112,50 @@ export const Route = createFileRoute("/webhooks/case-create")({
         }
 
         const row = Array.isArray(data) ? data[0] : data;
-        if (!row?.out_conversation_id) {
-          return Response.json({ error: "Resolver returned no case" }, { status: 500 });
+        if (!row?.out_client_id) {
+          return Response.json({ error: "Resolver returned no client" }, { status: 500 });
+        }
+
+        // A brand new client already has CS001 and the resolver attached to
+        // it, as did an existing client with exactly one open case.
+        if (row.out_conversation_id) {
+          return Response.json({
+            ok: true,
+            conversationId: row.out_conversation_id,
+            caseSerialId: row.out_case_serial_id ?? null,
+            isNewCase: Boolean(row.out_is_new_case),
+            isNewCustomer: Boolean(row.out_is_new_customer),
+          });
+        }
+
+        // An existing client with no open case, or with more than one, is a
+        // routing decision the resolver deliberately refuses to make. "New
+        // case" is an explicit instruction from an admin, so here -- and only
+        // here -- we open one, through the single authority for creating one.
+        const { data: opened, error: openErr } = await supabase.rpc("open_case", {
+          p_client_id: row.out_client_id,
+          p_title: readString(b.title, 200) ?? null,
+          p_source: "portal_new_case",
+        });
+
+        if (openErr) {
+          console.error("[case-create] open_case failed:", openErr.message);
+          return Response.json(
+            { error: "Could not create the case", detail: openErr.message },
+            { status: 502 },
+          );
+        }
+
+        const openedRow = Array.isArray(opened) ? opened[0] : opened;
+        if (!openedRow?.out_case_id) {
+          return Response.json({ error: "open_case returned no case" }, { status: 500 });
         }
 
         return Response.json({
           ok: true,
-          conversationId: row.out_conversation_id,
-          caseSerialId: row.out_case_serial_id ?? null,
-          isNewCase: Boolean(row.out_is_new_case),
+          conversationId: openedRow.out_case_id,
+          caseSerialId: openedRow.out_case_serial_id ?? null,
+          isNewCase: true,
           isNewCustomer: Boolean(row.out_is_new_customer),
         });
       },
