@@ -219,8 +219,16 @@ export const renameCase = createServerFn({ method: "POST" })
 // File a job under a case, or take it back out (caseId: null).
 //
 // Never inferred, always a person's decision, and always audited: who, when,
-// from which case, to which case, and why. The reason is required here rather
-// than only in the form, so an assignment made by any caller carries one.
+// from which case, to which case, and why.
+//
+// The work happens inside public.assign_job_to_case() rather than here,
+// because the job update and its audit row have to commit together. Two
+// PostgREST calls cannot be made atomic from this side, and no ordering fixes
+// it: audit-first can leave an audit row for an update that failed,
+// audit-second can leave a filed job with no audit row -- and retrying that
+// second case finds the job already filed, reports "unchanged", and never
+// repairs the missing row. One plpgsql function makes both writes land or
+// neither.
 export const assignJobToCase = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((d: { jobId: string; caseId: string | null; reason: string }) =>
@@ -238,78 +246,26 @@ export const assignJobToCase = createServerFn({ method: "POST" })
       email: context.claims.email as string | undefined,
     });
 
-    const { data: job, error: jobErr } = await supabaseAdmin
-      .from("jobs")
-      .select("id, job_code, client_id, case_id")
-      .eq("id", data.jobId)
-      .single();
-    if (jobErr || !job) throw new Error(`Job not found: ${jobErr?.message ?? data.jobId}`);
-
-    // The composite foreign key jobs (case_id, client_id) -> brain_conversations
-    // (id, client_id) already refuses a case belonging to another client. This
-    // check exists to fail with a sentence a person can act on rather than a
-    // 23503, and to name the case in the error.
-    let targetCase: { id: string; case_serial_id: string | null } | null = null;
-    if (data.caseId) {
-      const { data: row, error: caseErr } = await supabaseAdmin
-        .from("brain_conversations")
-        .select("id, case_serial_id, client_id, archived_at")
-        .eq("id", data.caseId)
-        .single();
-      if (caseErr || !row) throw new Error(`Case not found: ${caseErr?.message ?? data.caseId}`);
-      if (row.client_id !== job.client_id) {
-        throw new Error("That case belongs to a different client.");
-      }
-      if (row.archived_at) throw new Error("That case is archived.");
-      targetCase = { id: row.id, case_serial_id: row.case_serial_id };
-    }
-
-    if (job.case_id === data.caseId) {
-      return { jobId: job.id, caseId: data.caseId, unchanged: true };
-    }
-
-    const previousCaseId = job.case_id;
-    let previousSerial: string | null = null;
-    if (previousCaseId) {
-      const { data: prev } = await supabaseAdmin
-        .from("brain_conversations")
-        .select("case_serial_id")
-        .eq("id", previousCaseId)
-        .single();
-      previousSerial = prev?.case_serial_id ?? null;
-    }
-
-    const { error: updateErr } = await supabaseAdmin
-      .from("jobs")
-      .update({ case_id: data.caseId })
-      .eq("id", data.jobId);
-    if (updateErr) throw new Error(`Could not file the job: ${updateErr.message}`);
-
-    // Written directly rather than through logActivityEvent, which is
-    // best-effort and swallows its errors. An assignment that no one can trace
-    // afterwards is worse than one that reports a problem, so this throws.
-    const { error: auditErr } = await supabaseAdmin.from("activity_events").insert({
-      event_type: "job_case_assigned",
-      actor_user_id: context.userId,
-      actor_email: (context.claims.email as string | undefined)?.toLowerCase() ?? null,
-      subject_label: job.job_code ?? job.id,
-      metadata: {
-        leadId: job.client_id,
-        jobId: job.id,
-        jobCode: job.job_code,
-        fromCaseId: previousCaseId,
-        fromCaseSerialId: previousSerial,
-        toCaseId: data.caseId,
-        toCaseSerialId: targetCase?.case_serial_id ?? null,
-        reason: data.reason.trim(),
-      },
+    const { data: rows, error } = await supabaseAdmin.rpc("assign_job_to_case", {
+      p_job_id: data.jobId,
+      p_case_id: data.caseId,
+      p_reason: data.reason,
+      p_actor_user_id: context.userId,
+      p_actor_email: (context.claims.email as string | undefined) ?? undefined,
     });
-    if (auditErr) {
-      throw new Error(
-        `The job was filed, but the audit entry failed to save: ${auditErr.message}. ` +
-          `Please tell someone before relying on this assignment.`,
-      );
-    }
 
-    return { jobId: job.id, caseId: data.caseId, unchanged: false };
+    // The function raises for a missing job, a case belonging to another
+    // client, an archived case and an empty reason, so its message is already
+    // the sentence to show.
+    if (error) throw new Error(error.message);
+
+    const row = Array.isArray(rows) ? rows[0] : rows;
+    if (!row) throw new Error("assign_job_to_case returned nothing");
+
+    return {
+      jobId: row.out_job_id,
+      caseId: row.out_case_id,
+      fromCaseId: row.out_from_case_id,
+      unchanged: row.out_unchanged,
+    };
   });

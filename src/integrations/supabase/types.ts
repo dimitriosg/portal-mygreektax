@@ -2527,6 +2527,26 @@ export type Database = {
         Args: { p_cooldown_seconds?: number };
         Returns: string | null;
       };
+      // p_case_id and the out_*_case_id columns are nullable: a null case is
+      // how a job is taken back out of its case, and a job that was unfiled
+      // has no from-case. The generator types function arguments as
+      // non-nullable, which would be wrong here.
+      assign_job_to_case: {
+        Args: {
+          p_actor_email?: string;
+          p_actor_user_id?: string;
+          p_case_id: string | null;
+          p_job_id: string;
+          p_reason: string;
+        };
+        Returns: {
+          out_case_id: string | null;
+          out_from_case_id: string | null;
+          out_job_id: string;
+          out_to_case_serial_id: string | null;
+          out_unchanged: boolean;
+        }[];
+      };
       confirm_payment: {
         Args: { p_external_id?: string; p_source?: string; p_token: string };
         Returns: {
