@@ -23,7 +23,7 @@ import {
   deleteLead,
 } from "@/lib/leads.functions";
 import { listJobs, listServices, listAccountants, createJob } from "@/lib/jobs.functions";
-import { listClientCases, openCase, assignJobToCase } from "@/lib/cases.functions";
+import { listClientCases, openCase, assignJobToCase, renameCase } from "@/lib/cases.functions";
 import { useAuth } from "@/lib/auth-context";
 import { getErrorMessage, isAuthSessionError } from "@/lib/auth-errors";
 import { Card, CardContent } from "@/components/ui/card";
@@ -1002,8 +1002,24 @@ function LeadCasesList({
   onOpenJobById: (jobId: string) => void;
 }) {
   const navigate = useNavigate();
+  const qc = useQueryClient();
+  const rename = useServerFn(renameCase);
   const casesQ = useClientCases(leadId);
   const cases = casesQ.data?.cases ?? [];
+
+  // Which case's title is being edited, and the draft text for it.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draftTitle, setDraftTitle] = useState("");
+
+  const renameMut = useMutation({
+    mutationFn: (vars: { caseId: string; title: string }) => rename({ data: vars }),
+    onSuccess: () => {
+      setEditingId(null);
+      setDraftTitle("");
+      qc.invalidateQueries({ queryKey: ["leads", "cases", leadId] });
+    },
+    onError: (error) => toast.error(getErrorMessage(error)),
+  });
 
   if (casesQ.isLoading) {
     return (
@@ -1044,7 +1060,61 @@ function LeadCasesList({
               </button>
               {c.stage ? <span className="shrink-0 text-muted-foreground">{c.stage}</span> : null}
             </div>
-            <div className="text-muted-foreground">{c.title || c.subject || "No title yet"}</div>
+            {editingId === c.id ? (
+              <div className="mt-1 flex items-center gap-1">
+                <Input
+                  autoFocus
+                  value={draftTitle}
+                  placeholder="What is this case about?"
+                  maxLength={200}
+                  onChange={(e) => setDraftTitle(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !renameMut.isPending) {
+                      e.preventDefault();
+                      renameMut.mutate({ caseId: c.id, title: draftTitle });
+                    }
+                    if (e.key === "Escape") {
+                      setEditingId(null);
+                      setDraftTitle("");
+                    }
+                  }}
+                  className="h-7 text-xs"
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-7 shrink-0 px-2 text-xs"
+                  disabled={renameMut.isPending}
+                  onClick={() => renameMut.mutate({ caseId: c.id, title: draftTitle })}
+                >
+                  {renameMut.isPending ? "Saving…" : "Save"}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 shrink-0 px-2 text-xs"
+                  onClick={() => {
+                    setEditingId(null);
+                    setDraftTitle("");
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                title="Click to rename this case"
+                className="block w-full truncate text-left text-muted-foreground hover:text-foreground hover:underline"
+                onClick={() => {
+                  setEditingId(c.id);
+                  setDraftTitle(c.title ?? "");
+                }}
+              >
+                {c.title || c.subject || "No title yet"}
+              </button>
+            )}
 
             {c.jobs.length > 0 ? (
               <ul className="mt-1 space-y-0.5 border-l border-border pl-2">

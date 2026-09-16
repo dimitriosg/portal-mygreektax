@@ -4,6 +4,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
 import { requireAdminAccess } from "./access-context.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { logActivityEvent } from "./activity.server";
 
 // Cases, and the jobs filed under them, read and written from the pipeline.
 //
@@ -154,6 +155,65 @@ export const openCase = createServerFn({ method: "POST" })
       caseSerialId: row.out_case_serial_id,
       caseNumber: row.out_case_number,
     };
+  });
+
+// Rename a case, at any point in its life.
+//
+// The title is the human answer to "what was this case about?", and that answer
+// is often only clear once the work has started -- a case opened from an email
+// begins with no title at all. Changing it is an ordinary edit, not a
+// correction, so it needs no reason. It is still logged, because the title is
+// what the case is known by afterwards.
+//
+// Only the title moves. case_serial_id and case_number are identity and are
+// never touched here; open_case() is the only thing that sets them.
+export const renameCase = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d: { caseId: string; title: string }) =>
+    z.object({ caseId: RECORD_ID, title: z.string().trim().max(200) }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await requireAdminAccess({
+      userId: context.userId,
+      email: context.claims.email as string | undefined,
+    });
+
+    const { data: existing, error: fetchErr } = await supabaseAdmin
+      .from("brain_conversations")
+      .select("id, title, case_serial_id, client_id")
+      .eq("id", data.caseId)
+      .single();
+    if (fetchErr || !existing) {
+      throw new Error(`Case not found: ${fetchErr?.message ?? data.caseId}`);
+    }
+
+    // Empty clears the title back to "no title yet" rather than storing "".
+    const nextTitle = data.title.trim() || null;
+    if ((existing.title ?? null) === nextTitle) {
+      return { caseId: existing.id, title: nextTitle, unchanged: true };
+    }
+
+    const { error: updateErr } = await supabaseAdmin
+      .from("brain_conversations")
+      .update({ title: nextTitle })
+      .eq("id", data.caseId);
+    if (updateErr) throw new Error(`Could not rename the case: ${updateErr.message}`);
+
+    await logActivityEvent({
+      eventType: "case_renamed",
+      actorUserId: context.userId,
+      actorEmail: (context.claims.email as string | undefined) ?? null,
+      subjectLabel: existing.case_serial_id ?? existing.id,
+      metadata: {
+        leadId: existing.client_id,
+        caseId: existing.id,
+        caseSerialId: existing.case_serial_id,
+        from: existing.title,
+        to: nextTitle,
+      },
+    });
+
+    return { caseId: existing.id, title: nextTitle, unchanged: false };
   });
 
 // File a job under a case, or take it back out (caseId: null).

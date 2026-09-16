@@ -235,7 +235,7 @@ export type Database = {
           archived_at: string | null;
           case_number: number | null;
           case_serial_id: string | null;
-          client_id: string | null;
+          client_id: string;
           closed_at: string | null;
           conversation_type: string;
           created_at: string;
@@ -257,7 +257,7 @@ export type Database = {
           archived_at?: string | null;
           case_number?: number | null;
           case_serial_id?: string | null;
-          client_id?: string | null;
+          client_id: string;
           closed_at?: string | null;
           conversation_type?: string;
           created_at?: string;
@@ -279,7 +279,7 @@ export type Database = {
           archived_at?: string | null;
           case_number?: number | null;
           case_serial_id?: string | null;
-          client_id?: string | null;
+          client_id?: string;
           closed_at?: string | null;
           conversation_type?: string;
           created_at?: string;
