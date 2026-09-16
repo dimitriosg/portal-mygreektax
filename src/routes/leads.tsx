@@ -23,7 +23,7 @@ import {
   deleteLead,
 } from "@/lib/leads.functions";
 import { listJobs, listServices, listAccountants, createJob } from "@/lib/jobs.functions";
-import { listClientCases, openCase } from "@/lib/cases.functions";
+import { listClientCases, openCase, assignJobToCase } from "@/lib/cases.functions";
 import { useAuth } from "@/lib/auth-context";
 import { getErrorMessage, isAuthSessionError } from "@/lib/auth-errors";
 import { Card, CardContent } from "@/components/ui/card";
@@ -988,23 +988,107 @@ function LeadThread({ leadId }: { leadId: string }) {
 // Reads the same activity_events stream every logActivityEvent call writes
 // to (Stage changes + the Ticket C field-diff entries + lead_created);
 // nothing here is editable from the UI.
-// The client's cases, and the only place in the pipeline a second one is
-// opened. CS001 never appears here as an action: every client already has it
-// from the clients_open_first_case trigger. What a person creates here is
-// CS002 and beyond -- a new piece of work for a customer already on the books.
-function LeadCases({ leadId, leadName }: { leadId: string; leadName: string }) {
+// The client's cases, each with the jobs filed under it.
+//
+// The "+ New case" button lives on the dialog's action row, not here, so this
+// block is purely the list. CS001 is never offered as an action: every client
+// already has it from the clients_open_first_case trigger. What a person opens
+// from the pipeline is CS002 and beyond.
+function LeadCasesList({
+  leadId,
+  onOpenJobById,
+}: {
+  leadId: string;
+  onOpenJobById: (jobId: string) => void;
+}) {
   const navigate = useNavigate();
-  const qc = useQueryClient();
+  const casesQ = useClientCases(leadId);
+  const cases = casesQ.data?.cases ?? [];
+
+  if (casesQ.isLoading) {
+    return (
+      <div className="rounded border border-border bg-muted/20 p-2 text-xs text-muted-foreground">
+        Loading cases…
+      </div>
+    );
+  }
+  if (casesQ.error) {
+    return (
+      <div className="rounded border border-border bg-muted/20 p-2 text-xs text-destructive">
+        {getErrorMessage(casesQ.error)}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        Cases{cases.length > 0 ? ` (${cases.length})` : ""}
+      </div>
+
+      {cases.length === 0 ? (
+        <div className="rounded border border-border bg-muted/20 p-2 text-xs text-muted-foreground">
+          No cases yet. Every client created from now on gets CS001 automatically; this one predates
+          that, so open its first case with “+ New case”.
+        </div>
+      ) : (
+        cases.map((c) => (
+          <div key={c.id} className="rounded border border-border bg-muted/20 p-2 text-xs">
+            <div className="flex items-baseline justify-between gap-2">
+              <button
+                type="button"
+                className="font-medium text-primary hover:underline"
+                onClick={() => navigate({ to: "/review/$caseId", params: { caseId: c.id } })}
+              >
+                {c.caseSerialId ?? `Case ${c.caseNumber ?? "?"}`}
+              </button>
+              {c.stage ? <span className="shrink-0 text-muted-foreground">{c.stage}</span> : null}
+            </div>
+            <div className="text-muted-foreground">{c.title || c.subject || "No title yet"}</div>
+
+            {c.jobs.length > 0 ? (
+              <ul className="mt-1 space-y-0.5 border-l border-border pl-2">
+                {c.jobs.map((j) => (
+                  <li key={j.id}>
+                    <button
+                      type="button"
+                      className="font-medium text-primary hover:underline"
+                      onClick={() => onOpenJobById(j.id)}
+                    >
+                      {j.jobCode ?? j.id}
+                    </button>{" "}
+                    — {j.status ?? "—"}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div className="mt-1 border-l border-border pl-2 text-muted-foreground">
+                No jobs in this case yet.
+              </div>
+            )}
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+// One shared query for the dialog: the cases block and the jobs block below it
+// both read from it, and filing a job invalidates it once for both.
+function useClientCases(leadId: string) {
   const fetchCases = useServerFn(listClientCases);
-  const createCase = useServerFn(openCase);
-
-  const [adding, setAdding] = useState(false);
-  const [title, setTitle] = useState("");
-
-  const casesQ = useQuery({
+  return useQuery({
     queryKey: ["leads", "cases", leadId],
     queryFn: () => fetchCases({ data: { clientId: leadId } }),
   });
+}
+
+// The "+ New case" control, sitting on the dialog's action row.
+function NewCaseButton({ leadId }: { leadId: string }) {
+  const qc = useQueryClient();
+  const createCase = useServerFn(openCase);
+  const [adding, setAdding] = useState(false);
+  const [title, setTitle] = useState("");
 
   const openCaseMut = useMutation({
     mutationFn: (vars: { clientId: string; title?: string }) => createCase({ data: vars }),
@@ -1017,102 +1101,199 @@ function LeadCases({ leadId, leadName }: { leadId: string; leadName: string }) {
     onError: (error) => toast.error(getErrorMessage(error)),
   });
 
+  const submit = () => openCaseMut.mutate({ clientId: leadId, title: title.trim() || undefined });
+
+  if (!adding) {
+    return (
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        className="h-7 shrink-0 px-2 text-xs"
+        onClick={() => setAdding(true)}
+      >
+        + New case
+      </Button>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-1">
+      <Input
+        autoFocus
+        value={title}
+        placeholder="What is it about? (optional)"
+        maxLength={200}
+        onChange={(e) => setTitle(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !openCaseMut.isPending) {
+            e.preventDefault();
+            submit();
+          }
+          if (e.key === "Escape") {
+            setAdding(false);
+            setTitle("");
+          }
+        }}
+        className="h-7 w-48 text-xs"
+      />
+      <Button
+        type="button"
+        size="sm"
+        className="h-7 px-2 text-xs"
+        disabled={openCaseMut.isPending}
+        onClick={submit}
+      >
+        {openCaseMut.isPending ? "Opening…" : "Open"}
+      </Button>
+      <Button
+        type="button"
+        size="sm"
+        variant="ghost"
+        className="h-7 px-2 text-xs"
+        onClick={() => {
+          setAdding(false);
+          setTitle("");
+        }}
+      >
+        Cancel
+      </Button>
+    </div>
+  );
+}
+
+// Every job the client has, in one list, each showing the case it is filed
+// under and letting a person change it. A job is never filed automatically and
+// the reason is required, so the audit trail answers "why is JB148 in CS002?".
+function LeadJobsWithCases({
+  leadId,
+  clientJobs,
+  onOpenJob,
+}: {
+  leadId: string;
+  clientJobs: Job[];
+  onOpenJob: (job: Job) => void;
+}) {
+  const qc = useQueryClient();
+  const assign = useServerFn(assignJobToCase);
+  const casesQ = useClientCases(leadId);
   const cases = casesQ.data?.cases ?? [];
+  const caseCodeByJobId = casesQ.data?.caseCodeByJobId ?? {};
+
+  const [filingJobId, setFilingJobId] = useState<string | null>(null);
+  const [targetCaseId, setTargetCaseId] = useState<string>("");
+  const [reason, setReason] = useState("");
+
+  const reset = () => {
+    setFilingJobId(null);
+    setTargetCaseId("");
+    setReason("");
+  };
+
+  const assignMut = useMutation({
+    mutationFn: (vars: { jobId: string; caseId: string | null; reason: string }) =>
+      assign({ data: vars }),
+    onSuccess: () => {
+      toast.success("Job filed");
+      reset();
+      qc.invalidateQueries({ queryKey: ["leads", "cases", leadId] });
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+    },
+    onError: (error) => toast.error(getErrorMessage(error)),
+  });
 
   return (
     <div className="rounded border border-border bg-muted/20 p-2 text-xs">
-      <div className="mb-1 flex items-center justify-between gap-2">
-        <span className="font-semibold uppercase tracking-wide text-muted-foreground">
-          Cases{cases.length > 0 ? ` (${cases.length})` : ""}
-        </span>
-        {!adding && (
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="h-6 px-2 text-xs"
-            onClick={() => setAdding(true)}
-          >
-            + New case
-          </Button>
-        )}
-      </div>
-
-      {casesQ.isLoading ? (
-        <div className="text-muted-foreground">Loading cases…</div>
-      ) : casesQ.error ? (
-        <div className="text-destructive">{getErrorMessage(casesQ.error)}</div>
-      ) : cases.length > 0 ? (
-        <ul className="space-y-0.5">
-          {cases.map((c) => (
-            <li key={c.id} className="flex items-baseline gap-1">
-              <button
-                type="button"
-                className="font-medium text-primary hover:underline"
-                onClick={() => navigate({ to: "/review/$caseId", params: { caseId: c.id } })}
-              >
-                {c.caseSerialId ?? `Case ${c.caseNumber ?? "?"}`}
-              </button>
-              <span className="text-muted-foreground">
-                — {c.title || c.subject || "No title yet"}
-                {c.stage ? ` · ${c.stage}` : ""}
-              </span>
-            </li>
-          ))}
-        </ul>
+      <div className="mb-1 font-semibold uppercase tracking-wide text-muted-foreground">Jobs</div>
+      {clientJobs.length === 0 ? (
+        <div className="text-muted-foreground">No jobs created yet.</div>
       ) : (
-        <div className="text-muted-foreground">
-          No cases yet. Every client created from now on gets CS001 automatically; this one predates
-          that, so open its first case here.
-        </div>
-      )}
+        <ul className="space-y-0.5">
+          {clientJobs.map((j) => {
+            const code = caseCodeByJobId[j.id];
+            const isFiling = filingJobId === j.id;
+            return (
+              <li key={j.id}>
+                <div className="flex items-baseline gap-1">
+                  <button
+                    type="button"
+                    className="font-medium text-primary hover:underline"
+                    onClick={() => onOpenJob(j)}
+                  >
+                    {j.fields["Job Code"] ?? j.id}
+                  </button>
+                  <span>— {j.fields.Status ?? "—"}</span>
+                  <span className="text-muted-foreground">{code ? ` ${code}` : " unfiled"}</span>
+                  {!isFiling && cases.length > 0 && (
+                    <button
+                      type="button"
+                      className="ml-auto shrink-0 text-muted-foreground hover:text-foreground hover:underline"
+                      onClick={() => {
+                        setFilingJobId(j.id);
+                        setTargetCaseId("");
+                        setReason("");
+                      }}
+                    >
+                      {code ? "Move" : "File"}
+                    </button>
+                  )}
+                </div>
 
-      {adding && (
-        <div className="mt-2 space-y-1.5 rounded border border-border bg-background p-2">
-          <Label className="text-xs">
-            What is {leadName || "this case"} about?{" "}
-            <span className="font-normal text-muted-foreground">(optional)</span>
-          </Label>
-          <Input
-            autoFocus
-            value={title}
-            placeholder="e.g. AFM registration, 2025 E1"
-            maxLength={200}
-            onChange={(e) => setTitle(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !openCaseMut.isPending) {
-                e.preventDefault();
-                openCaseMut.mutate({ clientId: leadId, title: title.trim() || undefined });
-              }
-            }}
-            className="h-8 text-xs"
-          />
-          <div className="flex justify-end gap-2">
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              className="h-7 px-2 text-xs"
-              onClick={() => {
-                setAdding(false);
-                setTitle("");
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              className="h-7 px-2 text-xs"
-              disabled={openCaseMut.isPending}
-              onClick={() =>
-                openCaseMut.mutate({ clientId: leadId, title: title.trim() || undefined })
-              }
-            >
-              {openCaseMut.isPending ? "Opening…" : "Open case"}
-            </Button>
-          </div>
-        </div>
+                {isFiling && (
+                  <div className="my-1 space-y-1 rounded border border-border bg-background p-2">
+                    <select
+                      value={targetCaseId}
+                      onChange={(e) => setTargetCaseId(e.target.value)}
+                      className="w-full rounded border px-2 py-1 text-xs"
+                    >
+                      <option value="">Choose a case…</option>
+                      {cases.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.caseSerialId ?? `Case ${c.caseNumber ?? "?"}`}
+                          {c.title ? ` — ${c.title}` : ""}
+                        </option>
+                      ))}
+                      {code ? <option value="__none__">Take out of its case</option> : null}
+                    </select>
+                    <Input
+                      value={reason}
+                      placeholder="Why does it belong there? (required)"
+                      maxLength={500}
+                      onChange={(e) => setReason(e.target.value)}
+                      className="h-7 text-xs"
+                    />
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 px-2 text-xs"
+                        onClick={reset}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-7 px-2 text-xs"
+                        disabled={assignMut.isPending || !targetCaseId || !reason.trim()}
+                        onClick={() =>
+                          assignMut.mutate({
+                            jobId: j.id,
+                            caseId: targetCaseId === "__none__" ? null : targetCaseId,
+                            reason: reason.trim(),
+                          })
+                        }
+                      >
+                        {assignMut.isPending ? "Filing…" : "File"}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
       )}
     </div>
   );
@@ -1380,42 +1561,29 @@ function LeadEditDialog({
               <Label>Source</Label>
               <Input value={source} onChange={(e) => setSource(e.target.value)} className="mt-1" />
             </div>
-            <label className="col-span-2 mt-1 flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={taxisnetAccess}
-                onChange={(e) => setTaxisnetAccess(e.target.checked)}
-                className="h-4 w-4"
-              />
-              TAXISnet access
+            <label className="col-span-2 mt-1 flex items-center justify-between gap-2 text-sm">
+              <span className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={taxisnetAccess}
+                  onChange={(e) => setTaxisnetAccess(e.target.checked)}
+                  className="h-4 w-4"
+                />
+                TAXISnet access
+              </span>
+              <NewCaseButton leadId={lead.id} />
             </label>
           </div>
 
-          <LeadCases leadId={lead.id} leadName={lead.fields["Full Name"] ?? ""} />
+          <LeadCasesList
+            leadId={lead.id}
+            onOpenJobById={(jobId) => {
+              const job = clientJobs.find((j) => j.id === jobId);
+              if (job) onOpenJob(job);
+            }}
+          />
 
-          <div className="rounded border border-border bg-muted/20 p-2 text-xs">
-            <div className="mb-1 font-semibold uppercase tracking-wide text-muted-foreground">
-              Jobs
-            </div>
-            {clientJobs.length > 0 ? (
-              <ul className="space-y-0.5">
-                {clientJobs.map((j) => (
-                  <li key={j.id}>
-                    <button
-                      type="button"
-                      className="font-medium text-primary hover:underline"
-                      onClick={() => onOpenJob(j)}
-                    >
-                      {j.fields["Job Code"] ?? j.id}
-                    </button>{" "}
-                    — {j.fields.Status ?? "—"}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <div className="text-muted-foreground">No jobs created yet.</div>
-            )}
-          </div>
+          <LeadJobsWithCases leadId={lead.id} clientJobs={clientJobs} onOpenJob={onOpenJob} />
 
           <div>
             <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">

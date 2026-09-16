@@ -16,6 +16,7 @@ export type ActivityEventType =
   | "lead_deleted"
   | "case_opened"
   | "case_reopened"
+  | "job_case_assigned"
   | "tracking_link_created"
   | "tracking_link_regenerated"
   | "tracking_link_opened"

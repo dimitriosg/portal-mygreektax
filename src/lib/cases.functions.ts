@@ -5,7 +5,7 @@ import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middlewa
 import { requireAdminAccess } from "./access-context.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
-// Cases, read and created from the pipeline.
+// Cases, and the jobs filed under them, read and written from the pipeline.
 //
 // A case is a row in public.brain_conversations -- the table already carries
 // case_serial_id, case_number, stage and client_id, and /review/$caseId already
@@ -28,17 +28,31 @@ const RECORD_ID = z
   .max(80)
   .regex(/^[0-9a-fA-F-]{36}$/, "Invalid record id");
 
+export type CaseJob = {
+  id: string;
+  jobCode: string | null;
+  status: string | null;
+};
+
 export type CaseSummary = {
   id: string;
   caseSerialId: string | null;
+  /** "CS001" -- the short form, for showing beside a job. */
+  caseCode: string | null;
   caseNumber: number | null;
   title: string | null;
   subject: string | null;
   stage: string | null;
   status: string | null;
-  createdAt: string | null;
-  closedAt: string | null;
+  jobs: CaseJob[];
 };
+
+/** MGT-CS002-CLT0039 -> CS002. Null when the serial is missing or malformed. */
+function shortCaseCode(serial: string | null): string | null {
+  if (!serial) return null;
+  const m = serial.match(/(CS\d+)/);
+  return m ? m[1] : null;
+}
 
 export const listClientCases = createServerFn({ method: "GET" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
@@ -51,30 +65,58 @@ export const listClientCases = createServerFn({ method: "GET" })
 
     // Archived cases are excluded: restore_case() puts one back, and showing
     // them here would offer a second, quieter way to resurrect one.
-    const { data: rows, error } = await supabaseAdmin
-      .from("brain_conversations")
-      .select(
-        "id, case_serial_id, case_number, title, subject, stage, status, created_at, closed_at",
-      )
-      .eq("client_id", data.clientId)
-      .is("archived_at", null)
-      .order("case_number", { ascending: true, nullsFirst: false });
+    const [casesRes, jobsRes] = await Promise.all([
+      supabaseAdmin
+        .from("brain_conversations")
+        .select("id, case_serial_id, case_number, title, subject, stage, status")
+        .eq("client_id", data.clientId)
+        .is("archived_at", null)
+        .order("case_number", { ascending: true, nullsFirst: false }),
+      supabaseAdmin
+        .from("jobs")
+        .select("id, job_code, status, case_id")
+        .eq("client_id", data.clientId)
+        .order("job_code", { ascending: true }),
+    ]);
 
-    if (error) throw new Error(`Failed to load cases: ${error.message}`);
+    if (casesRes.error) throw new Error(`Failed to load cases: ${casesRes.error.message}`);
+    if (jobsRes.error)
+      throw new Error(`Failed to load the client's jobs: ${jobsRes.error.message}`);
 
-    const cases: CaseSummary[] = (rows ?? []).map((row) => ({
+    const jobsByCaseId = new Map<string, CaseJob[]>();
+    // Which case each job sits under, keyed by job id, so the flat jobs list
+    // can show "CS001" beside a job without a second round trip.
+    const caseCodeByJobId: Record<string, string> = {};
+
+    const cases: CaseSummary[] = (casesRes.data ?? []).map((row) => ({
       id: row.id,
       caseSerialId: row.case_serial_id,
+      caseCode: shortCaseCode(row.case_serial_id),
       caseNumber: row.case_number,
       title: row.title,
       subject: row.subject,
       stage: row.stage,
       status: row.status,
-      createdAt: row.created_at,
-      closedAt: row.closed_at,
+      jobs: [],
     }));
+    const caseById = new Map(cases.map((c) => [c.id, c]));
 
-    return { cases };
+    for (const job of jobsRes.data ?? []) {
+      if (!job.case_id) continue;
+      const parent = caseById.get(job.case_id);
+      // A job whose case is archived keeps its case_id but has no case to nest
+      // under here. It still shows in the flat list below, unfiled.
+      if (!parent) continue;
+      const entry: CaseJob = { id: job.id, jobCode: job.job_code, status: job.status };
+      const list = jobsByCaseId.get(job.case_id) ?? [];
+      list.push(entry);
+      jobsByCaseId.set(job.case_id, list);
+      if (parent.caseCode) caseCodeByJobId[job.id] = parent.caseCode;
+    }
+
+    for (const c of cases) c.jobs = jobsByCaseId.get(c.id) ?? [];
+
+    return { cases, caseCodeByJobId };
   });
 
 export const openCase = createServerFn({ method: "POST" })
@@ -112,4 +154,102 @@ export const openCase = createServerFn({ method: "POST" })
       caseSerialId: row.out_case_serial_id,
       caseNumber: row.out_case_number,
     };
+  });
+
+// File a job under a case, or take it back out (caseId: null).
+//
+// Never inferred, always a person's decision, and always audited: who, when,
+// from which case, to which case, and why. The reason is required here rather
+// than only in the form, so an assignment made by any caller carries one.
+export const assignJobToCase = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d: { jobId: string; caseId: string | null; reason: string }) =>
+    z
+      .object({
+        jobId: RECORD_ID,
+        caseId: RECORD_ID.nullable(),
+        reason: z.string().trim().min(1, "A reason is required").max(500),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await requireAdminAccess({
+      userId: context.userId,
+      email: context.claims.email as string | undefined,
+    });
+
+    const { data: job, error: jobErr } = await supabaseAdmin
+      .from("jobs")
+      .select("id, job_code, client_id, case_id")
+      .eq("id", data.jobId)
+      .single();
+    if (jobErr || !job) throw new Error(`Job not found: ${jobErr?.message ?? data.jobId}`);
+
+    // The composite foreign key jobs (case_id, client_id) -> brain_conversations
+    // (id, client_id) already refuses a case belonging to another client. This
+    // check exists to fail with a sentence a person can act on rather than a
+    // 23503, and to name the case in the error.
+    let targetCase: { id: string; case_serial_id: string | null } | null = null;
+    if (data.caseId) {
+      const { data: row, error: caseErr } = await supabaseAdmin
+        .from("brain_conversations")
+        .select("id, case_serial_id, client_id, archived_at")
+        .eq("id", data.caseId)
+        .single();
+      if (caseErr || !row) throw new Error(`Case not found: ${caseErr?.message ?? data.caseId}`);
+      if (row.client_id !== job.client_id) {
+        throw new Error("That case belongs to a different client.");
+      }
+      if (row.archived_at) throw new Error("That case is archived.");
+      targetCase = { id: row.id, case_serial_id: row.case_serial_id };
+    }
+
+    if (job.case_id === data.caseId) {
+      return { jobId: job.id, caseId: data.caseId, unchanged: true };
+    }
+
+    const previousCaseId = job.case_id;
+    let previousSerial: string | null = null;
+    if (previousCaseId) {
+      const { data: prev } = await supabaseAdmin
+        .from("brain_conversations")
+        .select("case_serial_id")
+        .eq("id", previousCaseId)
+        .single();
+      previousSerial = prev?.case_serial_id ?? null;
+    }
+
+    const { error: updateErr } = await supabaseAdmin
+      .from("jobs")
+      .update({ case_id: data.caseId })
+      .eq("id", data.jobId);
+    if (updateErr) throw new Error(`Could not file the job: ${updateErr.message}`);
+
+    // Written directly rather than through logActivityEvent, which is
+    // best-effort and swallows its errors. An assignment that no one can trace
+    // afterwards is worse than one that reports a problem, so this throws.
+    const { error: auditErr } = await supabaseAdmin.from("activity_events").insert({
+      event_type: "job_case_assigned",
+      actor_user_id: context.userId,
+      actor_email: (context.claims.email as string | undefined)?.toLowerCase() ?? null,
+      subject_label: job.job_code ?? job.id,
+      metadata: {
+        leadId: job.client_id,
+        jobId: job.id,
+        jobCode: job.job_code,
+        fromCaseId: previousCaseId,
+        fromCaseSerialId: previousSerial,
+        toCaseId: data.caseId,
+        toCaseSerialId: targetCase?.case_serial_id ?? null,
+        reason: data.reason.trim(),
+      },
+    });
+    if (auditErr) {
+      throw new Error(
+        `The job was filed, but the audit entry failed to save: ${auditErr.message}. ` +
+          `Please tell someone before relying on this assignment.`,
+      );
+    }
+
+    return { jobId: job.id, caseId: data.caseId, unchanged: false };
   });

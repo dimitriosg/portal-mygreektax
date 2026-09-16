@@ -1340,6 +1340,7 @@ export type Database = {
           accountant_fee: number | null;
           accountant_id: string | null;
           admin_internal_notes: string | null;
+          case_id: string | null;
           client_fee: number | null;
           client_id: string;
           client_visible_note: string | null;
@@ -1360,6 +1361,7 @@ export type Database = {
           accountant_fee?: number | null;
           accountant_id?: string | null;
           admin_internal_notes?: string | null;
+          case_id?: string | null;
           client_fee?: number | null;
           client_id: string;
           client_visible_note?: string | null;
@@ -1380,6 +1382,7 @@ export type Database = {
           accountant_fee?: number | null;
           accountant_id?: string | null;
           admin_internal_notes?: string | null;
+          case_id?: string | null;
           client_fee?: number | null;
           client_id?: string;
           client_visible_note?: string | null;
