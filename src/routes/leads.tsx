@@ -23,6 +23,7 @@ import {
   deleteLead,
 } from "@/lib/leads.functions";
 import { listJobs, listServices, listAccountants, createJob } from "@/lib/jobs.functions";
+import { listClientCases, openCase } from "@/lib/cases.functions";
 import { useAuth } from "@/lib/auth-context";
 import { getErrorMessage, isAuthSessionError } from "@/lib/auth-errors";
 import { Card, CardContent } from "@/components/ui/card";
@@ -987,6 +988,136 @@ function LeadThread({ leadId }: { leadId: string }) {
 // Reads the same activity_events stream every logActivityEvent call writes
 // to (Stage changes + the Ticket C field-diff entries + lead_created);
 // nothing here is editable from the UI.
+// The client's cases, and the only place in the pipeline a second one is
+// opened. CS001 never appears here as an action: every client already has it
+// from the clients_open_first_case trigger. What a person creates here is
+// CS002 and beyond -- a new piece of work for a customer already on the books.
+function LeadCases({ leadId, leadName }: { leadId: string; leadName: string }) {
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  const fetchCases = useServerFn(listClientCases);
+  const createCase = useServerFn(openCase);
+
+  const [adding, setAdding] = useState(false);
+  const [title, setTitle] = useState("");
+
+  const casesQ = useQuery({
+    queryKey: ["leads", "cases", leadId],
+    queryFn: () => fetchCases({ data: { clientId: leadId } }),
+  });
+
+  const openCaseMut = useMutation({
+    mutationFn: (vars: { clientId: string; title?: string }) => createCase({ data: vars }),
+    onSuccess: (result) => {
+      toast.success(`Case ${result.caseSerialId ?? "created"} opened`);
+      setAdding(false);
+      setTitle("");
+      qc.invalidateQueries({ queryKey: ["leads", "cases", leadId] });
+    },
+    onError: (error) => toast.error(getErrorMessage(error)),
+  });
+
+  const cases = casesQ.data?.cases ?? [];
+
+  return (
+    <div className="rounded border border-border bg-muted/20 p-2 text-xs">
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <span className="font-semibold uppercase tracking-wide text-muted-foreground">
+          Cases{cases.length > 0 ? ` (${cases.length})` : ""}
+        </span>
+        {!adding && (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-6 px-2 text-xs"
+            onClick={() => setAdding(true)}
+          >
+            + New case
+          </Button>
+        )}
+      </div>
+
+      {casesQ.isLoading ? (
+        <div className="text-muted-foreground">Loading cases…</div>
+      ) : casesQ.error ? (
+        <div className="text-destructive">{getErrorMessage(casesQ.error)}</div>
+      ) : cases.length > 0 ? (
+        <ul className="space-y-0.5">
+          {cases.map((c) => (
+            <li key={c.id} className="flex items-baseline gap-1">
+              <button
+                type="button"
+                className="font-medium text-primary hover:underline"
+                onClick={() => navigate({ to: "/review/$caseId", params: { caseId: c.id } })}
+              >
+                {c.caseSerialId ?? `Case ${c.caseNumber ?? "?"}`}
+              </button>
+              <span className="text-muted-foreground">
+                — {c.title || c.subject || "No title yet"}
+                {c.stage ? ` · ${c.stage}` : ""}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div className="text-muted-foreground">
+          No cases yet. Every client created from now on gets CS001 automatically; this one predates
+          that, so open its first case here.
+        </div>
+      )}
+
+      {adding && (
+        <div className="mt-2 space-y-1.5 rounded border border-border bg-background p-2">
+          <Label className="text-xs">
+            What is {leadName || "this case"} about?{" "}
+            <span className="font-normal text-muted-foreground">(optional)</span>
+          </Label>
+          <Input
+            autoFocus
+            value={title}
+            placeholder="e.g. AFM registration, 2025 E1"
+            maxLength={200}
+            onChange={(e) => setTitle(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !openCaseMut.isPending) {
+                e.preventDefault();
+                openCaseMut.mutate({ clientId: leadId, title: title.trim() || undefined });
+              }
+            }}
+            className="h-8 text-xs"
+          />
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2 text-xs"
+              onClick={() => {
+                setAdding(false);
+                setTitle("");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              disabled={openCaseMut.isPending}
+              onClick={() =>
+                openCaseMut.mutate({ clientId: leadId, title: title.trim() || undefined })
+              }
+            >
+              {openCaseMut.isPending ? "Opening…" : "Open case"}
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function LeadHistory({ leadId }: { leadId: string }) {
   const fetchHistory = useServerFn(listLeadActivity);
   const historyQ = useQuery({
@@ -1259,6 +1390,8 @@ function LeadEditDialog({
               TAXISnet access
             </label>
           </div>
+
+          <LeadCases leadId={lead.id} leadName={lead.fields["Full Name"] ?? ""} />
 
           <div className="rounded border border-border bg-muted/20 p-2 text-xs">
             <div className="mb-1 font-semibold uppercase tracking-wide text-muted-foreground">

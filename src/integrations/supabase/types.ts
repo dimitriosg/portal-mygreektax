@@ -239,7 +239,7 @@ export type Database = {
           closed_at: string | null;
           conversation_type: string;
           created_at: string;
-          customer_email: string;
+          customer_email: string | null;
           customer_id: string;
           id: string;
           job_id: string | null;
@@ -250,6 +250,7 @@ export type Database = {
           stage: string;
           status: string;
           subject: string | null;
+          title: string | null;
           updated_at: string;
         };
         Insert: {
@@ -260,7 +261,7 @@ export type Database = {
           closed_at?: string | null;
           conversation_type?: string;
           created_at?: string;
-          customer_email: string;
+          customer_email?: string | null;
           customer_id: string;
           id?: string;
           job_id?: string | null;
@@ -271,6 +272,7 @@ export type Database = {
           stage?: string;
           status?: string;
           subject?: string | null;
+          title?: string | null;
           updated_at?: string;
         };
         Update: {
@@ -281,7 +283,7 @@ export type Database = {
           closed_at?: string | null;
           conversation_type?: string;
           created_at?: string;
-          customer_email?: string;
+          customer_email?: string | null;
           customer_id?: string;
           id?: string;
           job_id?: string | null;
@@ -292,6 +294,7 @@ export type Database = {
           stage?: string;
           status?: string;
           subject?: string | null;
+          title?: string | null;
           updated_at?: string;
         };
         Relationships: [
@@ -2658,6 +2661,14 @@ export type Database = {
         };
         Returns: number;
       };
+      open_case: {
+        Args: { p_client_id: string; p_source?: string; p_title?: string };
+        Returns: {
+          out_case_id: string;
+          out_case_number: number;
+          out_case_serial_id: string;
+        }[];
+      };
       purge_expired_archived_cases: { Args: never; Returns: number };
       read_email_batch: {
         Args: { batch_size: number; queue_name: string; vt: number };
@@ -2671,38 +2682,40 @@ export type Database = {
         Args: { p_client_id: string };
         Returns: undefined;
       };
-      resolve_case_for_inbound:
-        | {
-            Args: { p_email: string; p_name?: string; p_nationality?: string };
-            Returns: {
-              out_case_number: number;
-              out_case_serial_id: string;
-              out_client_code: string;
-              out_client_id: string;
-              out_is_new_case: boolean;
-              out_is_new_customer: boolean;
-            }[];
-          }
-        | {
-            Args: {
-              p_email: string;
-              p_external_event_id?: string;
-              p_message?: string;
-              p_name?: string;
-              p_nationality?: string;
-              p_provider?: string;
-              p_subject?: string;
-            };
-            Returns: {
-              out_case_number: number;
-              out_case_serial_id: string;
-              out_client_code: string;
-              out_client_id: string;
-              out_conversation_id: string;
-              out_is_new_case: boolean;
-              out_is_new_customer: boolean;
-            }[];
-          };
+      reopen_case: {
+        Args: { p_case_id: string; p_reason?: string };
+        Returns: {
+          out_case_id: string;
+          out_case_serial_id: string;
+          out_stage: string;
+          out_status: string;
+        }[];
+      };
+      // One overload only. The 3-argument version was dropped in the P1 cases
+      // migration, so the union that used to be here described a function that
+      // no longer exists -- a call written against it would have typechecked
+      // and then failed at runtime. out_conversation_id is nullable: the
+      // resolver returns no case when routing is a decision for a person.
+      resolve_case_for_inbound: {
+        Args: {
+          p_email: string;
+          p_external_event_id?: string;
+          p_message?: string;
+          p_name?: string;
+          p_nationality?: string;
+          p_provider?: string;
+          p_subject?: string;
+        };
+        Returns: {
+          out_case_number: number;
+          out_case_serial_id: string;
+          out_client_code: string;
+          out_client_id: string;
+          out_conversation_id: string | null;
+          out_is_new_case: boolean;
+          out_is_new_customer: boolean;
+        }[];
+      };
       restore_case: { Args: { p_conversation_id: string }; Returns: undefined };
     };
     Enums: {
