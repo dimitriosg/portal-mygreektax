@@ -391,4 +391,44 @@ comment on function public.resolve_case_for_inbound(text, text, text, text, text
   'out_conversation_id and flags needs_routing_review for a person to decide. '
   'A brand new client gets CS001 from the clients_open_first_case trigger.';
 
+-- ---------------------------------------------------------------------------
+-- Execute privileges.
+--
+-- Every function below is SECURITY DEFINER, so an EXECUTE grant to a PostgREST
+-- role is a bypass of RLS reachable with nothing but the publishable key --
+-- which ships in the browser bundle and is public by design.
+-- resolve_case_for_inbound is the sharpest of the three: it takes an email and
+-- CREATES a client, so an anon caller could mint CLT#### rows at will. That
+-- exposure predates this migration (create or replace preserves the existing
+-- ACL); it is closed here because this migration is what made it visible.
+--
+-- Revoking PUBLIC alone is NOT enough, and this is the trap. Two separate
+-- grants are in play on a new function in this database:
+--   1. PostgreSQL's own default EXECUTE grant to PUBLIC, and
+--   2. Supabase's `alter default privileges in schema public grant execute on
+--      functions to anon, authenticated, service_role`, which writes anon and
+--      authenticated in as EXPLICIT grantees.
+-- Dropping PUBLIC leaves (2) untouched and the function still fully callable by
+-- anon. Verified against the catalogue after each step rather than inferred:
+-- after `revoke ... from public` these four still reported
+-- has_function_privilege('anon', ..., 'EXECUTE') = true. Both must be revoked.
+--
+-- service_role is the only grantee because it is the only caller: both
+-- /webhooks/lead-intake and /webhooks/case-create use the service-role client,
+-- and pg_stat_statements shows every PostgREST call to all three arriving as
+-- service_role -- none as anon, authenticated or n8n_readonly. This is the same
+-- shape correct_payment already has (postgres + service_role, no PUBLIC).
+--
+-- tg_clients_open_first_case is a trigger function, so PostgREST will not
+-- expose it and Postgres refuses a direct call. Revoked anyway: it is
+-- SECURITY DEFINER and there is no reason to leave the grant standing.
+revoke all on function public.open_case(uuid, text, text) from public, anon, authenticated;
+revoke all on function public.reopen_case(uuid, text) from public, anon, authenticated;
+revoke all on function public.resolve_case_for_inbound(text, text, text, text, text, text, text) from public, anon, authenticated;
+revoke all on function public.tg_clients_open_first_case() from public, anon, authenticated;
+
+grant execute on function public.open_case(uuid, text, text) to service_role;
+grant execute on function public.reopen_case(uuid, text) to service_role;
+grant execute on function public.resolve_case_for_inbound(text, text, text, text, text, text, text) to service_role;
+
 notify pgrst, 'reload schema';
