@@ -45,7 +45,20 @@ begin
     raise exception 'A reason is required to file a job under a case';
   end if;
 
-  select * into v_job from public.jobs where id = p_job_id;
+  -- FOR UPDATE, and it is load-bearing for the audit trail rather than for the
+  -- write. Without it two concurrent filings of the same job both read the old
+  -- case_id; Postgres serialises the UPDATEs, but the second caller still holds
+  -- its stale local row and logs the wrong "from" case:
+  --
+  --   A reads J unfiled, B reads J unfiled
+  --   A files J into CS001, logs null -> CS001
+  --   B files J into CS002, logs null -> CS002   <- should be CS001 -> CS002
+  --
+  -- Locking the row makes the second caller wait and then read the assignment
+  -- that actually precedes its own. "From case" is half of what makes an
+  -- assignment auditable, so a plausible-looking wrong value is worse than an
+  -- error.
+  select * into v_job from public.jobs where id = p_job_id for update;
   if not found then
     raise exception 'Job % not found', p_job_id;
   end if;
