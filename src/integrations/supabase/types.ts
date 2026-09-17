@@ -2443,6 +2443,28 @@ export type Database = {
         };
         Relationships: [];
       };
+      v_unfiled_jobs: {
+        Row: {
+          client_code: string | null;
+          client_fee: number | null;
+          client_id: string | null;
+          client_live_cases: number | null;
+          client_name: string | null;
+          client_stage: string | null;
+          date_sent: string | null;
+          evidence_cases_that_exist: number | null;
+          evidence_codes: string[] | null;
+          evidence_sources: string[] | null;
+          job_code: string | null;
+          job_id: string | null;
+          only_case_id: string | null;
+          only_case_serial_id: string | null;
+          service_category: string | null;
+          service_name: string | null;
+          status: string | null;
+        };
+        Relationships: [];
+      };
       v_partner_appendix: {
         Row: {
           category: string | null;

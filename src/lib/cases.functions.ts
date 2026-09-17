@@ -429,3 +429,100 @@ export const listCaseProposals = createServerFn({ method: "GET" })
 
     return { proposals, missing };
   });
+
+// ---------------------------------------------------------------------------
+// Job triage: the jobs that have no case yet.
+
+export type UnfiledJob = {
+  jobId: string;
+  jobCode: string | null;
+  status: string | null;
+  dateSent: string | null;
+  clientFee: number | null;
+  serviceName: string | null;
+  serviceCategory: string | null;
+  /** Case-code evidence, when any exists. More than one means a conflict. */
+  evidenceCodes: string[];
+  evidenceSources: string[];
+  evidenceCasesThatExist: number;
+};
+
+export type UnfiledClientGroup = {
+  clientId: string;
+  clientCode: string | null;
+  clientName: string | null;
+  clientStage: string | null;
+  /** How many live cases this client has: 0, 1 or several. */
+  liveCases: number;
+  /** Set only when liveCases === 1 — the single possible destination. */
+  onlyCaseId: string | null;
+  onlyCaseSerialId: string | null;
+  jobs: UnfiledJob[];
+};
+
+// Grouped by client, because the client is what decides where a job can go.
+//
+// The grouping is not cosmetic. Of the jobs with no case today, none belongs to
+// a client with more than one case, so almost every decision here is either
+// "there is exactly one case, confirm it" or "there is no case yet, so this
+// cannot be filed until one is opened". Showing a flat list of jobs would hide
+// the only fact that matters.
+//
+// Nothing is filed from this read. The write is assignJobToCase(), one job at a
+// time, which is the same path the /leads dialog uses and which writes the
+// who/when/from/to audit row inside one transaction.
+export const listUnfiledJobs = createServerFn({ method: "GET" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await requireAdminAccess({
+      userId: context.userId,
+      email: context.claims.email as string | undefined,
+    });
+
+    const { data, error } = await supabaseAdmin.from("v_unfiled_jobs").select("*");
+    if (error) throw new Error(`Could not read the unfiled jobs: ${error.message}`);
+
+    const byClient = new Map<string, UnfiledClientGroup>();
+
+    for (const r of data ?? []) {
+      const clientId = r.client_id as string;
+      let group = byClient.get(clientId);
+      if (!group) {
+        group = {
+          clientId,
+          clientCode: r.client_code,
+          clientName: r.client_name,
+          clientStage: r.client_stage,
+          liveCases: Number(r.client_live_cases ?? 0),
+          onlyCaseId: r.only_case_id,
+          onlyCaseSerialId: r.only_case_serial_id,
+          jobs: [],
+        };
+        byClient.set(clientId, group);
+      }
+      group.jobs.push({
+        jobId: r.job_id as string,
+        jobCode: r.job_code,
+        status: r.status,
+        dateSent: r.date_sent,
+        clientFee: r.client_fee,
+        serviceName: r.service_name,
+        serviceCategory: r.service_category,
+        evidenceCodes: (r.evidence_codes as string[] | null) ?? [],
+        evidenceSources: (r.evidence_sources as string[] | null) ?? [],
+        evidenceCasesThatExist: Number(r.evidence_cases_that_exist ?? 0),
+      });
+    }
+
+    const groups = [...byClient.values()];
+    const jobCount = groups.reduce((n, g) => n + g.jobs.length, 0);
+
+    return {
+      groups,
+      jobCount,
+      /** Filable now: the client has at least one case to file into. */
+      readyCount: groups.filter((g) => g.liveCases > 0).reduce((n, g) => n + g.jobs.length, 0),
+      /** Blocked: the client has no case, so open one first. */
+      blockedCount: groups.filter((g) => g.liveCases === 0).reduce((n, g) => n + g.jobs.length, 0),
+    };
+  });
