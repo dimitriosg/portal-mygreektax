@@ -72,6 +72,16 @@ begin
     return;  -- case deleted or purged mid-write
   end if;
 
+  -- An archived case is closed to writes. It is reachable: file a job under a
+  -- case, archive the case, then change that job's status, and without this
+  -- guard the trigger would move an archived case's stage and write history
+  -- against it. Everything else that touches a case already refuses when
+  -- archived_at is set -- assign_job_to_case, set_case_stage -- so this is the
+  -- same rule applied to the one path that is not a person's action.
+  if v_case.archived_at is not null then
+    return;
+  end if;
+
   select count(*),
          count(*) filter (where status = 'Completed'),
          count(*) filter (where status in ('Delivered', 'Invoiced', 'Completed')),
@@ -122,6 +132,93 @@ comment on function public.recompute_case_stage(uuid) is
 
 revoke all on function public.recompute_case_stage(uuid) from public, anon, authenticated;
 grant execute on function public.recompute_case_stage(uuid) to service_role;
+
+-- ---------------------------------------------------------------------------
+-- 1b. Setting a case's stage by hand, and its audit row, in ONE transaction.
+--
+-- Same argument as assign_job_to_case, and the same shape. The first version of
+-- this lived in the server function as read -> update -> log through three
+-- PostgREST calls, which has two defects that no ordering fixes:
+--
+--   * logActivityEvent is best-effort and swallows its error, so a failed audit
+--     insert leaves the stage changed with nothing in the history. "Every stage
+--     change is auditable" then holds by luck.
+--   * nothing locks the case between the read and the update. A job write can
+--     run recompute_case_stage in that window, and the manual update then
+--     overwrites a job-derived stage while logging a 'from' value that was
+--     already stale -- a plausible-looking wrong audit row, which is worse than
+--     an error.
+--
+-- Taking the same row lock recompute_case_stage takes serialises the two
+-- against each other. A later job change may still move the stage again; that
+-- is intended, and it is logged as via=job_sync so the two are told apart.
+create or replace function public.set_case_stage(
+  p_case_id        uuid,
+  p_stage          text,
+  p_actor_user_id  uuid default null,
+  p_actor_email    text default null
+)
+returns table (
+  out_case_id        uuid,
+  out_case_serial_id text,
+  out_from_stage     text,
+  out_to_stage       text,
+  out_unchanged      boolean
+)
+language plpgsql
+security definer
+set search_path to 'public', 'pg_temp'
+as $function$
+declare
+  v_case public.brain_conversations%rowtype;
+begin
+  select * into v_case from public.brain_conversations where id = p_case_id for update;
+  if not found then
+    raise exception 'Case % not found', p_case_id;
+  end if;
+  if v_case.archived_at is not null then
+    raise exception 'That case is archived';
+  end if;
+
+  -- Already there: nothing to do and nothing to log, reported so the caller can
+  -- say so rather than claiming a change.
+  if v_case.stage is not distinct from p_stage then
+    return query select v_case.id, v_case.case_serial_id, v_case.stage, v_case.stage, true;
+    return;
+  end if;
+
+  update public.brain_conversations set stage = p_stage where id = p_case_id;
+
+  insert into public.activity_events
+    (event_type, actor_user_id, actor_email, subject_label, metadata)
+  values
+    ('case_stage_changed',
+     p_actor_user_id,
+     nullif(btrim(lower(coalesce(p_actor_email, ''))), ''),
+     coalesce(v_case.case_serial_id, v_case.id::text),
+     jsonb_build_object(
+       'leadId',       v_case.client_id::text,
+       'caseId',       v_case.id::text,
+       'caseSerialId', v_case.case_serial_id,
+       'field',        'Stage',
+       'from',         v_case.stage,
+       'to',           p_stage,
+       'via',          'manual'));
+
+  return query select v_case.id, v_case.case_serial_id, v_case.stage, p_stage, false;
+end;
+$function$;
+
+comment on function public.set_case_stage(uuid, text, uuid, text) is
+  'Sets a case''s stage by hand and writes the case_stage_changed audit row in '
+  'the same transaction, taking the same row lock recompute_case_stage takes so '
+  'a manual change and a job-derived one cannot interleave. The stage vocabulary '
+  'is validated by the caller (CLIENT_STAGES in src/lib/leads-shared.ts); this '
+  'function is reachable only by service_role.';
+
+revoke all on function public.set_case_stage(uuid, text, uuid, text)
+  from public, anon, authenticated;
+grant execute on function public.set_case_stage(uuid, text, uuid, text) to service_role;
 
 -- ---------------------------------------------------------------------------
 -- 2. The jobs trigger recomputes the case as well as the client.

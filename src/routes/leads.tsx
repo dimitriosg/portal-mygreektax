@@ -1026,7 +1026,7 @@ function LeadCasesList({
 
   const stageMut = useMutation({
     mutationFn: (vars: { caseId: string; stage: string }) => changeStage({ data: vars }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["leads", "cases", leadId] }),
+    onSuccess: () => invalidateCaseViews(qc, leadId),
     onError: (error) => toast.error(getErrorMessage(error)),
   });
 
@@ -1035,7 +1035,7 @@ function LeadCasesList({
     onSuccess: () => {
       setEditingId(null);
       setDraftTitle("");
-      qc.invalidateQueries({ queryKey: ["leads", "cases", leadId] });
+      invalidateCaseViews(qc, leadId);
     },
     onError: (error) => toast.error(getErrorMessage(error)),
   });
@@ -1077,7 +1077,31 @@ function LeadCasesList({
               >
                 {c.caseSerialId ?? `Case ${c.caseNumber ?? "?"}`}
               </button>
-              {c.stage ? <span className="shrink-0 text-muted-foreground">{c.stage}</span> : null}
+              {/* The per-case stage, editable. Safe to offer only because
+                  clients_sync_stage_to_conversations is gone: while that
+                  trigger existed it stamped the client's stage onto every
+                  case, so a control here would have been silently undone. */}
+              <select
+                value={c.stage ?? ""}
+                disabled={stageMut.isPending}
+                onChange={(e) => {
+                  // The placeholder is only rendered while a case has no stage
+                  // at all, and re-picking it cannot fire a change event -- but
+                  // sending "" would surface a Zod error to a person who did
+                  // nothing wrong, so it never leaves here.
+                  if (!e.target.value) return;
+                  stageMut.mutate({ caseId: c.id, stage: e.target.value });
+                }}
+                className={`shrink-0 rounded border px-1.5 py-0.5 text-xs ${stageStyle(c.stage)}`}
+                aria-label={`Stage for ${c.caseSerialId ?? "this case"}`}
+              >
+                {c.stage ? null : <option value="">— Stage —</option>}
+                {CLIENT_STAGES.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
             </div>
             {editingId === c.id ? (
               <div className="mt-1 flex items-center gap-1">
@@ -1162,6 +1186,17 @@ function LeadCasesList({
   );
 }
 
+// Every case action -- opening one, renaming it, changing its stage, filing a
+// job into it -- writes an activity_events row that LeadHistory renders. So
+// each of them has to refresh the history as well as the cases, or the panel
+// sits on its previous cache and the audit trail appears to be missing the
+// thing that just happened. That is the same failure as the History filter
+// dropping case events: written, and with no way to read it.
+function invalidateCaseViews(qc: ReturnType<typeof useQueryClient>, leadId: string) {
+  void qc.invalidateQueries({ queryKey: ["leads", "cases", leadId] });
+  void qc.invalidateQueries({ queryKey: ["leads", "history", leadId] });
+}
+
 // One shared query for the dialog: the cases block and the jobs block below it
 // both read from it, and filing a job invalidates it once for both.
 function useClientCases(leadId: string) {
@@ -1185,7 +1220,7 @@ function NewCaseButton({ leadId }: { leadId: string }) {
       toast.success(`Case ${result.caseSerialId ?? "created"} opened`);
       setAdding(false);
       setTitle("");
-      qc.invalidateQueries({ queryKey: ["leads", "cases", leadId] });
+      invalidateCaseViews(qc, leadId);
     },
     onError: (error) => toast.error(getErrorMessage(error)),
   });
@@ -1287,7 +1322,7 @@ function LeadJobsWithCases({
     onSuccess: () => {
       toast.success("Job filed");
       reset();
-      qc.invalidateQueries({ queryKey: ["leads", "cases", leadId] });
+      invalidateCaseViews(qc, leadId);
       qc.invalidateQueries({ queryKey: ["jobs"] });
     },
     onError: (error) => toast.error(getErrorMessage(error)),

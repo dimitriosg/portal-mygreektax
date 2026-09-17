@@ -227,6 +227,12 @@ export const renameCase = createServerFn({ method: "POST" })
 // recompute_case_stage still moves a case when its jobs move, and deliberately
 // does nothing when a case has no jobs or none have started. So a stage set
 // here survives until the work itself says otherwise.
+//
+// The work happens inside public.set_case_stage() for the same reason
+// assign_job_to_case exists: the stage update and its audit row have to commit
+// together, and the case row has to be locked across the read and the write so
+// a job trigger cannot slip recompute_case_stage in between and leave this
+// function logging a "from" stage that is already stale.
 export const setCaseStage = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((d: { caseId: string; stage: string }) =>
@@ -243,42 +249,26 @@ export const setCaseStage = createServerFn({ method: "POST" })
       email: context.claims.email as string | undefined,
     });
 
-    const { data: existing, error: fetchErr } = await supabaseAdmin
-      .from("brain_conversations")
-      .select("id, stage, case_serial_id, client_id, archived_at")
-      .eq("id", data.caseId)
-      .single();
-    if (fetchErr || !existing) {
-      throw new Error(`Case not found: ${fetchErr?.message ?? data.caseId}`);
-    }
-    if (existing.archived_at) throw new Error("That case is archived.");
-    if (existing.stage === data.stage) {
-      return { caseId: existing.id, stage: data.stage, unchanged: true };
-    }
-
-    const { error: updateErr } = await supabaseAdmin
-      .from("brain_conversations")
-      .update({ stage: data.stage })
-      .eq("id", data.caseId);
-    if (updateErr) throw new Error(`Could not change the stage: ${updateErr.message}`);
-
-    await logActivityEvent({
-      eventType: "case_stage_changed",
-      actorUserId: context.userId,
-      actorEmail: (context.claims.email as string | undefined) ?? null,
-      subjectLabel: existing.case_serial_id ?? existing.id,
-      metadata: {
-        leadId: existing.client_id,
-        caseId: existing.id,
-        caseSerialId: existing.case_serial_id,
-        field: "Stage",
-        from: existing.stage,
-        to: data.stage,
-        via: "manual",
-      },
+    const { data: rows, error } = await supabaseAdmin.rpc("set_case_stage", {
+      p_case_id: data.caseId,
+      p_stage: data.stage,
+      p_actor_user_id: context.userId,
+      p_actor_email: (context.claims.email as string | undefined) ?? undefined,
     });
 
-    return { caseId: existing.id, stage: data.stage, unchanged: false };
+    // The function raises for a missing case and an archived one, so its
+    // message is already the sentence to show.
+    if (error) throw new Error(error.message);
+
+    const row = Array.isArray(rows) ? rows[0] : rows;
+    if (!row) throw new Error("set_case_stage returned nothing");
+
+    return {
+      caseId: row.out_case_id,
+      stage: row.out_to_stage,
+      fromStage: row.out_from_stage,
+      unchanged: row.out_unchanged,
+    };
   });
 
 // File a job under a case, or take it back out (caseId: null).
