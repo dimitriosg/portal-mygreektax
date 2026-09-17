@@ -49,6 +49,7 @@ import { Route as AdminSecureKeysRouteImport } from './routes/admin.secure-keys'
 import { Route as AdminSecureInboxRouteImport } from './routes/admin.secure-inbox'
 import { Route as AdminReportsRouteImport } from './routes/admin.reports'
 import { Route as AdminPaymentsRouteImport } from './routes/admin.payments'
+import { Route as AdminJobTriageRouteImport } from './routes/admin.job-triage'
 import { Route as AdminChangeRequestsRouteImport } from './routes/admin.change-requests'
 import { Route as AdminCaseProposalsRouteImport } from './routes/admin.case-proposals'
 import { Route as LeadsClientCodeCorrespondenceRouteImport } from './routes/leads_.$clientCode.correspondence'
@@ -254,6 +255,11 @@ const AdminPaymentsRoute = AdminPaymentsRouteImport.update({
   path: '/payments',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminJobTriageRoute = AdminJobTriageRouteImport.update({
+  id: '/job-triage',
+  path: '/job-triage',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminChangeRequestsRoute = AdminChangeRequestsRouteImport.update({
   id: '/change-requests',
   path: '/change-requests',
@@ -284,6 +290,7 @@ export interface FileRoutesByFullPath {
   '/unsubscribe': typeof UnsubscribeRoute
   '/admin/case-proposals': typeof AdminCaseProposalsRoute
   '/admin/change-requests': typeof AdminChangeRequestsRoute
+  '/admin/job-triage': typeof AdminJobTriageRoute
   '/admin/payments': typeof AdminPaymentsRoute
   '/admin/reports': typeof AdminReportsRoute
   '/admin/secure-inbox': typeof AdminSecureInboxRoute
@@ -328,6 +335,7 @@ export interface FileRoutesByTo {
   '/unsubscribe': typeof UnsubscribeRoute
   '/admin/case-proposals': typeof AdminCaseProposalsRoute
   '/admin/change-requests': typeof AdminChangeRequestsRoute
+  '/admin/job-triage': typeof AdminJobTriageRoute
   '/admin/payments': typeof AdminPaymentsRoute
   '/admin/reports': typeof AdminReportsRoute
   '/admin/secure-inbox': typeof AdminSecureInboxRoute
@@ -374,6 +382,7 @@ export interface FileRoutesById {
   '/unsubscribe': typeof UnsubscribeRoute
   '/admin/case-proposals': typeof AdminCaseProposalsRoute
   '/admin/change-requests': typeof AdminChangeRequestsRoute
+  '/admin/job-triage': typeof AdminJobTriageRoute
   '/admin/payments': typeof AdminPaymentsRoute
   '/admin/reports': typeof AdminReportsRoute
   '/admin/secure-inbox': typeof AdminSecureInboxRoute
@@ -421,6 +430,7 @@ export interface FileRouteTypes {
     | '/unsubscribe'
     | '/admin/case-proposals'
     | '/admin/change-requests'
+    | '/admin/job-triage'
     | '/admin/payments'
     | '/admin/reports'
     | '/admin/secure-inbox'
@@ -465,6 +475,7 @@ export interface FileRouteTypes {
     | '/unsubscribe'
     | '/admin/case-proposals'
     | '/admin/change-requests'
+    | '/admin/job-triage'
     | '/admin/payments'
     | '/admin/reports'
     | '/admin/secure-inbox'
@@ -510,6 +521,7 @@ export interface FileRouteTypes {
     | '/unsubscribe'
     | '/admin/case-proposals'
     | '/admin/change-requests'
+    | '/admin/job-triage'
     | '/admin/payments'
     | '/admin/reports'
     | '/admin/secure-inbox'
@@ -863,6 +875,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminPaymentsRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/job-triage': {
+      id: '/admin/job-triage'
+      path: '/job-triage'
+      fullPath: '/admin/job-triage'
+      preLoaderRoute: typeof AdminJobTriageRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/change-requests': {
       id: '/admin/change-requests'
       path: '/change-requests'
@@ -890,6 +909,7 @@ declare module '@tanstack/react-router' {
 interface AdminRouteChildren {
   AdminCaseProposalsRoute: typeof AdminCaseProposalsRoute
   AdminChangeRequestsRoute: typeof AdminChangeRequestsRoute
+  AdminJobTriageRoute: typeof AdminJobTriageRoute
   AdminPaymentsRoute: typeof AdminPaymentsRoute
   AdminReportsRoute: typeof AdminReportsRoute
   AdminSecureInboxRoute: typeof AdminSecureInboxRoute
@@ -901,6 +921,7 @@ interface AdminRouteChildren {
 const AdminRouteChildren: AdminRouteChildren = {
   AdminCaseProposalsRoute: AdminCaseProposalsRoute,
   AdminChangeRequestsRoute: AdminChangeRequestsRoute,
+  AdminJobTriageRoute: AdminJobTriageRoute,
   AdminPaymentsRoute: AdminPaymentsRoute,
   AdminReportsRoute: AdminReportsRoute,
   AdminSecureInboxRoute: AdminSecureInboxRoute,
