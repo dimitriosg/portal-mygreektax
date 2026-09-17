@@ -219,7 +219,9 @@ export const renameCase = createServerFn({ method: "POST" })
 // File a job under a case, or take it back out (caseId: null).
 //
 // Never inferred, always a person's decision, and always audited: who, when,
-// from which case, to which case, and why.
+// from which case and to which case. The reason is optional -- it adds colour
+// when there is colour to add, and requiring one for an obvious filing only
+// trains people to type "x".
 //
 // The work happens inside public.assign_job_to_case() rather than here,
 // because the job update and its audit row have to commit together. Two
@@ -231,12 +233,12 @@ export const renameCase = createServerFn({ method: "POST" })
 // neither.
 export const assignJobToCase = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
-  .inputValidator((d: { jobId: string; caseId: string | null; reason: string }) =>
+  .inputValidator((d: { jobId: string; caseId: string | null; reason?: string }) =>
     z
       .object({
         jobId: RECORD_ID,
         caseId: RECORD_ID.nullable(),
-        reason: z.string().trim().min(1, "A reason is required").max(500),
+        reason: z.string().trim().max(500).optional(),
       })
       .parse(d),
   )
@@ -249,14 +251,17 @@ export const assignJobToCase = createServerFn({ method: "POST" })
     const { data: rows, error } = await supabaseAdmin.rpc("assign_job_to_case", {
       p_job_id: data.jobId,
       p_case_id: data.caseId,
-      p_reason: data.reason,
+      // The argument has no SQL default, so it is always sent. The function
+      // does nullif(btrim(...), '') on it, which turns a blank into a real
+      // NULL rather than storing an empty string in the audit row.
+      p_reason: data.reason ?? "",
       p_actor_user_id: context.userId,
       p_actor_email: (context.claims.email as string | undefined) ?? undefined,
     });
 
     // The function raises for a missing job, a case belonging to another
-    // client, an archived case and an empty reason, so its message is already
-    // the sentence to show.
+    // client and an archived case, so its message is already the sentence to
+    // show.
     if (error) throw new Error(error.message);
 
     const row = Array.isArray(rows) ? rows[0] : rows;

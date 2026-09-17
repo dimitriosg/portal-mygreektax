@@ -1239,8 +1239,10 @@ function NewCaseButton({ leadId }: { leadId: string }) {
 }
 
 // Every job the client has, in one list, each showing the case it is filed
-// under and letting a person change it. A job is never filed automatically and
-// the reason is required, so the audit trail answers "why is JB148 in CS002?".
+// under and letting a person change it. A job is never filed automatically, and
+// every filing is audited with who, when, out of which case and into which. A
+// reason can be added when there is something worth saying; it is not required,
+// because demanding one for an obvious filing only trains people to type "x".
 function LeadJobsWithCases({
   leadId,
   clientJobs,
@@ -1267,7 +1269,7 @@ function LeadJobsWithCases({
   };
 
   const assignMut = useMutation({
-    mutationFn: (vars: { jobId: string; caseId: string | null; reason: string }) =>
+    mutationFn: (vars: { jobId: string; caseId: string | null; reason?: string }) =>
       assign({ data: vars }),
     onSuccess: () => {
       toast.success("Job filed");
@@ -1333,7 +1335,7 @@ function LeadJobsWithCases({
                     </select>
                     <Input
                       value={reason}
-                      placeholder="Why does it belong there? (required)"
+                      placeholder="Why does it belong there? (optional)"
                       maxLength={500}
                       onChange={(e) => setReason(e.target.value)}
                       className="h-7 text-xs"
@@ -1352,12 +1354,12 @@ function LeadJobsWithCases({
                         type="button"
                         size="sm"
                         className="h-7 px-2 text-xs"
-                        disabled={assignMut.isPending || !targetCaseId || !reason.trim()}
+                        disabled={assignMut.isPending || !targetCaseId}
                         onClick={() =>
                           assignMut.mutate({
                             jobId: j.id,
                             caseId: targetCaseId === "__none__" ? null : targetCaseId,
-                            reason: reason.trim(),
+                            reason: reason.trim() || undefined,
                           })
                         }
                       >

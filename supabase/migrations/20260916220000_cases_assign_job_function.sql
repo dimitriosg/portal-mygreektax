@@ -7,10 +7,15 @@
 -- audit row. Worse, retrying the second case found the job already filed and
 -- returned "unchanged", so the missing audit row was never repaired.
 --
--- "Every manual job assignment is auditable: who, when, from case, to case,
--- reason" is a stated rule of this system, so it needs to hold structurally
--- rather than by luck. Inside one plpgsql function both writes commit together
--- or neither does.
+-- "Every manual job assignment is auditable: who, when, from case, to case"
+-- is a stated rule of this system, so it needs to hold structurally rather
+-- than by luck. Inside one plpgsql function both writes commit together or
+-- neither does.
+--
+-- The reason is OPTIONAL. It was required at first, and that was wrong: it put
+-- friction on every single move, and who/when/from/to already answers "was this
+-- deliberate and by whom". A reason adds colour when there is colour to add;
+-- demanding one for an obvious filing just trains people to type "x".
 --
 -- Cross-client assignment is still refused by the composite foreign key
 -- jobs (case_id, client_id) -> brain_conversations (id, client_id); the
@@ -41,10 +46,6 @@ declare
   v_from_case public.brain_conversations%rowtype;
   v_reason    text := nullif(btrim(coalesce(p_reason, '')), '');
 begin
-  if v_reason is null then
-    raise exception 'A reason is required to file a job under a case';
-  end if;
-
   -- FOR UPDATE, and it is load-bearing for the audit trail rather than for the
   -- write. Without it two concurrent filings of the same job both read the old
   -- case_id; Postgres serialises the UPDATEs, but the second caller still holds
@@ -116,7 +117,7 @@ $function$;
 comment on function public.assign_job_to_case(uuid, uuid, text, uuid, text) is
   'Files a job under a case (or unfiles it with a null case) and writes the '
   'job_case_assigned audit row in the same transaction, so an assignment can '
-  'never exist without its audit entry. Requires a reason.';
+  'never exist without its audit entry. The reason is optional.';
 
 -- Same ACL discipline as the rest of this work: PostgreSQL grants EXECUTE to
 -- PUBLIC by default, and Supabase's default privileges additionally grant anon
