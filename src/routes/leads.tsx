@@ -1394,16 +1394,72 @@ function LeadHistory({ leadId }: { leadId: string }) {
         const md = (ev.metadata ?? {}) as Record<string, unknown>;
         const actor = ev.actor_name || ev.actor_email || "Someone";
         const when = formatDate(ev.occurred_at);
-        const description =
-          ev.event_type === "lead_created" ? (
-            "created this lead"
-          ) : (
+        // Case events read as sentences rather than field diffs. The one that
+        // matters for an audit is job_case_assigned: it has to say which job,
+        // out of which case, into which case, and why -- that is the whole
+        // point of requiring a reason when filing.
+        const shortCase = (serial: unknown) => {
+          const m = typeof serial === "string" ? serial.match(/(CS\d+)/) : null;
+          return m ? m[1] : null;
+        };
+        let description: React.ReactNode;
+        if (ev.event_type === "lead_created") {
+          description = "created this lead";
+        } else if (ev.event_type === "case_opened") {
+          description = (
+            <>
+              opened case <span className="font-medium">{String(md.caseSerialId ?? "")}</span>
+              {md.title ? <> — {String(md.title)}</> : null}
+            </>
+          );
+        } else if (ev.event_type === "case_reopened") {
+          description = (
+            <>
+              reopened case <span className="font-medium">{String(md.caseSerialId ?? "")}</span>
+            </>
+          );
+        } else if (ev.event_type === "case_renamed") {
+          description = (
+            <>
+              retitled <span className="font-medium">{String(md.caseSerialId ?? "")}</span> from{" "}
+              <span className="text-muted-foreground">{formatHistoryValue(md.from)}</span> to{" "}
+              <span className="font-medium">{formatHistoryValue(md.to)}</span>
+            </>
+          );
+        } else if (ev.event_type === "job_case_assigned") {
+          const from = shortCase(md.fromCaseSerialId);
+          const to = shortCase(md.toCaseSerialId);
+          description = (
+            <>
+              {to ? "filed" : "took"}{" "}
+              <span className="font-medium">{String(md.jobCode ?? "a job")}</span>{" "}
+              {from ? (
+                <>
+                  out of <span className="font-medium">{from}</span> and into{" "}
+                </>
+              ) : to ? (
+                "into "
+              ) : (
+                "out of its case"
+              )}
+              {to ? <span className="font-medium">{to}</span> : null}
+              {md.reason ? (
+                <>
+                  {" "}
+                  — <span className="italic">{String(md.reason)}</span>
+                </>
+              ) : null}
+            </>
+          );
+        } else {
+          description = (
             <>
               changed <span className="font-medium">{String(md.field ?? "a field")}</span> from{" "}
               <span className="text-muted-foreground">{formatHistoryValue(md.from)}</span> to{" "}
               <span className="font-medium">{formatHistoryValue(md.to)}</span>
             </>
           );
+        }
         return (
           <div key={ev.id} className="rounded border border-border p-2 text-xs">
             <span className="font-medium">{actor}</span> {description}

@@ -425,7 +425,18 @@ export const listLeadActivity = createServerFn({ method: "GET" })
     const { data: events, error } = await supabaseAdmin
       .from("activity_events")
       .select("*")
-      .in("event_type", ["lead_stage_changed", "lead_field_changed", "lead_created"])
+      // Case events belong in this feed too. They all carry metadata.leadId, so
+      // they filter by client the same way; leaving them out meant the audit
+      // trail for "why is JB148 in CS002?" was being written and never shown.
+      .in("event_type", [
+        "lead_stage_changed",
+        "lead_field_changed",
+        "lead_created",
+        "case_opened",
+        "case_reopened",
+        "case_renamed",
+        "job_case_assigned",
+      ])
       .eq("metadata->>leadId", data.leadId)
       .order("occurred_at", { ascending: false })
       .limit(100);
