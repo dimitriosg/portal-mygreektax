@@ -28,6 +28,7 @@ import { useAuth } from "@/lib/auth-context";
 import { getErrorMessage, isAuthSessionError } from "@/lib/auth-errors";
 import { Card, CardContent } from "@/components/ui/card";
 import { JobEditDialog } from "@/components/job-edit-dialog";
+import { JobCasePicker } from "@/components/job-case-picker";
 import { CorrespondenceView } from "@/components/correspondence-view";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1476,6 +1477,7 @@ function LeadHistory({ leadId }: { leadId: string }) {
 const MONEY_RELEVANT_STAGES = new Set(["Quoted", "Active", "Delivered", "Parked", "Complete"]);
 
 const DEFAULT_NEW_JOB_FORM = {
+  caseId: "",
   serviceId: "",
   accountantId: "",
   status: "To Assign" as (typeof JOB_STATUSES)[number],
@@ -1551,6 +1553,7 @@ function LeadEditDialog({
   onCreateJob: (
     vars: {
       serviceId: string;
+      caseId?: string;
       accountantId?: string;
       status?: string;
       slaDeadline?: string;
@@ -2022,6 +2025,11 @@ function LeadEditDialog({
                 {lead.fields["Client Code"] ? ` (${lead.fields["Client Code"]})` : ""}
               </div>
             </div>
+            <JobCasePicker
+              clientId={lead.id}
+              value={newJobForm.caseId}
+              onChange={(caseId) => setNewJobForm((f) => ({ ...f, caseId }))}
+            />
             <div className="space-y-1">
               <Label>Service</Label>
               <select
@@ -2105,11 +2113,12 @@ function LeadEditDialog({
               Cancel
             </Button>
             <Button
-              disabled={!newJobForm.serviceId || creatingJob}
+              disabled={!newJobForm.serviceId || !newJobForm.caseId || creatingJob}
               onClick={() =>
                 onCreateJob(
                   {
                     serviceId: newJobForm.serviceId,
+                    caseId: newJobForm.caseId,
                     accountantId: newJobForm.accountantId || undefined,
                     status: newJobForm.status,
                     slaDeadline: newJobForm.slaDeadline || undefined,

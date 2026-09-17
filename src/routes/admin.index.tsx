@@ -25,6 +25,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { JobCasePicker } from "@/components/job-case-picker";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { isOverdueEligibleStatus, JOB_STATUSES } from "@/lib/airtable-shared";
@@ -169,6 +170,7 @@ function AdminPage() {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({
     clientId: "",
+    caseId: "",
     serviceId: "",
     accountantId: "",
     status: "To Assign" as (typeof JOB_STATUSES)[number],
@@ -191,6 +193,7 @@ function AdminPage() {
       setOpen(false);
       setForm({
         clientId: "",
+        caseId: "",
         serviceId: "",
         accountantId: "",
         status: "To Assign",
@@ -346,7 +349,11 @@ function AdminPage() {
                     <Label>Client</Label>
                     <select
                       value={form.clientId}
-                      onChange={(e) => setForm({ ...form, clientId: e.target.value })}
+                      onChange={(e) =>
+                        // Clear the case too: it belongs to the previous client,
+                        // and the composite foreign key would refuse it anyway.
+                        setForm({ ...form, clientId: e.target.value, caseId: "" })
+                      }
                       className="w-full rounded border border-input bg-background px-2 py-2 text-sm"
                     >
                       <option value="">— Select client —</option>
@@ -358,6 +365,11 @@ function AdminPage() {
                       ))}
                     </select>
                   </div>
+                  <JobCasePicker
+                    clientId={form.clientId}
+                    value={form.caseId}
+                    onChange={(caseId) => setForm((f) => ({ ...f, caseId }))}
+                  />
                   <div className="space-y-1">
                     <Label>Service</Label>
                     <select
@@ -439,10 +451,13 @@ function AdminPage() {
                     Cancel
                   </Button>
                   <Button
-                    disabled={!form.clientId || !form.serviceId || createMut.isPending}
+                    disabled={
+                      !form.clientId || !form.caseId || !form.serviceId || createMut.isPending
+                    }
                     onClick={() =>
                       createMut.mutate({
                         clientId: form.clientId,
+                        caseId: form.caseId,
                         serviceId: form.serviceId,
                         accountantId: form.accountantId || undefined,
                         status: form.status,
