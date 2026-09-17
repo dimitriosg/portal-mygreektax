@@ -435,6 +435,7 @@ export const listLeadActivity = createServerFn({ method: "GET" })
         "case_opened",
         "case_reopened",
         "case_renamed",
+        "case_stage_changed",
         "job_case_assigned",
       ])
       .eq("metadata->>leadId", data.leadId)

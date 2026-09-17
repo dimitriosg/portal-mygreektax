@@ -5,6 +5,7 @@ import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middlewa
 import { requireAdminAccess } from "./access-context.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { logActivityEvent } from "./activity.server";
+import { CLIENT_STAGES } from "./leads-shared";
 
 // Cases, and the jobs filed under them, read and written from the pipeline.
 //
@@ -214,6 +215,70 @@ export const renameCase = createServerFn({ method: "POST" })
     });
 
     return { caseId: existing.id, title: nextTitle, unchanged: false };
+  });
+
+// Set a case's stage by hand.
+//
+// Safe to offer only because clients_sync_stage_to_conversations is gone. While
+// that trigger existed it stamped the client's stage onto every case on any
+// change, so a control here would have been silently undone -- worse than no
+// control at all.
+//
+// recompute_case_stage still moves a case when its jobs move, and deliberately
+// does nothing when a case has no jobs or none have started. So a stage set
+// here survives until the work itself says otherwise.
+export const setCaseStage = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d: { caseId: string; stage: string }) =>
+    z
+      .object({
+        caseId: RECORD_ID,
+        stage: z.enum(CLIENT_STAGES),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await requireAdminAccess({
+      userId: context.userId,
+      email: context.claims.email as string | undefined,
+    });
+
+    const { data: existing, error: fetchErr } = await supabaseAdmin
+      .from("brain_conversations")
+      .select("id, stage, case_serial_id, client_id, archived_at")
+      .eq("id", data.caseId)
+      .single();
+    if (fetchErr || !existing) {
+      throw new Error(`Case not found: ${fetchErr?.message ?? data.caseId}`);
+    }
+    if (existing.archived_at) throw new Error("That case is archived.");
+    if (existing.stage === data.stage) {
+      return { caseId: existing.id, stage: data.stage, unchanged: true };
+    }
+
+    const { error: updateErr } = await supabaseAdmin
+      .from("brain_conversations")
+      .update({ stage: data.stage })
+      .eq("id", data.caseId);
+    if (updateErr) throw new Error(`Could not change the stage: ${updateErr.message}`);
+
+    await logActivityEvent({
+      eventType: "case_stage_changed",
+      actorUserId: context.userId,
+      actorEmail: (context.claims.email as string | undefined) ?? null,
+      subjectLabel: existing.case_serial_id ?? existing.id,
+      metadata: {
+        leadId: existing.client_id,
+        caseId: existing.id,
+        caseSerialId: existing.case_serial_id,
+        field: "Stage",
+        from: existing.stage,
+        to: data.stage,
+        via: "manual",
+      },
+    });
+
+    return { caseId: existing.id, stage: data.stage, unchanged: false };
   });
 
 // File a job under a case, or take it back out (caseId: null).

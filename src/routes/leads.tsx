@@ -23,7 +23,13 @@ import {
   deleteLead,
 } from "@/lib/leads.functions";
 import { listJobs, listServices, listAccountants, createJob } from "@/lib/jobs.functions";
-import { listClientCases, openCase, assignJobToCase, renameCase } from "@/lib/cases.functions";
+import {
+  listClientCases,
+  openCase,
+  assignJobToCase,
+  renameCase,
+  setCaseStage,
+} from "@/lib/cases.functions";
 import { useAuth } from "@/lib/auth-context";
 import { getErrorMessage, isAuthSessionError } from "@/lib/auth-errors";
 import { Card, CardContent } from "@/components/ui/card";
@@ -1010,12 +1016,19 @@ function LeadCasesList({
   const navigate = useNavigate();
   const qc = useQueryClient();
   const rename = useServerFn(renameCase);
+  const changeStage = useServerFn(setCaseStage);
   const casesQ = useClientCases(leadId);
   const cases = casesQ.data?.cases ?? [];
 
   // Which case's title is being edited, and the draft text for it.
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState("");
+
+  const stageMut = useMutation({
+    mutationFn: (vars: { caseId: string; stage: string }) => changeStage({ data: vars }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["leads", "cases", leadId] }),
+    onError: (error) => toast.error(getErrorMessage(error)),
+  });
 
   const renameMut = useMutation({
     mutationFn: (vars: { caseId: string; title: string }) => rename({ data: vars }),
@@ -1432,6 +1445,17 @@ function LeadHistory({ leadId }: { leadId: string }) {
               retitled <span className="font-medium">{String(md.caseSerialId ?? "")}</span> from{" "}
               <span className="text-muted-foreground">{formatHistoryValue(md.from)}</span> to{" "}
               <span className="font-medium">{formatHistoryValue(md.to)}</span>
+            </>
+          );
+        } else if (ev.event_type === "case_stage_changed") {
+          description = (
+            <>
+              moved <span className="font-medium">{String(md.caseSerialId ?? "a case")}</span> from{" "}
+              <span className="text-muted-foreground">{formatHistoryValue(md.from)}</span> to{" "}
+              <span className="font-medium">{formatHistoryValue(md.to)}</span>
+              {md.via === "job_sync" ? (
+                <span className="text-muted-foreground"> (from its jobs)</span>
+              ) : null}
             </>
           );
         } else if (ev.event_type === "job_case_assigned") {
