@@ -126,7 +126,10 @@ function JobRow({
               <select
                 value={picked}
                 onChange={(e) => setPicked(e.target.value)}
-                className="rounded border border-input bg-background px-1.5 py-1 text-xs"
+                // 16px on mobile, compact from sm up: iOS Safari zooms the page
+                // when a control under 16px takes focus, and this one is the
+                // single place on the screen where a real choice gets made.
+                className="rounded border border-input bg-background px-1.5 py-1 text-base sm:text-xs"
                 aria-label={`Case for ${job.jobCode ?? "this job"}`}
               >
                 <option value="">— Which case? —</option>

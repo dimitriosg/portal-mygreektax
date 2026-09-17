@@ -49,11 +49,18 @@ with evidence as (
 
   -- A payment_confirmed activity row naming both the job and the case. Joined
   -- on job_code because these rows predate activity_events having real foreign
-  -- key columns.
+  -- key columns; jobs.job_code is uniquely indexed, so that join cannot fan out.
+  --
+  -- event_type is checked as well as the metadata. Without it this arm accepts
+  -- ANY event carrying a jobCode and a caseCode and then labels it
+  -- 'payment_confirmed_event' -- a claim the query would not be enforcing. Only
+  -- payment_confirmed carries both today, so nothing is currently mislabelled,
+  -- but evidence that says where it came from has to actually come from there.
   select j.id, a.metadata->>'caseCode', 'payment_confirmed_event'
     from public.activity_events a
     join public.jobs j on j.job_code = a.metadata->>'jobCode'
-   where a.metadata->>'caseCode' ~ '^MGT-CS[0-9]{3}-CLT[0-9]{4}$'
+   where a.event_type = 'payment_confirmed'
+     and a.metadata->>'caseCode' ~ '^MGT-CS[0-9]{3}-CLT[0-9]{4}$'
 ),
 -- One row per (job, code), however many times that pairing appears.
 job_codes as (
