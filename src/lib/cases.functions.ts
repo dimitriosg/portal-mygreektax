@@ -329,3 +329,103 @@ export const assignJobToCase = createServerFn({ method: "POST" })
       unchanged: row.out_unchanged,
     };
   });
+
+// ---------------------------------------------------------------------------
+// Case proposals: the cases that were used with clients but never recorded.
+
+export type CaseProposal = {
+  clientId: string;
+  clientCode: string | null;
+  clientName: string | null;
+  clientStage: string | null;
+  /** The serial as it was actually used, e.g. MGT-CS002-CLT0009. */
+  proposedCaseSerialId: string;
+  proposedCaseNumber: number | null;
+  /** What open_case() would mint for this client right now. */
+  nextCaseNumber: number | null;
+  /** True when creating this now reproduces the serial the client already saw. */
+  serialWillMatch: boolean;
+  mentions: number;
+  sources: string[];
+  liveCases: number;
+  clientJobs: number;
+  clientUnfiledJobs: number;
+};
+
+export type ClientMissingCase = {
+  clientId: string;
+  clientCode: string | null;
+  clientName: string | null;
+  stage: string | null;
+  jobs: number;
+  unfiledJobs: number;
+  messages: number;
+  /**
+   * What open_case() would mint for this client as of this read. Not always 1:
+   * this list selects on having no LIVE case, and open_case() counts archived
+   * ones too, so a client whose only case is archived gets CS002.
+   */
+  nextCaseNumber: number | null;
+  hasCodeEvidence: boolean;
+};
+
+// Both lists are pure evidence. Nothing here writes, and nothing downstream
+// creates a case without a person pressing the button -- open_case() stays the
+// only door, exactly as it is for "+ New case" on the pipeline.
+export const listCaseProposals = createServerFn({ method: "GET" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await requireAdminAccess({
+      userId: context.userId,
+      email: context.claims.email as string | undefined,
+    });
+
+    const [proposalsRes, missingRes] = await Promise.all([
+      supabaseAdmin.from("v_case_proposals").select("*"),
+      supabaseAdmin.from("v_clients_missing_case").select("*"),
+    ]);
+
+    if (proposalsRes.error) {
+      throw new Error(`Could not read case proposals: ${proposalsRes.error.message}`);
+    }
+    if (missingRes.error) {
+      throw new Error(`Could not read clients missing a case: ${missingRes.error.message}`);
+    }
+
+    const proposals: CaseProposal[] = (proposalsRes.data ?? []).map((r) => ({
+      clientId: r.client_id as string,
+      clientCode: r.client_code,
+      clientName: r.client_name,
+      clientStage: r.client_stage,
+      proposedCaseSerialId: r.proposed_case_serial_id as string,
+      proposedCaseNumber: r.proposed_case_number,
+      nextCaseNumber: r.next_case_number,
+      // open_case() mints max(case_number)+1 and cannot be told to use a
+      // specific serial. Where the two differ, creating this proposal produces
+      // a DIFFERENT code from the one the client has already seen in writing,
+      // and the screen has to say so rather than imply a match.
+      serialWillMatch:
+        r.proposed_case_number != null &&
+        r.next_case_number != null &&
+        r.proposed_case_number === r.next_case_number,
+      mentions: Number(r.mentions ?? 0),
+      sources: (r.sources as string[] | null) ?? [],
+      liveCases: Number(r.live_cases ?? 0),
+      clientJobs: Number(r.client_jobs ?? 0),
+      clientUnfiledJobs: Number(r.client_unfiled_jobs ?? 0),
+    }));
+
+    const missing: ClientMissingCase[] = (missingRes.data ?? []).map((r) => ({
+      clientId: r.client_id as string,
+      clientCode: r.client_code,
+      clientName: r.client_name,
+      stage: r.stage,
+      jobs: Number(r.jobs ?? 0),
+      unfiledJobs: Number(r.unfiled_jobs ?? 0),
+      messages: Number(r.messages ?? 0),
+      nextCaseNumber: r.next_case_number,
+      hasCodeEvidence: Boolean(r.has_code_evidence),
+    }));
+
+    return { proposals, missing };
+  });

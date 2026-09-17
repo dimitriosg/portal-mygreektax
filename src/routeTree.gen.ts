@@ -50,6 +50,7 @@ import { Route as AdminSecureInboxRouteImport } from './routes/admin.secure-inbo
 import { Route as AdminReportsRouteImport } from './routes/admin.reports'
 import { Route as AdminPaymentsRouteImport } from './routes/admin.payments'
 import { Route as AdminChangeRequestsRouteImport } from './routes/admin.change-requests'
+import { Route as AdminCaseProposalsRouteImport } from './routes/admin.case-proposals'
 import { Route as LeadsClientCodeCorrespondenceRouteImport } from './routes/leads_.$clientCode.correspondence'
 
 const UnsubscribeRoute = UnsubscribeRouteImport.update({
@@ -258,6 +259,11 @@ const AdminChangeRequestsRoute = AdminChangeRequestsRouteImport.update({
   path: '/change-requests',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminCaseProposalsRoute = AdminCaseProposalsRouteImport.update({
+  id: '/case-proposals',
+  path: '/case-proposals',
+  getParentRoute: () => AdminRoute,
+} as any)
 const LeadsClientCodeCorrespondenceRoute =
   LeadsClientCodeCorrespondenceRouteImport.update({
     id: '/leads_/$clientCode/correspondence',
@@ -276,6 +282,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
   '/unsubscribe': typeof UnsubscribeRoute
+  '/admin/case-proposals': typeof AdminCaseProposalsRoute
   '/admin/change-requests': typeof AdminChangeRequestsRoute
   '/admin/payments': typeof AdminPaymentsRoute
   '/admin/reports': typeof AdminReportsRoute
@@ -319,6 +326,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
   '/unsubscribe': typeof UnsubscribeRoute
+  '/admin/case-proposals': typeof AdminCaseProposalsRoute
   '/admin/change-requests': typeof AdminChangeRequestsRoute
   '/admin/payments': typeof AdminPaymentsRoute
   '/admin/reports': typeof AdminReportsRoute
@@ -364,6 +372,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
   '/unsubscribe': typeof UnsubscribeRoute
+  '/admin/case-proposals': typeof AdminCaseProposalsRoute
   '/admin/change-requests': typeof AdminChangeRequestsRoute
   '/admin/payments': typeof AdminPaymentsRoute
   '/admin/reports': typeof AdminReportsRoute
@@ -410,6 +419,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/reset-password'
     | '/unsubscribe'
+    | '/admin/case-proposals'
     | '/admin/change-requests'
     | '/admin/payments'
     | '/admin/reports'
@@ -453,6 +463,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/reset-password'
     | '/unsubscribe'
+    | '/admin/case-proposals'
     | '/admin/change-requests'
     | '/admin/payments'
     | '/admin/reports'
@@ -497,6 +508,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/reset-password'
     | '/unsubscribe'
+    | '/admin/case-proposals'
     | '/admin/change-requests'
     | '/admin/payments'
     | '/admin/reports'
@@ -858,6 +870,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminChangeRequestsRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/case-proposals': {
+      id: '/admin/case-proposals'
+      path: '/case-proposals'
+      fullPath: '/admin/case-proposals'
+      preLoaderRoute: typeof AdminCaseProposalsRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/leads_/$clientCode/correspondence': {
       id: '/leads_/$clientCode/correspondence'
       path: '/leads/$clientCode/correspondence'
@@ -869,6 +888,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AdminRouteChildren {
+  AdminCaseProposalsRoute: typeof AdminCaseProposalsRoute
   AdminChangeRequestsRoute: typeof AdminChangeRequestsRoute
   AdminPaymentsRoute: typeof AdminPaymentsRoute
   AdminReportsRoute: typeof AdminReportsRoute
@@ -879,6 +899,7 @@ interface AdminRouteChildren {
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
+  AdminCaseProposalsRoute: AdminCaseProposalsRoute,
   AdminChangeRequestsRoute: AdminChangeRequestsRoute,
   AdminPaymentsRoute: AdminPaymentsRoute,
   AdminReportsRoute: AdminReportsRoute,

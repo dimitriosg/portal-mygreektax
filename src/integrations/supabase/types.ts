@@ -2412,6 +2412,37 @@ export type Database = {
         };
         Relationships: [];
       };
+      v_case_proposals: {
+        Row: {
+          client_code: string | null;
+          client_id: string | null;
+          client_jobs: number | null;
+          client_name: string | null;
+          client_stage: string | null;
+          client_unfiled_jobs: number | null;
+          live_cases: number | null;
+          mentions: number | null;
+          next_case_number: number | null;
+          proposed_case_number: number | null;
+          proposed_case_serial_id: string | null;
+          sources: string[] | null;
+        };
+        Relationships: [];
+      };
+      v_clients_missing_case: {
+        Row: {
+          client_code: string | null;
+          client_id: string | null;
+          client_name: string | null;
+          has_code_evidence: boolean | null;
+          jobs: number | null;
+          messages: number | null;
+          next_case_number: number | null;
+          stage: string | null;
+          unfiled_jobs: number | null;
+        };
+        Relationships: [];
+      };
       v_partner_appendix: {
         Row: {
           category: string | null;
