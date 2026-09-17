@@ -60,12 +60,21 @@ export function JobCasePicker({
 
   const openCaseMut = useMutation({
     mutationFn: (vars: { clientId: string; title?: string }) => createCase({ data: vars }),
-    onSuccess: async (result) => {
+    onSuccess: async (result, submittedFor) => {
       toast.success(`Case ${result.caseSerialId ?? "created"} opened`);
       setAdding(false);
       setTitle("");
-      await qc.invalidateQueries({ queryKey: ["leads", "cases", clientId] });
-      // Select what was just created -- making it is the reason it exists.
+      // Refresh the list for the client the case was actually created under,
+      // which is not necessarily the one on screen now.
+      await qc.invalidateQueries({ queryKey: ["leads", "cases", submittedFor.clientId] });
+
+      // Only select it if the picker still represents that client. onSuccess is
+      // rebuilt on every render, so it closes over the CURRENT clientId while
+      // result.caseId belongs to the one the request was sent for: switching
+      // client mid-request would otherwise write the old client's case into the
+      // new client's form. assign_job_to_case would refuse it at save time, but
+      // that is an avoidable error presented to a person who did nothing wrong.
+      if (submittedFor.clientId !== clientId) return;
       onChange(result.caseId);
     },
     onError: (error) => toast.error(getErrorMessage(error)),

@@ -606,6 +606,11 @@ function LeadsPage() {
 
       {editingLead && (
         <LeadEditDialog
+          // Keyed on the lead so switching to another client rebuilds the
+          // dialog rather than reusing it. Without this, form state -- the
+          // chosen case on the new-job form in particular -- would survive a
+          // lead change and belong to the previous client.
+          key={editingLead.id}
           lead={editingLead}
           clientJobs={jobsByClientId.get(editingLead.id) ?? []}
           onClose={() => setEditingLead(null)}
