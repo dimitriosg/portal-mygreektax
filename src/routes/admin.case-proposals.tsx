@@ -137,7 +137,7 @@ function ProposalCard({ p, onDone }: { p: CaseProposal; onDone: () => void }) {
         </div>
         <CreateCaseRow
           clientId={p.clientId}
-          label={`Create as CS${String(p.nextCaseNumber ?? 1).padStart(3, "0")}`}
+          label={`Create — next is CS${String(p.nextCaseNumber ?? 1).padStart(3, "0")}`}
           onDone={onDone}
         />
       </div>
@@ -165,14 +165,22 @@ function ProposalCard({ p, onDone }: { p: CaseProposal; onDone: () => void }) {
 
       {/* open_case() mints max(case_number)+1 and cannot be told to reuse a
           serial. Where that differs from the code the client already has in
-          writing, say so here rather than let it be discovered afterwards. */}
+          writing, say so here rather than let it be discovered afterwards.
+
+          Worded as a prediction on purpose. This number was read without the
+          advisory lock open_case() takes, so another case opened for the same
+          client in between moves it. open_case() returns the serial it really
+          minted and the toast shows that, so the outcome is never a guess --
+          but this line would be a promise the view cannot keep. */}
       {!p.serialWillMatch && (
         <p className="mt-2 rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-xs">
-          Creating this now mints{" "}
+          As things stand this would mint{" "}
           <span className="font-mono">CS{String(p.nextCaseNumber ?? 1).padStart(3, "0")}</span>, not{" "}
           <span className="font-mono">CS{String(p.proposedCaseNumber ?? 0).padStart(3, "0")}</span>.
-          Case numbers are allocated in order and cannot be chosen. Create this client's lower
-          numbers first if you want the codes to line up with what the client has already seen.
+          Case numbers are allocated in order, when you press Create, and cannot be chosen — so this
+          is a prediction, not a promise, and the confirmation will name the serial actually
+          created. Create this client&rsquo;s lower numbers first if you want the codes to line up
+          with what the client has already seen.
         </p>
       )}
     </div>

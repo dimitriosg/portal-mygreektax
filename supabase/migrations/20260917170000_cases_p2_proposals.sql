@@ -32,14 +32,25 @@
 -- Zero rows violate that today across all 323 mentions, but a forwarded email
 -- landing on another client's thread would otherwise propose a case under the
 -- wrong person, which is the exact failure this whole plan exists to stop.
-create or replace view public.v_case_proposals as
+create or replace view public.v_case_proposals
+with (security_invoker = true) as
 with evidence as (
-  select (regexp_match(m.subject, 'MGT-CS[0-9]{3}-CLT[0-9]{4}'))[1] as code,
+  -- regexp_matches(..., 'g') through a lateral, not regexp_match, because
+  -- regexp_match returns only the FIRST match in a subject. A reply that
+  -- quotes an old CS001 thread while raising CS002 work carries both serials,
+  -- and that is the most likely failure this whole design has -- losing the
+  -- second one would hide exactly the second case this screen exists to find.
+  --
+  -- (?![0-9]) after CLT[0-9]{4} stops a longer client number being truncated:
+  -- without it, MGT-CS001-CLT00090 silently yields a false MGT-CS001-CLT0009.
+  -- Neither case exists in the data today; both are one bad subject away.
+  select x[1] as code,
          m.client_id,
          'message_subject'::text as source
     from public.messages m
-   where m.subject ~ 'MGT-CS[0-9]{3}-CLT[0-9]{4}'
-     and m.client_id is not null
+    cross join lateral regexp_matches(
+      m.subject, 'MGT-CS[0-9]{3}-CLT[0-9]{4}(?![0-9])', 'g') as x
+   where m.client_id is not null
 
   union all
   select c.case_code, c.id, 'client_case_code'
@@ -68,11 +79,17 @@ select
   cl.stage                                            as client_stage,
   o.code                                              as proposed_case_serial_id,
   (substring(o.code from 'CS([0-9]{3})'))::int        as proposed_case_number,
-  -- What open_case() would actually mint for this client right now. It reads
-  -- max(case_number) + 1 over ALL of the client's cases, archived included, so
-  -- this counts them the same way. Shown because creating the CS002 proposal
-  -- while CS001 does not exist yet mints CS001, and the screen must say so
-  -- rather than promise a serial it cannot deliver.
+  -- What open_case() would mint for this client AS OF THIS READ. It counts the
+  -- same way open_case does -- max(case_number) + 1 over ALL of the client's
+  -- cases, archived included -- so the screen can warn when creating a proposal
+  -- would produce a different code from the one the client already has.
+  --
+  -- It is a prediction, not a guarantee, and the screen says so in those words.
+  -- open_case() takes a per-client advisory lock before it reads the same
+  -- maximum; this view takes no lock, so another case opened for the same
+  -- client between this read and the button press moves the answer. open_case()
+  -- returns the serial it actually minted and the UI reports that, so the
+  -- outcome is always truthful even when the prediction was stale.
   (select coalesce(max(bc.case_number), 0) + 1
      from public.brain_conversations bc
     where bc.client_id = o.client_id)                 as next_case_number,
@@ -104,7 +121,8 @@ comment on view public.v_case_proposals is
 -- badge. It is separate from the proposals above because most of these clients
 -- have no code evidence at all -- there is nothing to propose, only a gap to
 -- fill by hand.
-create or replace view public.v_clients_missing_case as
+create or replace view public.v_clients_missing_case
+with (security_invoker = true) as
 select
   cl.id                                               as client_id,
   cl.client_code,
@@ -140,6 +158,12 @@ comment on view public.v_clients_missing_case is
 -- so it reads through RLS on clients, messages and payment_tokens. Left alone,
 -- these two would hand every client name, stage and job count to anyone holding
 -- the publishable key.
+--
+-- Both views are also declared security_invoker, which is defence in depth and
+-- not the boundary: it makes a reader's own RLS apply if these grants are ever
+-- widened by accident. The revokes below are what actually closes the door.
+-- Behaviour today is identical either way, because the only caller is
+-- service_role, which bypasses RLS.
 revoke all on public.v_case_proposals from public, anon, authenticated;
 revoke all on public.v_clients_missing_case from public, anon, authenticated;
 
