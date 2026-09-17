@@ -5,6 +5,7 @@ import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middlewa
 import { requireAdminAccess } from "./access-context.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { logActivityEvent } from "./activity.server";
+import { CLIENT_STAGES } from "./leads-shared";
 
 // Cases, and the jobs filed under them, read and written from the pipeline.
 //
@@ -214,6 +215,60 @@ export const renameCase = createServerFn({ method: "POST" })
     });
 
     return { caseId: existing.id, title: nextTitle, unchanged: false };
+  });
+
+// Set a case's stage by hand.
+//
+// Safe to offer only because clients_sync_stage_to_conversations is gone. While
+// that trigger existed it stamped the client's stage onto every case on any
+// change, so a control here would have been silently undone -- worse than no
+// control at all.
+//
+// recompute_case_stage still moves a case when its jobs move, and deliberately
+// does nothing when a case has no jobs or none have started. So a stage set
+// here survives until the work itself says otherwise.
+//
+// The work happens inside public.set_case_stage() for the same reason
+// assign_job_to_case exists: the stage update and its audit row have to commit
+// together, and the case row has to be locked across the read and the write so
+// a job trigger cannot slip recompute_case_stage in between and leave this
+// function logging a "from" stage that is already stale.
+export const setCaseStage = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d: { caseId: string; stage: string }) =>
+    z
+      .object({
+        caseId: RECORD_ID,
+        stage: z.enum(CLIENT_STAGES),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await requireAdminAccess({
+      userId: context.userId,
+      email: context.claims.email as string | undefined,
+    });
+
+    const { data: rows, error } = await supabaseAdmin.rpc("set_case_stage", {
+      p_case_id: data.caseId,
+      p_stage: data.stage,
+      p_actor_user_id: context.userId,
+      p_actor_email: (context.claims.email as string | undefined) ?? undefined,
+    });
+
+    // The function raises for a missing case and an archived one, so its
+    // message is already the sentence to show.
+    if (error) throw new Error(error.message);
+
+    const row = Array.isArray(rows) ? rows[0] : rows;
+    if (!row) throw new Error("set_case_stage returned nothing");
+
+    return {
+      caseId: row.out_case_id,
+      stage: row.out_to_stage,
+      fromStage: row.out_from_stage,
+      unchanged: row.out_unchanged,
+    };
   });
 
 // File a job under a case, or take it back out (caseId: null).

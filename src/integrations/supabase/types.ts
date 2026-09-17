@@ -2701,6 +2701,10 @@ export type Database = {
           read_ct: number;
         }[];
       };
+      recompute_case_stage: {
+        Args: { p_case_id: string };
+        Returns: undefined;
+      };
       recompute_client_stage: {
         Args: { p_client_id: string };
         Returns: undefined;
@@ -2740,6 +2744,21 @@ export type Database = {
         }[];
       };
       restore_case: { Args: { p_conversation_id: string }; Returns: undefined };
+      set_case_stage: {
+        Args: {
+          p_actor_email?: string;
+          p_actor_user_id?: string;
+          p_case_id: string;
+          p_stage: string;
+        };
+        Returns: {
+          out_case_id: string;
+          out_case_serial_id: string | null;
+          out_from_stage: string | null;
+          out_to_stage: string;
+          out_unchanged: boolean;
+        }[];
+      };
     };
     Enums: {
       app_role: "admin" | "partner";
