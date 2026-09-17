@@ -134,6 +134,14 @@ select
     where j.client_id = cl.id and j.case_id is null)  as unfiled_jobs,
   (select count(*) from public.messages m
     where m.client_id = cl.id)                        as messages,
+  -- Same prediction, and needed here for the same reason. This view selects on
+  -- the absence of a LIVE case, but open_case() counts archived ones too, so a
+  -- client whose only case is archived gets CS002 and not CS001. Three clients
+  -- are in exactly that position today -- CLT0010, CLT0011 and CLT0012 -- so a
+  -- hardcoded "Open CS001" on this list is wrong for a quarter of it.
+  (select coalesce(max(bc.case_number), 0) + 1
+     from public.brain_conversations bc
+    where bc.client_id = cl.id)                       as next_case_number,
   exists (select 1 from public.v_case_proposals p
            where p.client_id = cl.id)                 as has_code_evidence
 from public.clients cl

@@ -204,7 +204,15 @@ function MissingRow({ m, onDone }: { m: ClientMissingCase; onDone: () => void })
           </span>
         ) : null}
       </div>
-      <CreateCaseRow clientId={m.clientId} label="Open CS001" onDone={onDone} />
+      {/* Not hardcoded to CS001. This list selects on having no LIVE case, and
+          open_case() counts archived ones too, so a client whose only case is
+          archived gets CS002. Same prediction, same caveat as the cards above:
+          the confirmation names the serial actually minted. */}
+      <CreateCaseRow
+        clientId={m.clientId}
+        label={`Open case — next is CS${String(m.nextCaseNumber ?? 1).padStart(3, "0")}`}
+        onDone={onDone}
+      />
     </div>
   );
 }
@@ -280,8 +288,9 @@ function CaseProposalsPage() {
             </h2>
             <p className="text-xs text-muted-foreground">
               Parked and Lost clients are excluded — they need not have a case. Everyone here must,
-              and most have no code to go on, so there is nothing to propose beyond opening their
-              first case.
+              and most have no code to go on, so there is nothing to propose beyond opening a case.
+              This list counts live cases only, so a client whose one case is archived appears here
+              and will get CS002, not CS001.
             </p>
             {missing.length === 0 ? (
               <Card>

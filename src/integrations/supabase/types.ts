@@ -2437,6 +2437,7 @@ export type Database = {
           has_code_evidence: boolean | null;
           jobs: number | null;
           messages: number | null;
+          next_case_number: number | null;
           stage: string | null;
           unfiled_jobs: number | null;
         };

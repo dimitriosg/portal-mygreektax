@@ -360,6 +360,12 @@ export type ClientMissingCase = {
   jobs: number;
   unfiledJobs: number;
   messages: number;
+  /**
+   * What open_case() would mint for this client as of this read. Not always 1:
+   * this list selects on having no LIVE case, and open_case() counts archived
+   * ones too, so a client whose only case is archived gets CS002.
+   */
+  nextCaseNumber: number | null;
   hasCodeEvidence: boolean;
 };
 
@@ -417,6 +423,7 @@ export const listCaseProposals = createServerFn({ method: "GET" })
       jobs: Number(r.jobs ?? 0),
       unfiledJobs: Number(r.unfiled_jobs ?? 0),
       messages: Number(r.messages ?? 0),
+      nextCaseNumber: r.next_case_number,
       hasCodeEvidence: Boolean(r.has_code_evidence),
     }));
 
