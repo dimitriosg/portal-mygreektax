@@ -692,6 +692,7 @@ export const createJob = createServerFn({ method: "POST" })
     (d: {
       clientId: string;
       serviceId: string;
+      caseId?: string;
       accountantId?: string;
       status?: string;
       slaDeadline?: string;
@@ -702,6 +703,13 @@ export const createJob = createServerFn({ method: "POST" })
         .object({
           clientId: CLIENT_RECORD_ID,
           serviceId: z.string().min(1).max(50),
+          // The case this job belongs to. Optional on the wire so the older
+          // callers keep working, but every form that creates a job now asks
+          // for it -- a job with no case is a job nobody can account for later.
+          caseId: z
+            .string()
+            .regex(/^[0-9a-fA-F-]{36}$/, "Invalid case id")
+            .optional(),
           accountantId: z.string().min(1).max(50).optional(),
           status: z.enum(JOB_STATUSES).optional(),
           slaDeadline: z.string().max(30).optional(),
@@ -744,6 +752,30 @@ export const createJob = createServerFn({ method: "POST" })
     if (data.dateSent) fields["Date Sent"] = data.dateSent;
     if (data.partnerProgressNotes) fields["Partner Progress Notes"] = data.partnerProgressNotes;
     const record = await airtablePost(TABLES.jobs, fields);
+
+    // File it under its case through the same RPC a manual filing uses, rather
+    // than writing case_id here. That keeps one path for "a job entered a
+    // case": the update and its job_case_assigned audit row commit together,
+    // and the composite foreign key still refuses a case belonging to another
+    // client. A failure here does not undo the job -- it is reported, and the
+    // job appears unfiled, which is a visible state with a Move button rather
+    // than a silent wrong answer.
+    if (data.caseId) {
+      const { error: fileErr } = await supabaseAdmin.rpc("assign_job_to_case", {
+        p_job_id: record.id,
+        p_case_id: data.caseId,
+        p_reason: "Created in this case",
+        p_actor_user_id: context.userId,
+        p_actor_email: (context.claims.email as string | undefined) ?? undefined,
+      });
+      if (fileErr) {
+        throw new Error(
+          `Job ${nextCode} was created, but could not be filed under that case: ${fileErr.message}. ` +
+            `It is in the client's job list as unfiled -- file it from there.`,
+        );
+      }
+    }
+
     const actor = await getActorIdentity(context.userId);
     await logActivityEvent({
       eventType: "job_created",

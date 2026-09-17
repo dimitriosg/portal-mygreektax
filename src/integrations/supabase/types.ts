@@ -235,11 +235,11 @@ export type Database = {
           archived_at: string | null;
           case_number: number | null;
           case_serial_id: string | null;
-          client_id: string | null;
+          client_id: string;
           closed_at: string | null;
           conversation_type: string;
           created_at: string;
-          customer_email: string;
+          customer_email: string | null;
           customer_id: string;
           id: string;
           job_id: string | null;
@@ -250,17 +250,18 @@ export type Database = {
           stage: string;
           status: string;
           subject: string | null;
+          title: string | null;
           updated_at: string;
         };
         Insert: {
           archived_at?: string | null;
           case_number?: number | null;
           case_serial_id?: string | null;
-          client_id?: string | null;
+          client_id: string;
           closed_at?: string | null;
           conversation_type?: string;
           created_at?: string;
-          customer_email: string;
+          customer_email?: string | null;
           customer_id: string;
           id?: string;
           job_id?: string | null;
@@ -271,17 +272,18 @@ export type Database = {
           stage?: string;
           status?: string;
           subject?: string | null;
+          title?: string | null;
           updated_at?: string;
         };
         Update: {
           archived_at?: string | null;
           case_number?: number | null;
           case_serial_id?: string | null;
-          client_id?: string | null;
+          client_id?: string;
           closed_at?: string | null;
           conversation_type?: string;
           created_at?: string;
-          customer_email?: string;
+          customer_email?: string | null;
           customer_id?: string;
           id?: string;
           job_id?: string | null;
@@ -292,6 +294,7 @@ export type Database = {
           stage?: string;
           status?: string;
           subject?: string | null;
+          title?: string | null;
           updated_at?: string;
         };
         Relationships: [
@@ -1337,6 +1340,7 @@ export type Database = {
           accountant_fee: number | null;
           accountant_id: string | null;
           admin_internal_notes: string | null;
+          case_id: string | null;
           client_fee: number | null;
           client_id: string;
           client_visible_note: string | null;
@@ -1357,6 +1361,7 @@ export type Database = {
           accountant_fee?: number | null;
           accountant_id?: string | null;
           admin_internal_notes?: string | null;
+          case_id?: string | null;
           client_fee?: number | null;
           client_id: string;
           client_visible_note?: string | null;
@@ -1377,6 +1382,7 @@ export type Database = {
           accountant_fee?: number | null;
           accountant_id?: string | null;
           admin_internal_notes?: string | null;
+          case_id?: string | null;
           client_fee?: number | null;
           client_id?: string;
           client_visible_note?: string | null;
@@ -2521,6 +2527,26 @@ export type Database = {
         Args: { p_cooldown_seconds?: number };
         Returns: string | null;
       };
+      // p_case_id and the out_*_case_id columns are nullable: a null case is
+      // how a job is taken back out of its case, and a job that was unfiled
+      // has no from-case. The generator types function arguments as
+      // non-nullable, which would be wrong here.
+      assign_job_to_case: {
+        Args: {
+          p_actor_email?: string;
+          p_actor_user_id?: string;
+          p_case_id: string | null;
+          p_job_id: string;
+          p_reason: string;
+        };
+        Returns: {
+          out_case_id: string | null;
+          out_from_case_id: string | null;
+          out_job_id: string;
+          out_to_case_serial_id: string | null;
+          out_unchanged: boolean;
+        }[];
+      };
       confirm_payment: {
         Args: { p_external_id?: string; p_source?: string; p_token: string };
         Returns: {
@@ -2658,6 +2684,14 @@ export type Database = {
         };
         Returns: number;
       };
+      open_case: {
+        Args: { p_client_id: string; p_source?: string; p_title?: string };
+        Returns: {
+          out_case_id: string;
+          out_case_number: number;
+          out_case_serial_id: string;
+        }[];
+      };
       purge_expired_archived_cases: { Args: never; Returns: number };
       read_email_batch: {
         Args: { batch_size: number; queue_name: string; vt: number };
@@ -2671,38 +2705,40 @@ export type Database = {
         Args: { p_client_id: string };
         Returns: undefined;
       };
-      resolve_case_for_inbound:
-        | {
-            Args: { p_email: string; p_name?: string; p_nationality?: string };
-            Returns: {
-              out_case_number: number;
-              out_case_serial_id: string;
-              out_client_code: string;
-              out_client_id: string;
-              out_is_new_case: boolean;
-              out_is_new_customer: boolean;
-            }[];
-          }
-        | {
-            Args: {
-              p_email: string;
-              p_external_event_id?: string;
-              p_message?: string;
-              p_name?: string;
-              p_nationality?: string;
-              p_provider?: string;
-              p_subject?: string;
-            };
-            Returns: {
-              out_case_number: number;
-              out_case_serial_id: string;
-              out_client_code: string;
-              out_client_id: string;
-              out_conversation_id: string;
-              out_is_new_case: boolean;
-              out_is_new_customer: boolean;
-            }[];
-          };
+      reopen_case: {
+        Args: { p_case_id: string; p_reason?: string };
+        Returns: {
+          out_case_id: string;
+          out_case_serial_id: string;
+          out_stage: string;
+          out_status: string;
+        }[];
+      };
+      // One overload only. The 3-argument version was dropped in the P1 cases
+      // migration, so the union that used to be here described a function that
+      // no longer exists -- a call written against it would have typechecked
+      // and then failed at runtime. out_conversation_id is nullable: the
+      // resolver returns no case when routing is a decision for a person.
+      resolve_case_for_inbound: {
+        Args: {
+          p_email: string;
+          p_external_event_id?: string;
+          p_message?: string;
+          p_name?: string;
+          p_nationality?: string;
+          p_provider?: string;
+          p_subject?: string;
+        };
+        Returns: {
+          out_case_number: number;
+          out_case_serial_id: string;
+          out_client_code: string;
+          out_client_id: string;
+          out_conversation_id: string | null;
+          out_is_new_case: boolean;
+          out_is_new_customer: boolean;
+        }[];
+      };
       restore_case: { Args: { p_conversation_id: string }; Returns: undefined };
     };
     Enums: {
